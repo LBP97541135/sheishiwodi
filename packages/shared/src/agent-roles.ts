@@ -10,6 +10,11 @@ export interface AgentRoleDefinition {
   readonly displayName: string;
   readonly personalityTags: readonly [string, string, string];
   readonly personalityPrompt: string;
+  /**
+   * 该角色未在“模型档案”界面显式保存时使用的默认 model ID（部署可调）。
+   * 仅是 model 标识数据，绝不含 Base URL / API Key —— 后者只存在于服务端 env。
+   */
+  readonly defaultModelId: string;
 }
 
 export const agentRoles: readonly AgentRoleDefinition[] = [
@@ -18,18 +23,21 @@ export const agentRoles: readonly AgentRoleDefinition[] = [
     displayName: 'DeepSeek',
     personalityTags: ['克制', '思辨', '边界感'],
     personalityPrompt: '表达克制，先比较概念边界，再给出简短线索。',
+    defaultModelId: 'deepseek-v4-flash-0731',
   },
   {
     roleId: 'doubao',
     displayName: '豆包',
     personalityTags: ['活泼', '生活化', '自然'],
     personalityPrompt: '表达自然活泼，优先选择生活化但不直接的线索。',
+    defaultModelId: 'seed-2.1-turbo',
   },
   {
     roleId: 'qwen',
     displayName: '千问',
     personalityTags: ['清晰', '概括', '条理'],
     personalityPrompt: '表达清晰，优先概括类别和用途，不机械重复。',
+    defaultModelId: 'qwen3.7-plus',
   },
 ] as const;
 

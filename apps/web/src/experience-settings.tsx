@@ -65,7 +65,8 @@ export function ExperienceControls({
 }
 
 export function useExperienceSettings(shouldPlay: boolean) {
-  const [audioEnabled, setAudioEnabled] = useState(() => readBoolean('sheishiwodi:bgm', true));
+  // 背景音乐默认关闭：首屏不触发被浏览器自动拦截的播放态，用户无感；需要时手动开。
+  const [audioEnabled, setAudioEnabled] = useState(() => readBoolean('sheishiwodi:bgm', false));
   const [backgroundTheme, setBackgroundTheme] = useState<BackgroundTheme>(() =>
     readBackgroundTheme(),
   );
@@ -78,9 +79,16 @@ export function useExperienceSettings(shouldPlay: boolean) {
     audio.loop = true;
     audio.preload = 'metadata';
     audio.volume = 0.24;
-    audio.addEventListener('error', () => setAudioNotice('背景音乐暂时无法播放'));
+    const handleError = () => {
+      // 卸载阶段清空 src 会触发媒体 error 事件；此时不应误报。
+      // 仅当仍持有真实音源（非空、非页面地址）时才提示真正的加载失败。
+      if (audio.src && !audio.src.endsWith('/')) setAudioNotice('背景音乐暂时无法播放');
+    };
+    audio.addEventListener('error', handleError);
     audioRef.current = audio;
     return () => {
+      // 先摘掉监听，再清空 src，避免 StrictMode 双挂载清理触发伪报错。
+      audio.removeEventListener('error', handleError);
       audio.pause();
       audio.src = '';
       audioRef.current = null;
@@ -97,7 +105,7 @@ export function useExperienceSettings(shouldPlay: boolean) {
     }
     void playAudio(audio)
       .then(() => setAudioNotice(null))
-      .catch(() => setAudioNotice('点击音乐开关即可开始播放'));
+      .catch(() => setAudioNotice('点击页面任意处即可开始播放背景音乐'));
   }, [audioEnabled, shouldPlay]);
 
   useEffect(() => {

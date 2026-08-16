@@ -54,7 +54,8 @@ export class ModelProfileService {
         displayName: role.displayName,
         personalityTags: [...role.personalityTags],
         personalityPrompt: role.personalityPrompt,
-        selectedModelId: selections[role.roleId] ?? null,
+        // 未显式保存时回退角色默认 model ID，界面不再显示“未配置”。
+        selectedModelId: selections[role.roleId] ?? role.defaultModelId ?? null,
       })),
     };
   }

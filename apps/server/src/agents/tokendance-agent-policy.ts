@@ -30,6 +30,8 @@ export interface TokendanceAgentPolicyOptions {
   maxSystemRetries?: number;
   retryDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  /** 开启后打印脱敏计时日志（角色/model/耗时/是否修复重试），绝不含 Key/URL/响应正文。 */
+  debug?: boolean;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -40,6 +42,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
   private readonly maxSystemRetries: number;
   private readonly retryDelayMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly debug: boolean;
   private readonly beliefHistory = new Map<string, BeliefSnapshot[]>();
 
   constructor(options: TokendanceAgentPolicyOptions) {
@@ -48,6 +51,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     this.maxSystemRetries = options.maxSystemRetries ?? 3;
     this.retryDelayMs = options.retryDelayMs ?? 2_000;
     this.sleep = options.sleep ?? defaultSleep;
+    this.debug = options.debug ?? false;
   }
 
   priorBeliefs(playerId: string): readonly BeliefSnapshot[] {
@@ -71,9 +75,12 @@ export class TokendanceAgentPolicy implements AgentPolicy {
 
     for (;;) {
       let content: string;
+      const startedAt = Date.now();
       try {
         content = await this.client.chatCompletion({ modelId, messages });
+        this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'ok');
       } catch {
+        this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'fail');
         systemAttempts += 1;
         if (systemAttempts > this.maxSystemRetries) {
           throw new AgentSystemError('CALL_FAILED', roleId);
@@ -112,6 +119,22 @@ export class TokendanceAgentPolicy implements AgentPolicy {
 
   private record(playerId: string, belief: BeliefSnapshot) {
     this.beliefHistory.set(playerId, [...(this.beliefHistory.get(playerId) ?? []), belief]);
+  }
+
+  /** 仅打印脱敏计时（角色/model/动作/耗时/是否修复往返/结果），绝不含 Key/URL/响应正文。 */
+  private logTiming(
+    roleId: string,
+    modelId: string,
+    actionType: string,
+    startedAt: number,
+    repairUsed: boolean,
+    result: 'ok' | 'fail',
+  ) {
+    if (!this.debug) return;
+    const elapsed = Date.now() - startedAt;
+    console.info(
+      `[agent] role=${roleId} model=${modelId} action=${actionType} repair=${repairUsed} ${result} ${elapsed}ms`,
+    );
   }
 }
 
@@ -189,6 +212,9 @@ function repairInstruction(input: AgentTurnInput): string {
 
 function extractJson(content: string): Record<string, unknown> {
   let text = content.trim();
+  // 先剥离推理型模型可能前置/包裹的思维链块，避免把 <think> 里的花括号误当成 JSON，
+  // 否则会触发一次凭空的“格式修复”往返，显著拖慢每个 AI 回合。
+  text = text.replace(/<(think|reasoning|thought)>[\s\S]*?<\/\1>/gi, '').trim();
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced?.[1]) text = fenced[1].trim();
   const start = text.indexOf('{');

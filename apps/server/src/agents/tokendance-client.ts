@@ -25,17 +25,24 @@ export interface TokendanceClientOptions {
   baseUrl: string;
   apiKey: string;
   timeoutMs?: number;
+  /**
+   * 追加到每次 /chat/completions 请求体的额外参数（如关闭推理链的开关）。
+   * 由服务端 env 注入，仅是模型请求参数，绝不含 Key/URL；默认空对象=不改变行为。
+   */
+  defaultBody?: Record<string, unknown>;
 }
 
 export class TokendanceClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly timeoutMs: number;
+  private readonly defaultBody: Record<string, unknown>;
 
   constructor(options: TokendanceClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.apiKey = options.apiKey;
     this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.defaultBody = options.defaultBody ?? {};
   }
 
   async listModels(): Promise<string[]> {
@@ -51,6 +58,7 @@ export class TokendanceClient {
 
   async chatCompletion(params: { modelId: string; messages: ChatMessage[] }): Promise<string> {
     const body = await this.request('POST', '/chat/completions', {
+      ...this.defaultBody,
       model: params.modelId,
       messages: params.messages,
     });

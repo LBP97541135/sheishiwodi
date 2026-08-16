@@ -276,6 +276,10 @@ export class GameService {
 
   private async runAdvanceLoop(gameId: string) {
     const policy = this.agentPolicyFactory();
+    // 投票/重投阶段的并行预取批次：描述必须串行，但同一阶段各票互不可见、互不依赖，
+    // 可把“当前起、到第一个人类为止的连续 AI 投票者”的模型调用并行预取，再按机器顺序逐个提交。
+    let voteBatch: Map<string, VoteActionOutput> | null = null;
+    let batchCovers = new Set<string>();
     for (let guard = 0; guard < 500; guard += 1) {
       const snapshot = this.games.findSnapshot(gameId);
       if (!snapshot || snapshot.status !== 'in_progress' || !snapshot.round) {
@@ -303,15 +307,34 @@ export class GameService {
       const priorBeliefs = this.games.listAgentBeliefs(gameId, actor.playerId);
       const publicEvents = this.games.listPublicTimeline(gameId);
       const input = projectAgentTurnInput(snapshot, actor.playerId, publicEvents, priorBeliefs);
+
+      const isVotePhase = round.actionType === 'vote' || round.actionType === 'revote';
+      if (isVotePhase && round.completedVoterIds.length === 0) {
+        // 新一轮投票阶段开始，丢弃上一阶段可能残留的预取批次。
+        voteBatch = null;
+        batchCovers = new Set();
+      }
+      if (isVotePhase && !batchCovers.has(actor.playerId)) {
+        const prefetched = await this.prefetchVoteBatch(gameId, snapshot, round, policy);
+        voteBatch = prefetched.batch;
+        batchCovers = prefetched.covers;
+      }
+
       let output: SpeechActionOutput | VoteActionOutput;
-      try {
-        output = await policy.act(input, { agentRoleId: actor.agentRoleId ?? actor.playerId });
-      } catch (error) {
-        if (error instanceof AgentSystemError) {
-          this.terminateForSystemError(gameId, snapshot, commandId, error.code, publicEvents);
-          return;
+      // 仅投票/重投阶段消费预取批次；辩解/描述绝不读它，避免把上一阶段的投票输出误当发言。
+      const cached = isVotePhase ? voteBatch?.get(actor.playerId) : undefined;
+      if (cached) {
+        output = cached;
+      } else {
+        try {
+          output = await policy.act(input, { agentRoleId: actor.agentRoleId ?? actor.playerId });
+        } catch (error) {
+          if (error instanceof AgentSystemError) {
+            this.terminateForSystemError(gameId, snapshot, commandId, error.code, publicEvents);
+            return;
+          }
+          throw error;
         }
-        throw error;
       }
 
       let transition: MachineTransition;
@@ -395,6 +418,53 @@ export class GameService {
         privateAction,
       });
     }
+  }
+
+  /**
+   * 并行预取一段“从当前投票者起、到第一个人类（或阶段末尾）为止的连续 AI 投票者”的模型输出。
+   * 每票保密、互不依赖，可并行；返回的 covers 覆盖该连续段全部 AI（含调用失败者），
+   * 调用者据此按机器顺序逐个提交；失败者不进 batch，交回普通串行路径触发既有系统终止逻辑。
+   */
+  private async prefetchVoteBatch(
+    gameId: string,
+    snapshot: GameSnapshot,
+    round: NonNullable<GameSnapshot['round']>,
+    policy: AgentPolicy,
+  ): Promise<{ batch: Map<string, VoteActionOutput>; covers: Set<string> }> {
+    const living = snapshot.players.filter((player) => player.alive);
+    const isRevote = round.actionType === 'revote';
+    const eligible = isRevote
+      ? living.filter((player) => !round.tieCandidateIds.includes(player.playerId))
+      : living;
+    const startIdx = eligible.findIndex((player) => player.playerId === round.currentActorId);
+    const run: typeof eligible = [];
+    if (startIdx >= 0) {
+      for (let index = startIdx; index < eligible.length; index += 1) {
+        const player = eligible[index]!;
+        if (round.completedVoterIds.includes(player.playerId)) continue;
+        if (player.kind !== 'agent') break; // 遇到人类即停：其后 AI 留待人类投票后再并行预取，绝不预烧付费额度。
+        run.push(player);
+      }
+    }
+    const covers = new Set(run.map((player) => player.playerId));
+    const batch = new Map<string, VoteActionOutput>();
+    if (run.length < 2) return { batch, covers }; // 单个投票者无需并行，走普通串行路径。
+
+    const publicEvents = this.games.listPublicTimeline(gameId);
+    const settled = await Promise.allSettled(
+      run.map(async (player) => {
+        const priorBeliefs = this.games.listAgentBeliefs(gameId, player.playerId);
+        const input = projectAgentTurnInput(snapshot, player.playerId, publicEvents, priorBeliefs);
+        const output = await policy.act(input, { agentRoleId: player.agentRoleId ?? player.playerId });
+        return { playerId: player.playerId, output };
+      }),
+    );
+    for (const entry of settled) {
+      if (entry.status === 'fulfilled') {
+        batch.set(entry.value.playerId, entry.value.output as VoteActionOutput);
+      }
+    }
+    return { batch, covers };
   }
 
   private terminateForSystemError(

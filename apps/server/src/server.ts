@@ -5,7 +5,13 @@ import { randomInt, randomUUID } from 'node:crypto';
 
 import Fastify from 'fastify';
 
-import { agentRoleIds, type Clock, type IdSource, type RandomSource } from '@sheishiwodi/shared';
+import {
+  agentRoleIds,
+  findAgentRole,
+  type Clock,
+  type IdSource,
+  type RandomSource,
+} from '@sheishiwodi/shared';
 
 import { createDatabase, type AppDatabase } from './db/client.js';
 import { migrateDatabase } from './db/migrate.js';
@@ -131,22 +137,63 @@ function resolveAgentProvider(
     };
   }
 
-  const client = new TokendanceClient({ baseUrl, apiKey });
+  const client = new TokendanceClient({
+    baseUrl,
+    apiKey,
+    timeoutMs: readPositiveInt('TOKENDANCE_TIMEOUT_MS', 20_000),
+    defaultBody: readJsonObject('TOKENDANCE_EXTRA_BODY'),
+  });
   const buildRoleModelMap = (): Record<string, string> => {
     const selections = roleModelRepository.listSelections();
     const map: Record<string, string> = {};
     for (const roleId of agentRoleIds) {
-      const modelId = selections[roleId] ?? (defaultModel.length > 0 ? defaultModel : undefined);
+      const modelId =
+        selections[roleId] ??
+        findAgentRole(roleId)?.defaultModelId ??
+        (defaultModel.length > 0 ? defaultModel : undefined);
       if (modelId) map[roleId] = modelId;
     }
     return map;
   };
 
+  const debugTiming = (process.env['AGENT_DEBUG_TIMING'] ?? '').trim() === '1';
+
   return {
     agentPolicyFactory: () =>
-      new TokendanceAgentPolicy({ client, roleModelMap: buildRoleModelMap() }),
+      new TokendanceAgentPolicy({
+        client,
+        roleModelMap: buildRoleModelMap(),
+        maxSystemRetries: readPositiveInt('TOKENDANCE_MAX_RETRIES', 2),
+        retryDelayMs: readPositiveInt('TOKENDANCE_RETRY_DELAY_MS', 800),
+        debug: debugTiming,
+      }),
     modelProvider: { mode: 'tokendance', configured: true, client },
   };
+}
+
+/** 读取正整数 env，非法或缺省时回退到给定默认值。仅用于超时/重试等运行时调参。 */
+function readPositiveInt(name: string, fallback: number): number {
+  const raw = (process.env[name] ?? '').trim();
+  if (raw.length === 0) return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * 读取一个 JSON 对象 env（如关闭推理链的附加请求参数）。非法或缺省时返回空对象。
+ * 仅解析为模型请求参数透传，绝不含 Key/URL —— 后者始终独立走专用 env。
+ */
+function readJsonObject(name: string): Record<string, unknown> {
+  const raw = (process.env[name] ?? '').trim();
+  if (raw.length === 0) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 function parseFakeRandomSequence(value: string | undefined): number[] | undefined {
