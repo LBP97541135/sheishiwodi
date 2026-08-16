@@ -9,6 +9,7 @@ import {
   submitDefense as submitDefenseMachine,
   submitDescription as submitDescriptionMachine,
   submitVote as submitVoteMachine,
+  terminateForSystemError as terminateForSystemErrorMachine,
   type AbandonGameCommand,
   type Clock,
   type ContinueSpectatingCommand,
@@ -18,6 +19,7 @@ import {
   type IdSource,
   type MachineDependencies,
   type MachineTransition,
+  type PublicTimelineItem,
   type RandomSource,
   type SpeechActionOutput,
   type StartGameCommand,
@@ -31,6 +33,7 @@ import type { WordPairRepository } from '../db/word-pair-repository.js';
 import { FakeAgentPolicy } from '../agents/fake-agent-policy.js';
 import { projectAgentTurnInput } from '../agents/agent-input-projector.js';
 import type { AgentPolicy } from '../agents/agent-policy.js';
+import { AgentSystemError } from '../agents/tokendance-agent-policy.js';
 import type { GameRepository, PublicStreamFrame } from './game-repository.js';
 
 export type GameServiceErrorCode =
@@ -103,7 +106,7 @@ export class GameService {
     return view;
   }
 
-  startGame(command: StartGameCommand): HumanGameView {
+  async startGame(command: StartGameCommand): Promise<HumanGameView> {
     const requestHash = hashCommand(command);
     const processed = this.games.findProcessedCommand(command.commandId);
     if (processed) {
@@ -137,49 +140,49 @@ export class GameService {
       throw mapMachineError(error);
     }
 
-    this.advanceUntilHumanOrStop(command.gameId);
+    await this.advanceUntilHumanOrStop(command.gameId);
     return this.games.getHumanView(command.gameId)!;
   }
 
-  continueSpectating(command: ContinueSpectatingCommand): HumanGameView {
+  continueSpectating(command: ContinueSpectatingCommand): Promise<HumanGameView> {
     return this.applyHumanTransition(command, (snapshot) =>
       continueSpectatingMachine(snapshot, command, this.machineDeps()),
     );
   }
 
-  abandonGame(command: AbandonGameCommand): HumanGameView {
+  abandonGame(command: AbandonGameCommand): Promise<HumanGameView> {
     return this.applyHumanTransition(command, (snapshot) =>
       abandonGameMachine(snapshot, command, this.machineDeps()),
     );
   }
 
-  submitDescription(command: SubmitDescriptionCommand): HumanGameView {
+  submitDescription(command: SubmitDescriptionCommand): Promise<HumanGameView> {
     return this.applyHumanTransition(command, (snapshot) =>
       submitDescriptionMachine(snapshot, command, this.machineDeps()),
     );
   }
 
-  submitDefense(command: SubmitDefenseCommand): HumanGameView {
+  submitDefense(command: SubmitDefenseCommand): Promise<HumanGameView> {
     return this.applyHumanTransition(command, (snapshot) =>
       submitDefenseMachine(snapshot, command, this.machineDeps()),
     );
   }
 
-  submitVote(command: SubmitVoteCommand): HumanGameView {
+  submitVote(command: SubmitVoteCommand): Promise<HumanGameView> {
     return this.applyHumanTransition(command, (snapshot) =>
       submitVoteMachine(snapshot, command, this.machineDeps()),
     );
   }
 
-  resumeActiveGame() {
+  async resumeActiveGame() {
     const active = this.games.findActiveSnapshot();
     if (active?.status === 'in_progress') {
-      this.advanceUntilHumanOrStop(active.gameId);
+      await this.advanceUntilHumanOrStop(active.gameId);
     }
   }
 
-  resumeGame(gameId: string) {
-    this.advanceUntilHumanOrStop(gameId);
+  async resumeGame(gameId: string) {
+    await this.advanceUntilHumanOrStop(gameId);
   }
 
   getEvents(gameId: string, after: number): { frames: PublicStreamFrame[]; eventCursor: number } {
@@ -195,6 +198,12 @@ export class GameService {
     return active ? this.games.getHumanView(active.gameId) : null;
   }
 
+  /** 存在进行中或待观战确认的对局时，禁止修改模型配置。preparing 与无局时允许。 */
+  isGameLockedForConfig(): boolean {
+    const active = this.games.findActiveSnapshot();
+    return active?.status === 'in_progress' || active?.status === 'awaiting_spectator';
+  }
+
   getGame(gameId: string) {
     const view = this.games.getHumanView(gameId);
     if (!view) {
@@ -203,7 +212,7 @@ export class GameService {
     return view;
   }
 
-  private applyHumanTransition(
+  private async applyHumanTransition(
     command:
       | AbandonGameCommand
       | ContinueSpectatingCommand
@@ -211,7 +220,7 @@ export class GameService {
       | SubmitDefenseCommand
       | SubmitVoteCommand,
     produce: (snapshot: GameSnapshot) => MachineTransition,
-  ): HumanGameView {
+  ): Promise<HumanGameView> {
     const requestHash = hashCommand(command);
     const processed = this.games.findProcessedCommand(command.commandId);
     if (processed) {
@@ -251,21 +260,21 @@ export class GameService {
       throw mapMachineError(error);
     }
 
-    this.advanceUntilHumanOrStop(command.gameId);
+    await this.advanceUntilHumanOrStop(command.gameId);
     return this.games.getHumanView(command.gameId)!;
   }
 
-  private advanceUntilHumanOrStop(gameId: string) {
+  private async advanceUntilHumanOrStop(gameId: string) {
     if (this.advancingGames.has(gameId)) return;
     this.advancingGames.add(gameId);
     try {
-      this.runAdvanceLoop(gameId);
+      await this.runAdvanceLoop(gameId);
     } finally {
       this.advancingGames.delete(gameId);
     }
   }
 
-  private runAdvanceLoop(gameId: string) {
+  private async runAdvanceLoop(gameId: string) {
     const policy = this.agentPolicyFactory();
     for (let guard = 0; guard < 500; guard += 1) {
       const snapshot = this.games.findSnapshot(gameId);
@@ -294,7 +303,16 @@ export class GameService {
       const priorBeliefs = this.games.listAgentBeliefs(gameId, actor.playerId);
       const publicEvents = this.games.listPublicTimeline(gameId);
       const input = projectAgentTurnInput(snapshot, actor.playerId, publicEvents, priorBeliefs);
-      const output = policy.act(input);
+      let output: SpeechActionOutput | VoteActionOutput;
+      try {
+        output = await policy.act(input, { agentRoleId: actor.agentRoleId ?? actor.playerId });
+      } catch (error) {
+        if (error instanceof AgentSystemError) {
+          this.terminateForSystemError(gameId, snapshot, commandId, error.code, publicEvents);
+          return;
+        }
+        throw error;
+      }
 
       let transition: MachineTransition;
       let outputRecord: Record<string, unknown>;
@@ -377,6 +395,40 @@ export class GameService {
         privateAction,
       });
     }
+  }
+
+  private terminateForSystemError(
+    gameId: string,
+    snapshot: GameSnapshot,
+    failedActionId: string,
+    errorType: string,
+    publicEvents: readonly PublicTimelineItem[],
+  ) {
+    const commandId = `auto/${gameId}/${snapshot.revision}/system-terminated`;
+    if (this.games.findProcessedCommand(commandId)) return;
+    const transition = terminateForSystemErrorMachine(
+      snapshot,
+      {
+        type: 'TerminateForSystemError',
+        commandId,
+        gameId,
+        actorId: snapshot.humanPlayerId,
+        expectedRevision: snapshot.revision,
+        failedActionId,
+        errorType,
+      },
+      this.machineDeps(),
+    );
+    const timeline = [...publicEvents, ...this.games.publicTimelineWith(transition.events)];
+    const view = projectHumanGameView(transition.snapshot, timeline, undefined);
+    this.games.commitTransition({
+      previous: snapshot,
+      snapshot: transition.snapshot,
+      events: transition.events,
+      commandId,
+      requestHash: hashCommand({ commandId, errorType }),
+      response: view,
+    });
   }
 
   private machineDeps(): MachineDependencies {

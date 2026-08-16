@@ -94,3 +94,10 @@ export const agentActions = sqliteTable('agent_actions', {
   outputJson: text('output_json').notNull(),
   completedAt: text('completed_at').notNull(),
 });
+
+// 角色模型配置：仅存 role_id → model_id，绝不保存 Base URL 或 API Key。
+export const agentRoleModels = sqliteTable('agent_role_models', {
+  roleId: text('role_id').primaryKey(),
+  modelId: text('model_id').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});

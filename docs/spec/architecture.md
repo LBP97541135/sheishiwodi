@@ -1,7 +1,7 @@
 # 系统架构规格
 
-- 状态：开发基线
-- 适用范围：首版基础玩法；首个里程碑使用假模型
+- 状态：首个里程碑已实现基线
+- 适用范围：当前基础玩法使用假模型；真实模型与后台复盘待实现
 
 ## 1. 目标
 
@@ -9,7 +9,7 @@
 
 ## 2. 仓库结构
 
-工程初始化采用以下工作区边界：
+当前仓库使用以下工作区边界：
 
 ```text
 apps/
@@ -21,9 +21,11 @@ packages/
   word-pairs.json      版本化词库事实源
  tests/
   e2e/                 浏览器完整流程测试
+  live/                真实模型脱敏 smoke（run.mjs，仅 pnpm test:live）
+ .env.example           环境变量示例（不含真实值；真实 .env 为 gitignored）
 ```
 
-实际初始化时可以增加必要的配置目录，但必须遵守以下依赖方向：
+当前可以增加必要的配置目录，但必须遵守以下依赖方向：
 
 ```text
 apps/web ───────> packages/shared
@@ -109,9 +111,10 @@ Application 取得当前行动锁
 - 包管理和工作区工具固定为 pnpm workspace。
 - Fastify 默认只监听 `127.0.0.1`。
 - 首版不提供账户、登录、局域网访问或多用户并发控制。
-- 浏览器可访问的配置只能包含非敏感显示信息。
-- 中转站基础地址、认证密钥、参赛模型 ID 和复盘模型 ID 只能由服务端环境变量或服务端本地配置读取。
-- 仓库应提供不含真实值的环境变量示例；真实配置不得进入 Git、SQLite、日志、SSE、复盘或截图。
+- 浏览器可访问的配置只能包含非敏感显示信息（含可选的 model ID，DEC-085）。
+- 中转站基础地址、认证密钥只能由服务端环境变量读取，绝不下发浏览器或落库。角色/复盘 model ID 由服务端权威持有，其中参赛角色 model ID 可通过模型档案界面选择并持久化到 `agent_role_models`。
+- Provider 由 `AGENT_PROVIDER=fake|tokendance` 切换（默认 `fake`）；仅当为 `tokendance` 且 `TOKENDANCE_BASE_URL`、`TOKENDANCE_API_KEY` 均非空时才实例化真实策略，否则一律假模型。真实变量清单见 `agent-runtime.md` 第 11 节。
+- 仓库提供不含真实值的根 `.env.example`；真实 `.env`（gitignored）由负责人自填，真实配置不得进入 Git、SQLite、日志、SSE、复盘或截图。
 
 ## 7. 根脚本契约
 
@@ -125,7 +128,7 @@ Application 取得当前行动锁
 | `pnpm lint` | 执行静态检查 |
 | `pnpm test` | 运行不依赖密钥、网络和付费模型的默认测试 |
 | `pnpm test:e2e` | 使用假模型和临时 SQLite 跑浏览器完整流程 |
-| `pnpm test:live` | 显式执行真实模型验收；不得被其他脚本隐式调用 |
+| `pnpm test:live` | 显式执行真实模型验收（`node tests/live/run.mjs`）；env 不齐时明确失败，绝不静默走假模型，且不得被其他脚本隐式调用 |
 
 可以增加 `format`、数据库迁移或单包脚本。精确依赖版本在工程初始化时锁定，不在本规格中预设。
 

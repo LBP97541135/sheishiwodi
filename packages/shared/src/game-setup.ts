@@ -1,3 +1,4 @@
+import { agentRoles } from './agent-roles.js';
 import type { CreateGameCommand, StartGameCommand } from './commands.js';
 import type { GameEvent } from './events.js';
 import { gameSnapshotSchema, type GamePlayerState, type GameSnapshot } from './state.js';
@@ -25,12 +26,6 @@ export interface GameTransition {
   snapshot: GameSnapshot;
   events: GameEvent[];
 }
-
-const agentRoles = [
-  { roleId: 'deepseek', displayName: 'DeepSeek' },
-  { roleId: 'doubao', displayName: '豆包' },
-  { roleId: 'qwen', displayName: '千问' },
-] as const;
 
 const nextIndex = (random: RandomSource, length: number) => {
   const value = random.next();

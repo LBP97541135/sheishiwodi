@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-这是一个 AI 版“谁是卧底”本地全栈项目。当前产品规则、架构和首个里程碑规格已经确认，并已完成首个里程碑切片 1–4，正在实施切片 5。开发以 `docs/spec/` 为工程契约，以 `docs/tasks/TASKS.md` 和 `docs/tasks/milestone-1-checklist.md` 跟踪实时任务；不要从聊天归档或被替代的旧决策推断当前行为。
+这是一个 AI 版“谁是卧底”本地全栈项目。当前产品规则、架构和首个里程碑规格已经确认，首个里程碑七个切片（使用可控假模型的可持久化、可恢复基础玩法）已全部验收。当前正在里程碑之外推进：真实模型接入（Tokendance 中转站，DEC-085，代码与默认测试已落地，付费联网验收待负责人填 Key）与视觉媒体收口（TASK-045）。开发以 `docs/spec/` 为工程契约，以 `docs/tasks/TASKS.md` 和 `docs/tasks/milestone-1-checklist.md` 跟踪实时任务；不要从聊天归档或被替代的旧决策推断当前行为。
 
-当前首要目标是 `docs/acceptance/milestone-1.md` 定义的纵向最小闭环：使用可控假模型完成可持久化、可恢复的基础玩法。真实模型、异步 AI 复盘、重复泄词强退、场景与通用 UI 最终视觉素材和完整 30 组词库不属于首个里程碑；三个 AI 角色与两个人类剪影的已有素材按 `docs/notes/ASSETS.md` 接入。
+首个里程碑的纵向最小闭环见 `docs/acceptance/milestone-1.md`。真实模型现已接入但受 provider 开关约束：`AGENT_PROVIDER` 默认 `fake`，仅当为 `tokendance` 且 Base URL、API Key 均在服务端 env 就绪时才走真实策略；默认 `dev/test/test:e2e` 永不联网、不读 Key。模型档案界面可选择并持久化各角色 model ID（仅 model ID 可下发/落库；Base URL、API Key、请求头、完整模型响应绝不进入浏览器、数据库、日志、仓库或复盘）。异步 AI 复盘、重复泄词强退、场景与通用 UI 最终视觉素材仍不属当前范围；三个 AI 角色与两个人类剪影的已有素材按 `docs/notes/ASSETS.md` 接入。
 
 ## 常用命令
 

@@ -1,4 +1,7 @@
+import { loadDotEnv } from './config/env.js';
 import { buildServer, createRuntimeDependencies } from './server.js';
+
+loadDotEnv();
 
 for (const argument of process.argv.slice(2)) {
   if (argument.startsWith('--fake-agent-scenario=')) {

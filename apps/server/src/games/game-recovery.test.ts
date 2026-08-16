@@ -248,7 +248,7 @@ class FailOnActionPolicy implements AgentPolicy {
 
   constructor(private readonly failedAction: AgentTurnInput['actionType']) {}
 
-  act(input: AgentTurnInput): SpeechActionOutput | VoteActionOutput {
+  async act(input: AgentTurnInput): Promise<SpeechActionOutput | VoteActionOutput> {
     if (input.actionType === this.failedAction) throw new Error(`INTERRUPTED_${this.failedAction}`);
     return this.fallback.act(input);
   }
@@ -262,7 +262,7 @@ class CountingPolicy implements AgentPolicy {
   readonly actions: AgentTurnInput['actionType'][] = [];
   private readonly fallback = new FakeAgentPolicy();
 
-  act(input: AgentTurnInput): SpeechActionOutput | VoteActionOutput {
+  async act(input: AgentTurnInput): Promise<SpeechActionOutput | VoteActionOutput> {
     this.actions.push(input.actionType);
     return this.fallback.act(input);
   }

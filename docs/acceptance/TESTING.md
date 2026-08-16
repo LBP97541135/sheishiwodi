@@ -1,7 +1,7 @@
 # 测试与验收规格
 
-- 状态：开发基线
-- 适用范围：默认测试不访问真实模型
+- 状态：首个里程碑已验收基线；真实模型接入（Tokendance）与 `test:live` 脱敏 smoke 已实现，付费验收待负责人填 Key 后执行
+- 适用范围：默认测试（`test`/`test:e2e`）不访问真实模型；仅 `test:live` 显式联网
 
 ## 1. 测试原则
 
@@ -29,12 +29,12 @@
 - 重投再次平票无人淘汰。
 - 全员最高票直接无人淘汰，不产生辩解或重投。
 - 人类淘汰后进入观战选择，继续后不再获得行动权。
-- 主动放弃无 `winnerCamp`，系统异常终止无 `winnerCamp`。
+- 已实现主动放弃无 `winnerCamp`；系统异常终止（`system_terminated`，`endReason=model_failure_limit`）的无胜者边界已实现并有共享状态机与服务端集成测试覆盖。
 - 相同命令语义的幂等行为和过期修订号拒绝。
 
 ### 2.2 内容与 Agent Schema 单元测试
 
-必须覆盖：
+当前已覆盖内容校验和信念 Schema：
 
 - 2、40 字边界，少于 2 字和超过 40 字拒绝。
 - 一句、两句允许，超过两句拒绝。
@@ -44,7 +44,8 @@
 - 玩家概率覆盖所有存活玩家、包含自己、无重复 ID。
 - 概率总和读取 `undercoverCount`；用多卧底测试配置证明未写死为 1。
 - 投票目标只接受输入的 `legalTargets`。
-- 结构错误触发一次格式修复；修复失败后进入系统重试。
+
+已覆盖：`TokendanceAgentPolicy` 的结构错误一次格式修复、修复失败后有限系统重试（注入 Clock，不真实等待）、耗尽后抛脱敏 `AgentSystemError`（见 `tokendance-agent-policy.test.ts`），以及服务端捕获后终止为 `system_terminated`（见 `game-system-terminated.test.ts`）。
 
 ### 2.3 持久化集成测试
 
@@ -65,18 +66,18 @@
 
 - 所有 REST 请求/响应经过共享 Schema。
 - 当前行动者、阶段、目标和修订号错误返回正确安全错误码。
-- `HumanGameView` 在准备、进行中、淘汰观战和终局拥有正确字段集合。
+- `HumanGameView` 在准备、进行中、等待观战、观战继续后的进行中、正常终局和放弃终局拥有正确字段集合。
 - SSE 帧严格按 `streamSeq` 排序，可用 `Last-Event-ID` 补发并去重。
 - 投票完成进度帧不包含目标；最后一票后才出现一次 `votes_revealed`。
 - SSE 发送失败后事实仍可通过补取恢复。
 - 被拒绝描述、格式修复输出和失败模型尝试不进入公开事件接口。
-- 放弃与系统异常终止响应不包含阵营胜者。
+- 后续系统异常终止响应不包含阵营胜者；当前已实现放弃响应边界。
 
 ### 2.5 Web 组件与交互测试
 
 必须覆盖：
 
-- 名称、剪影、难度输入和未完成对局优先恢复。
+- 名称、剪影和难度输入；存在活动局时直接恢复当前对局，并阻止创建第二局。
 - 词牌默认隐藏、可翻面再隐藏、刷新后恢复隐藏且不发送翻牌命令。
 - 只有 `allowedCommands` 允许时显示对应输入。
 - 人类输入即时校验不替代服务端错误处理。
@@ -119,26 +120,61 @@
 
 测试夹具应使用明显的哨兵字符串作为私有值，并搜索所有输出通道，避免因字段改名漏检。
 
-## 4. 假模型场景库
+## 4. 当前假模型场景与测试构造
 
-假模型至少提供以下确定性剧本：
+当前代码中的 `FakeAgentScenario` 只有两个显式值：
 
-| 场景 | 用途 |
+| 场景 | 当前用途 |
 | --- | --- |
-| `normal-civilian-win` | 正常描述、投票、平民胜利 |
-| `normal-undercover-win` | 卧底存活至两人 |
-| `tie-then-eliminate` | 一次平票辩解与重投 |
-| `tie-again` | 重投仍平票，无人淘汰 |
-| `all-tied` | 全员最高票直接下一轮 |
-| `human-eliminated` | 观战与放弃两条分支 |
-| `invalid-structure-then-repair` | 一次格式修复成功 |
-| `transient-errors-then-success` | 系统重试进度与可注入时钟 |
-| `failure-limit` | 后续异常终止验收 |
-| `word-leak` | 内容拒绝且不进入公共通道 |
+| `normal` | 按座位生成确定性描述/辩解，普通投票或重投选择首个合法目标 |
+| `tie-then-eliminate` | E2E 构造一次部分平票、候选辩解和重投淘汰 |
 
-剧本输出必须包含合法信念快照，以便在不访问真实模型时验证私有存储和终局复盘数据结构。
+其他边界通过状态机命令、服务端测试策略和确定性随机序列构造，而不是独立 `FakeAgentScenario`：
 
-## 5. 首个里程碑验收清单
+| 测试构造 | 当前覆盖 |
+| --- | --- |
+| 手工提交投票目标 | 再次平票、全员最高票、两种胜负、观战选择 |
+| `FailOnActionPolicy` | AI 描述/投票中断后的服务重启恢复 |
+| `CountingPolicy` | 二次重启或重复恢复不再次调用 Agent |
+| SQLite 触发器故障注入 | 事件、私有动作、公开帧、快照和幂等结果的整事务回滚 |
+
+格式修复、有限系统重试、`model_failure_limit` 与 `system_terminated` 已实现，并由 `tokendance-agent-policy.test.ts`（策略级重试与脱敏错误）和 `game-system-terminated.test.ts`（服务端兜底终止）覆盖。真实付费联网仅在 `pnpm test:live` 触发。
+
+所有假模型输出包含合法信念快照，以便在不访问真实模型时验证私有存储和终局事实数据。
+
+## 5. 当前自动化测试清单
+
+### 5.1 Vitest
+
+`pnpm test` 当前共 104 项：shared 43、server 40、web 21。
+
+| 层 | 文件 | 主要覆盖 |
+| --- | --- | --- |
+| Shared | `commands.test.ts`、`api.test.ts` | 枚举、命令 Schema、默认名称、长度、修订号和 API 信封 |
+| Shared | `word-pairs.test.ts`、`content-validation.test.ts` | 词库集合、难度可用、规范化同词拒绝、描述/辩解字数句数与泄词校验 |
+| Shared | `agent.test.ts` | 信念覆盖存活玩家、概率总和与 ID 约束 |
+| Shared | `game-setup.test.ts`、`views.test.ts` | 创建/开始、四个卧底座位、公开投影和终局字段边界 |
+| Shared | `game-machine.test.ts` | 描述、秘密投票、淘汰胜负、平票辩解/重投、再次平票、观战和放弃 |
+| Server | `server.test.ts` | 健康、创建/读取/开始 API、幂等、活动局限制、数据库重开、回滚和修订冲突 |
+| Server | `game-flow.test.ts` | 完整服务端玩法、AI 自动推进、秘密揭票、两种胜负、平票、观战和放弃 |
+| Server | `game-repository.test.ts` | 五个写入位置的故障注入、整事务回滚和安全重试 |
+| Server | `game-recovery.test.ts` | 准备等待、AI 描述/投票重启恢复、稳定 actionId 和高水位损坏拒绝 |
+| Server | `agent-runtime.test.ts` | Agent 输入白名单、投票/重投目标边界和 `FakeAgentPolicy` 合法输出 |
+| Server | `game-stream.test.ts` | SSE/补取游标、`Last-Event-ID`、严格递增、去重和公开帧私有字段缺失 |
+| Web | `App.test.tsx` | 创建与准备恢复、本地翻牌、素材、开始游戏、最近终局恢复和 SSE 游标去重 |
+| Web | `GameScreen.test.tsx` | 描述、投票、辩解、重投、分镜、观战/放弃、终局揭晓和 DOM 隔离 |
+
+### 5.2 Playwright
+
+`pnpm test:e2e` 当前运行 3 个模式、5 条流程，并分别在 Desktop Chrome 与 Pixel 5 执行，共 10 项：
+
+- `normal.spec.ts`：完整正常对局、进行中刷新、终局恢复；进行中二次确认放弃。
+- `spectator.spec.ts`：人类淘汰后继续普通观战至终局；淘汰后放弃且无胜者。
+- `tie.spec.ts`：一次部分平票、候选辩解、非候选重投并淘汰。
+
+Playwright 每个模式使用独立临时 SQLite、确定性随机序列和真实本地 Web/Fastify，不访问真实模型。
+
+## 6. 首个里程碑验收清单
 
 ### 功能
 
@@ -175,15 +211,15 @@
 - [x] 默认命令未调用真实模型。
 - [x] README 包含本地启动、测试、信息隔离和已知问题。
 
-## 6. 真实模型验收
+## 7. 真实模型验收
 
-真实模型接入后才启用 `pnpm test:live`，且每次执行前需明确存在费用和有效本地配置。验收覆盖 DeepSeek、豆包、千问和复盘模型的真实描述、信念、投票、隔离与异步复盘。
+`pnpm test:live`（`node tests/live/run.mjs`）已可执行：它先从根 `.env` 载入 `AGENT_PROVIDER`、`TOKENDANCE_BASE_URL`、`TOKENDANCE_API_KEY` 与 smoke 用 model，校验 provider 为 `tokendance` 且 Base URL、API Key 均非空，缺任一即明确失败并退出（绝不静默走假模型）。校验通过后代理 `GET /models` 与一次最小 `POST /chat/completions`，输出仅打印 model 数量与回复字符数，绝不打印 URL/Key/请求头/完整响应。每次执行前需明确存在费用和有效本地配置。后续完整验收将覆盖 DeepSeek、豆包、千问和复盘模型的真实描述、信念、投票、隔离与异步复盘。
 
 成功后生成脱敏 Markdown 报告与关键截图，记录时间、模型标识、信息隔离断言、结构校验、耗时、重试次数和复盘结果。报告不得包含密钥、敏感中转地址、请求头、违规原文或无必要的完整响应。
 
-`test:live` 不得进入默认 CI、普通开发启动、`pnpm test` 或 `pnpm test:e2e`。
+`test:live` 不得进入默认 CI、普通开发启动、`pnpm test` 或 `pnpm test:e2e`。负责人自填真实 Key 于 gitignored `.env` 后方可执行付费联网验收。
 
-## 7. 来源
+## 8. 来源
 
 - 需求：[`REQUIREMENTS.md`](REQUIREMENTS.md) 第 27–29、73–80、106–145、167–192 条。
 - 决策：DEC-012 至 DEC-016、DEC-028 至 DEC-039、DEC-049 至 DEC-054、DEC-063、DEC-065 至 DEC-082。

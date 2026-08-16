@@ -16,6 +16,110 @@
     "enabled": true
   },
   {
+    "id": "easy-coffee-tea",
+    "civilianWord": "咖啡",
+    "undercoverWord": "奶茶",
+    "category": "饮品",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-rice-noodles",
+    "civilianWord": "米饭",
+    "undercoverWord": "面条",
+    "category": "主食",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-apple-pear",
+    "civilianWord": "苹果",
+    "undercoverWord": "梨",
+    "category": "水果",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-watermelon-cantaloupe",
+    "civilianWord": "西瓜",
+    "undercoverWord": "哈密瓜",
+    "category": "水果",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-pencil-pen",
+    "civilianWord": "铅笔",
+    "undercoverWord": "钢笔",
+    "category": "文具",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-phone-tablet",
+    "civilianWord": "手机",
+    "undercoverWord": "平板电脑",
+    "category": "数码",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-bus-subway",
+    "civilianWord": "公交车",
+    "undercoverWord": "地铁",
+    "category": "交通",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-bicycle-motorcycle",
+    "civilianWord": "自行车",
+    "undercoverWord": "摩托车",
+    "category": "交通",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-raincoat-umbrella",
+    "civilianWord": "雨衣",
+    "undercoverWord": "雨伞",
+    "category": "生活用品",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-toothbrush-comb",
+    "civilianWord": "牙刷",
+    "undercoverWord": "梳子",
+    "category": "生活用品",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-basketball-football",
+    "civilianWord": "篮球",
+    "undercoverWord": "足球",
+    "category": "运动",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-doctor-nurse",
+    "civilianWord": "医生",
+    "undercoverWord": "护士",
+    "category": "职业",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-school-hospital",
+    "civilianWord": "学校",
+    "undercoverWord": "医院",
+    "category": "场所",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
     "id": "hard-moon-sun",
     "civilianWord": "月亮",
     "undercoverWord": "太阳",
@@ -28,6 +132,110 @@
     "civilianWord": "地图",
     "undercoverWord": "指南针",
     "category": "工具",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-shadow-reflection",
+    "civilianWord": "影子",
+    "undercoverWord": "倒影",
+    "category": "自然现象",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-dream-memory",
+    "civilianWord": "梦境",
+    "undercoverWord": "回忆",
+    "category": "抽象概念",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-secret-rumor",
+    "civilianWord": "秘密",
+    "undercoverWord": "谣言",
+    "category": "信息",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-habit-instinct",
+    "civilianWord": "习惯",
+    "undercoverWord": "本能",
+    "category": "行为",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-applause-cheer",
+    "civilianWord": "掌声",
+    "undercoverWord": "欢呼",
+    "category": "声音",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-dusk-dawn",
+    "civilianWord": "黄昏",
+    "undercoverWord": "黎明",
+    "category": "时间",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-alley-corridor",
+    "civilianWord": "小巷",
+    "undercoverWord": "走廊",
+    "category": "空间",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-lock-key",
+    "civilianWord": "锁",
+    "undercoverWord": "钥匙",
+    "category": "物件",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-script-novel",
+    "civilianWord": "剧本",
+    "undercoverWord": "小说",
+    "category": "文学",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-interview-interrogation",
+    "civilianWord": "采访",
+    "undercoverWord": "审讯",
+    "category": "交流",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-clue-evidence",
+    "civilianWord": "线索",
+    "undercoverWord": "证据",
+    "category": "推理",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-promise-oath",
+    "civilianWord": "承诺",
+    "undercoverWord": "誓言",
+    "category": "语言行为",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-silence-calm",
+    "civilianWord": "沉默",
+    "undercoverWord": "平静",
+    "category": "状态",
     "difficulty": "hard",
     "enabled": true
   }

@@ -1,5 +1,7 @@
 export * from './agent.js';
+export * from './agent-roles.js';
 export * from './api.js';
+export * from './model-profile.js';
 export * from './commands.js';
 export * from './content-validation.js';
 export * from './enums.js';

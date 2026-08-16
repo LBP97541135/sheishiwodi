@@ -110,7 +110,7 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
       }
 
       try {
-        const view = gameService.startGame({
+        const view = await gameService.startGame({
           type: 'StartGame',
           gameId: request.params.gameId,
           ...parsed.data,
@@ -148,7 +148,7 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
       }
 
       try {
-        const view = gameService.submitDescription({
+        const view = await gameService.submitDescription({
           type: 'SubmitDescription',
           gameId: request.params.gameId,
           ...parsed.data,
@@ -182,7 +182,7 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
       }
 
       try {
-        const view = gameService.submitDefense({
+        const view = await gameService.submitDefense({
           type: 'SubmitDefense',
           gameId: request.params.gameId,
           ...parsed.data,
@@ -216,7 +216,7 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
       }
 
       try {
-        const view = gameService.submitVote({
+        const view = await gameService.submitVote({
           type: 'SubmitVote',
           gameId: request.params.gameId,
           ...parsed.data,
@@ -250,7 +250,7 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
       }
 
       try {
-        const view = gameService.continueSpectating({
+        const view = await gameService.continueSpectating({
           type: 'ContinueSpectating',
           gameId: request.params.gameId,
           ...parsed.data,
@@ -284,7 +284,7 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
       }
 
       try {
-        const view = gameService.abandonGame({
+        const view = await gameService.abandonGame({
           type: 'AbandonGame',
           gameId: request.params.gameId,
           ...parsed.data,
@@ -319,7 +319,7 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
     async (request, reply) => {
       let cursor = resolveStreamCursor(request.query.after, request.headers['last-event-id']);
 
-      gameService.resumeGame(request.params.gameId);
+      void gameService.resumeGame(request.params.gameId).catch(() => {});
 
       reply.raw.writeHead(200, {
         'Content-Type': 'text/event-stream',

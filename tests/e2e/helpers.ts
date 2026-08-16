@@ -5,8 +5,16 @@ export async function createAndStartGame(page: Page, name: string) {
   await page.getByLabel('你的名字').fill(name);
   await page.getByRole('button', { name: '开始新对局' }).click();
   await expect(page.getByRole('heading', { name: '记住你的词牌' })).toBeVisible();
-  await page.getByRole('button', { name: '我已记住，开始游戏' }).click();
-  await expect(page.getByRole('heading', { name: /第 1 轮|对局结束/ })).toBeVisible();
+  const startButton = page.getByRole('button', { name: '我已记住，开始游戏' });
+  const startedHeading = page.getByRole('heading', { name: /第 1 轮|对局结束/ });
+  // 极少数情况下首次点击会在 busy 尚未落定或事件句柄尚未就绪时被吞掉，
+  // 导致对局停留在准备阶段。这里重试点击“开始游戏”，直到进入对局界面。
+  await expect(async () => {
+    if (await startButton.isVisible().catch(() => false)) {
+      await startButton.click();
+    }
+    await expect(startedHeading).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 export async function playUntilTerminalOrSpectator(page: Page) {
@@ -60,34 +68,36 @@ export async function playUntilTerminalOrSpectator(page: Page) {
 }
 
 export async function finishCurrentTerminalAndStartNewGame(page: Page) {
-  for (let step = 0; step < 2; step += 1) {
-    const newGameButton = page.getByRole('button', { name: '开始新对局' });
-    if (await newGameButton.isVisible().catch(() => false)) {
-      await newGameButton.click();
-      break;
-    }
-    const gameId = await page.evaluate(() => localStorage.getItem('sheishiwodi:last-game-id'));
-    if (!gameId) break;
-    const status = await page.evaluate(async (id) => {
-      const response = await fetch(`/api/games/${id}`);
-      return (await response.json()).data.status as string;
-    }, gameId);
-    if (status === 'awaiting_spectator') {
-      await page.evaluate(async (id) => {
-        const view = await fetch(`/api/games/${id}`).then((response) => response.json()).then((body) => body.data);
-        await fetch(`/api/games/${id}/abandon`, {
+  // 优先走终局的“开始新对局”按钮；若当前是仍在进行/准备/等待观战的活动局，
+  // 则直接放弃它，保证跨用例的对局隔离（共享 SQLite 下前一用例的残留不会污染后续）。
+  const newGameButton = page.getByRole('button', { name: '开始新对局' });
+  if (await newGameButton.isVisible().catch(() => false)) {
+    await newGameButton.click();
+  } else {
+    await page.evaluate(async () => {
+      const readView = async (id: string) =>
+        fetch(`/api/games/${id}`).then((response) => response.json()).then((body) => body.data);
+      const active = await fetch('/api/games/active')
+        .then((response) => response.json())
+        .then((body) => body.data?.game ?? null);
+      let target = active;
+      if (!target) {
+        const id = localStorage.getItem('sheishiwodi:last-game-id');
+        target = id ? await readView(id) : null;
+      }
+      if (target && ['preparing', 'in_progress', 'awaiting_spectator'].includes(target.status)) {
+        await fetch(`/api/games/${target.gameId}/abandon`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             commandId: crypto.randomUUID(),
-            actorId: view.human.playerId,
-            expectedRevision: view.revision,
+            actorId: target.human.playerId,
+            expectedRevision: target.revision,
             confirmed: true,
           }),
         });
-      }, gameId);
-      await page.reload();
-    }
+      }
+    });
   }
   await page.evaluate(() => localStorage.removeItem('sheishiwodi:last-game-id'));
   await page.reload();

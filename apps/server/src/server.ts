@@ -5,14 +5,22 @@ import { randomInt, randomUUID } from 'node:crypto';
 
 import Fastify from 'fastify';
 
-import type { Clock, IdSource, RandomSource } from '@sheishiwodi/shared';
+import { agentRoleIds, type Clock, type IdSource, type RandomSource } from '@sheishiwodi/shared';
 
 import { createDatabase, type AppDatabase } from './db/client.js';
 import { migrateDatabase } from './db/migrate.js';
 import { WordPairRepository } from './db/word-pair-repository.js';
+import { AgentRoleModelRepository } from './db/agent-role-model-repository.js';
 import { FakeAgentPolicy, type FakeAgentScenario } from './agents/fake-agent-policy.js';
+import { TokendanceClient } from './agents/tokendance-client.js';
+import { TokendanceAgentPolicy } from './agents/tokendance-agent-policy.js';
+import {
+  ModelProfileService,
+  type ModelProviderContext,
+} from './agents/model-profile-service.js';
 import type { AgentPolicy } from './agents/agent-policy.js';
 import { registerGameRoutes } from './games/game-routes.js';
+import { registerModelRoutes } from './games/model-routes.js';
 import { GameRepository } from './games/game-repository.js';
 import { GameService } from './games/game-service.js';
 
@@ -22,6 +30,8 @@ export interface ServerDependencies {
   ids: IdSource;
   clock: Clock;
   agentPolicyFactory?: () => AgentPolicy;
+  modelProvider?: ModelProviderContext;
+  roleModelRepository?: AgentRoleModelRepository;
 }
 
 export function buildServer(dependencies?: ServerDependencies) {
@@ -39,8 +49,21 @@ export function buildServer(dependencies?: ServerDependencies) {
     runtime,
   );
   registerGameRoutes(server, gameService);
+
+  const roleModelRepository =
+    runtime.roleModelRepository ?? new AgentRoleModelRepository(runtime.database);
+  const modelProvider: ModelProviderContext =
+    runtime.modelProvider ?? { mode: 'fake', configured: false, client: null };
+  const modelProfileService = new ModelProfileService(
+    roleModelRepository,
+    modelProvider,
+    gameService,
+    runtime.clock,
+  );
+  registerModelRoutes(server, modelProfileService);
+
   server.addHook('onReady', async () => {
-    gameService.resumeActiveGame();
+    await gameService.resumeActiveGame();
   });
 
   return server;
@@ -61,6 +84,13 @@ export function createRuntimeDependencies(): ServerDependencies {
   const randomValues = parseFakeRandomSequence(process.env['FAKE_RANDOM_SEQUENCE']);
   let randomCursor = 0;
 
+  const clock: Clock = { now: () => new Date().toISOString() };
+  const roleModelRepository = new AgentRoleModelRepository(database);
+  const { agentPolicyFactory, modelProvider } = resolveAgentProvider(
+    roleModelRepository,
+    fakeScenario,
+  );
+
   return {
     database,
     random: {
@@ -69,10 +99,53 @@ export function createRuntimeDependencies(): ServerDependencies {
     ids: {
       nextId: () => randomUUID(),
     },
-    clock: {
-      now: () => new Date().toISOString(),
-    },
-    agentPolicyFactory: () => new FakeAgentPolicy(fakeScenario),
+    clock,
+    agentPolicyFactory,
+    modelProvider,
+    roleModelRepository,
+  };
+}
+
+/**
+ * 按 env 决定 Agent 提供方：仅当 AGENT_PROVIDER=tokendance 且 Base URL 与 API Key 均非空时
+ * 才实例化真实策略；其余一律 FakeAgentPolicy。Key/URL 只在此处进入内存，绝不外泄。
+ */
+function resolveAgentProvider(
+  roleModelRepository: AgentRoleModelRepository,
+  fakeScenario: FakeAgentScenario,
+): { agentPolicyFactory: () => AgentPolicy; modelProvider: ModelProviderContext } {
+  const provider = (process.env['AGENT_PROVIDER'] ?? 'fake').trim();
+  const baseUrl = (process.env['TOKENDANCE_BASE_URL'] ?? '').trim();
+  const apiKey = (process.env['TOKENDANCE_API_KEY'] ?? '').trim();
+  const defaultModel = (process.env['TOKENDANCE_DEFAULT_MODEL'] ?? '').trim();
+  const useTokendance = provider === 'tokendance' && baseUrl.length > 0 && apiKey.length > 0;
+
+  if (!useTokendance) {
+    return {
+      agentPolicyFactory: () => new FakeAgentPolicy(fakeScenario),
+      modelProvider: {
+        mode: provider === 'tokendance' ? 'tokendance' : 'fake',
+        configured: false,
+        client: null,
+      },
+    };
+  }
+
+  const client = new TokendanceClient({ baseUrl, apiKey });
+  const buildRoleModelMap = (): Record<string, string> => {
+    const selections = roleModelRepository.listSelections();
+    const map: Record<string, string> = {};
+    for (const roleId of agentRoleIds) {
+      const modelId = selections[roleId] ?? (defaultModel.length > 0 ? defaultModel : undefined);
+      if (modelId) map[roleId] = modelId;
+    }
+    return map;
+  };
+
+  return {
+    agentPolicyFactory: () =>
+      new TokendanceAgentPolicy({ client, roleModelMap: buildRoleModelMap() }),
+    modelProvider: { mode: 'tokendance', configured: true, client },
   };
 }
 

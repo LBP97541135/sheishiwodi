@@ -69,7 +69,12 @@ export const gameSnapshotSchema = z
     resumeAfterSpectating: roundStateSchema.optional(),
     winnerCamp: campSchema.optional(),
     endReason: z
-      .enum(['undercover_eliminated', 'undercover_survived_to_two', 'abandoned_by_human'])
+      .enum([
+        'undercover_eliminated',
+        'undercover_survived_to_two',
+        'abandoned_by_human',
+        'model_failure_limit',
+      ])
       .optional(),
   })
   .strict();

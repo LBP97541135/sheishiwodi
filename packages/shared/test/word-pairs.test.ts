@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { wordPairCollectionSchema } from '../src/index.js';
@@ -50,5 +52,18 @@ describe('词库集合', () => {
 
   it('拒绝缺少启用困难词的集合', () => {
     expect(wordPairCollectionSchema.safeParse([validPairs[0]]).success).toBe(false);
+  });
+
+  it('首版事实源包含简单和困难各 15 组且全部启用', () => {
+    const source = JSON.parse(
+      readFileSync(new URL('../../../data/word-pairs.json', import.meta.url), 'utf8'),
+    ) as unknown;
+    const pairs = wordPairCollectionSchema.parse(source);
+
+    expect(pairs).toHaveLength(30);
+    expect(pairs.filter((pair) => pair.difficulty === 'easy')).toHaveLength(15);
+    expect(pairs.filter((pair) => pair.difficulty === 'hard')).toHaveLength(15);
+    expect(pairs.every((pair) => pair.enabled)).toBe(true);
+    expect(new Set(pairs.map((pair) => `${pair.civilianWord}/${pair.undercoverWord}`)).size).toBe(30);
   });
 });

@@ -2,7 +2,10 @@ import {
   activeGameDataSchema,
   apiErrorResponseSchema,
   apiSuccessSchema,
+  availableModelListSchema,
   humanGameViewSchema,
+  modelProfileListSchema,
+  modelProfileSchema,
   type AbandonGameRequest,
   type ContinueSpectatingRequest,
   type CreateGameRequest,
@@ -108,3 +111,22 @@ export async function abandonGame(gameId: string, input: AbandonGameRequest) {
 }
 
 export type { HumanGameView };
+
+export async function getModelProfiles() {
+  const body = await request('/api/model-profiles');
+  return apiSuccessSchema(modelProfileListSchema).parse(body).data;
+}
+
+export async function getModels() {
+  const body = await request('/api/models');
+  return apiSuccessSchema(availableModelListSchema).parse(body).data;
+}
+
+export async function updateModelSelection(roleId: string, modelId: string) {
+  const body = await request(`/api/model-profiles/${roleId}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ modelId }),
+  });
+  return apiSuccessSchema(modelProfileSchema).parse(body).data;
+}

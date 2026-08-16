@@ -143,18 +143,18 @@ describe('Agent 输入投影', () => {
 });
 
 describe('FakeAgentPolicy', () => {
-  it('确定性生成合法描述并记录输入', () => {
+  it('确定性生成合法描述并记录输入', async () => {
     const { snapshot, agent } = createAgentTurn();
     const input = projectAgentTurnInput(snapshot, agent.playerId, [], []);
     const policy = new FakeAgentPolicy();
-    const output = policy.act(input);
+    const output = await policy.act(input);
 
     expect(output).toHaveProperty('text');
     expect(policy.receivedInputs).toEqual([input]);
     expect(policy.priorBeliefs(agent.playerId)).toHaveLength(1);
   });
 
-  it('确定性生成合法辩解和候选范围内的重投', () => {
+  it('确定性生成合法辩解和候选范围内的重投', async () => {
     const { snapshot } = createAgentTurn();
     const agents = snapshot.players.filter((player) => player.kind === 'agent');
     const defender = agents[0]!;
@@ -175,7 +175,7 @@ describe('FakeAgentPolicy', () => {
       [],
       [],
     );
-    const defense = policy.act(defenseInput);
+    const defense = await policy.act(defenseInput);
     expect(defense).toHaveProperty('text');
 
     const revoter = agents[1]!;
@@ -194,7 +194,7 @@ describe('FakeAgentPolicy', () => {
       [],
       policy.priorBeliefs(revoter.playerId),
     );
-    const revote = policy.act(revoteInput);
+    const revote = await policy.act(revoteInput);
     expect(revote).toMatchObject({ targetPlayerId: candidates[0] });
     expect(candidates).toContain((revote as { targetPlayerId: string }).targetPlayerId);
   });

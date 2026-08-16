@@ -105,3 +105,24 @@
 | TASK-043 收口里程碑文档与验收 | 已完成 | 全部门禁、桌面/移动代表性验收、README/checklist/LOG 收口 | M1 切片 7 | 默认测试 104 项、E2E 10 项、build/typecheck/lint/diff 全通过；README、TESTING、checklist、PROJECT_LOG 已收口；七切片全部完成，未提交或推送 |
 
 ## 里程碑之外
+
+| 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
+| --- | --- | --- | --- | --- |
+| TASK-044 扩充首版完整词库 | 已完成 | 将版本化词库从里程碑 4 组子集扩充为 30 组；简单/困难各 15 组；人工审核固定阵营、公平性、描述空间与泄词风险 | REQUIREMENTS 词库、DEC-075/076、SPEC persistence | `data/word-pairs.json` 30 组；`word-pairs.test.ts` 增加事实源数量/难度/启用/唯一性断言；文件级结构核对通过，完整命令门禁待本机执行环境恢复后补跑 |
+| TASK-045 视觉与媒体收口 | 进行中 | 接入 BGM 与开关；整理五角色五状态素材；完善视觉/无障碍；支持默认纸面与审讯室背景切换 | frontend UX、ASSETS、负责人 2026-08-16 指令 | 待产出 Web 设置控件、媒体生命周期、背景主题、组件测试、桌面/移动验证与 LOG |
+
+## 真实模型接入（DEC-085）
+
+负责人 2026-08-16 指令：接入 Tokendance（OpenAI 兼容中转站）真实模型，服务端 env 配 Base URL + API Key（Key 由负责人自填），并在模型档案界面为三个 AI 身份选择并持久化 model ID。硬边界：Key/URL 只在服务端 env，绝不进入浏览器、数据库、日志、仓库或复盘；默认 `dev/test/test:e2e` 永不联网。
+
+| 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
+| --- | --- | --- | --- | --- |
+| TASK-046 共享层角色真源与 model schema | 已完成 | 固化 `agent-roles.ts` 角色真源（roleId/displayName/personalityTags[3]/personalityPrompt）；新增 `model-profile.ts` 的 profile/list/update Zod schema 并从 `index.ts` 导出 | DEC-085、SPEC frontend §5 | `packages/shared/src/agent-roles.ts`、`model-profile.ts`；shared 单测通过 |
+| TASK-047 AgentPolicy 异步化 | 已完成 | `AgentPolicy.act` 改 `Promise` 签名；`FakeAgentPolicy` 与服务端推进链全部 `await`；行为不变 | SPEC architecture、agent-runtime | `agent-policy.ts`、`fake-agent-policy.ts`、`game-service.ts` await 链；既有回归全绿 |
+| TASK-048 Tokendance 客户端、真实策略与错误兜底 | 已完成 | `tokendance-client.ts`（fetch+AbortController 超时、脱敏错误分类）；`tokendance-agent-policy.ts`（分层 prompt、复用输出 schema、一次格式修复 + 有限系统重试可注入 Clock、耗尽抛脱敏 `AgentSystemError`）；`GameService` 捕获后经 `TerminateForSystemError` 终止为 `system_terminated`/`model_failure_limit`（DEC-072） | DEC-085、DEC-072、DEC-034 | `tokendance-client.ts`、`tokendance-agent-policy.ts`+`.test.ts`、`game-machine.ts` `terminateForSystemError`、`game-system-terminated.test.ts`；shared/server 单测通过，事件不含 Key/URL/Bearer |
+| TASK-049 数据库角色模型配置表 | 已完成 | 新增 server-only `agent_role_models(role_id PK, model_id, updated_at)`；`agent-role-model-repository.ts` 读写并回退默认；确认不进入任何 `HumanGameView` 投影 | SPEC persistence §2.9 | `db/schema.ts`、`migrate.ts`、`agent-role-model-repository.ts` |
+| TASK-050 DI 与 env 配置加载 | 已完成 | `.env` 加载（缺文件不报错）；`AGENT_PROVIDER`/`TOKENDANCE_BASE_URL`/`TOKENDANCE_API_KEY` 读取；provider 开关按 Key 决定 Fake/Tokendance，默认 fake；根 `.env.example`（Key 留空） | DEC-085、SPEC architecture §6 | `apps/server/src/config/`、`main.ts`、`server.ts`、`.env.example` |
+| TASK-051 模型档案 REST 路由 | 已完成 | `GET /api/model-profiles`、`GET /api/models`（服务端代理，仅回 id）、`PUT /api/model-profiles/:roleId`（活动局 409、未知角色 404）；响应不含 URL/Key/请求头 | SPEC api §4.6 | `model-routes.ts`+`.test.ts`、`model-profile-service.ts` |
+| TASK-052 前端模型档案界面 | 已完成 | `App.tsx` 增 `topView` 导航；`ModelProfiles.tsx` 三卡展示头像/标签/人格 prompt/model 下拉，禁展 URL/Key，fake 或活动局禁用选择 | SPEC frontend §3/§5 | `App.tsx`、`api.ts`、`ModelProfiles.tsx`+`.test.tsx` |
+| TASK-053 文档与决策先行 | 已完成 | 落 DEC-085；同步 REQUIREMENTS、frontend-ux、agent-runtime、architecture、persistence、api-and-events、TESTING、CLAUDE 状态；登记本轮台账与检查点 | DEC-085、GOV | DECISIONS DEC-085；上述规格与验收文档已更新；本节与 checklist 已登记 |
+| TASK-054 test:live 与全量验证 | 进行中 | `test:live` 可执行冒烟入口（缺 env 显式失败、绝不静默走假模型、脱敏输出）；`pnpm build/typecheck/lint/test/test:e2e` 全绿并断言 E2E 未实例化真实策略、无出网 | DEC-085、TEST §7 | `tests/live/run.mjs`、`package.json`；单测新增策略/路由/组件/负向隔离；全量门禁待本机执行环境复跑确认 |

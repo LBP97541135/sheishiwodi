@@ -9,6 +9,9 @@ import {
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
+  // 等待应用完成挂载再判断当前视图：顶部导航仅在 loadState 就绪后渲染，
+  // 避免冷启动（首个用例）时 React 尚未挂载被误判为“无表单需清理”。
+  await expect(page.getByRole('button', { name: '模型档案' })).toBeVisible();
   if (!(await page.getByLabel('你的名字').isVisible().catch(() => false))) {
     await finishCurrentTerminalAndStartNewGame(page);
   }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import type {
   CreateGameRequest,
@@ -19,10 +19,13 @@ import {
   submitVote,
 } from './api';
 import { GameScreen } from './components/GameScreen';
+import { ExperienceControls, useExperienceSettings } from './experience-settings';
+import { ModelProfiles } from './components/ModelProfiles';
 import { NewGameForm } from './components/NewGameForm';
 import { PreparingGame } from './components/PreparingGame';
 
 type LoadState = 'loading' | 'ready' | 'failed';
+type TopView = 'game' | 'model-profiles';
 
 const LAST_GAME_KEY = 'sheishiwodi:last-game-id';
 
@@ -48,8 +51,17 @@ export function App() {
   const [game, setGame] = useState<HumanGameView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [topView, setTopView] = useState<TopView>('game');
+  // 首帧一次性捕获待恢复的最近对局 ID（在任何 effect 之前），
+  // 以便持久化 effect 的空态分支可以安全地清除 key 而不影响恢复。
+  const [restoredLastGameId] = useState<string | null>(() =>
+    typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_GAME_KEY) : null,
+  );
   const gameRef = useRef<HumanGameView | null>(null);
   const eventCursorRef = useRef(0);
+  // 背景音乐在整个应用（含主页、模型档案）持续播放，由顶部开关与浏览器自动播放解锁控制。
+  const shouldPlayBgm = true;
+  const experience = useExperienceSettings(shouldPlayBgm);
   gameRef.current = game;
   eventCursorRef.current = game?.eventCursor ?? 0;
 
@@ -59,7 +71,7 @@ export function App() {
       .then(async (activeGame) => {
         if (controller.signal.aborted) return null;
         if (activeGame) return activeGame;
-        const lastGameId = localStorage.getItem(LAST_GAME_KEY);
+        const lastGameId = restoredLastGameId;
         if (!lastGameId) return null;
         try {
           const lastGame = await getGame(lastGameId);
@@ -83,10 +95,11 @@ export function App() {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [restoredLastGameId]);
 
   useEffect(() => {
     if (game?.gameId) localStorage.setItem(LAST_GAME_KEY, game.gameId);
+    else localStorage.removeItem(LAST_GAME_KEY);
   }, [game?.gameId]);
 
   const refresh = useCallback((gameId: string) => {
@@ -261,15 +274,53 @@ export function App() {
   }
 
   return (
-    <main className="shell">
-      <section className="storyboard">
-        {renderStage()}
-        {game?.status !== 'in_progress' && game?.status !== 'finished' && error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
-      </section>
+    <main
+      className={`shell shell--${experience.backgroundTheme}`}
+      style={
+        experience.backgroundImage
+          ? ({ '--scene-background': experience.backgroundImage } as CSSProperties)
+          : undefined
+      }
+    >
+      <div className="app-chrome">
+        <nav className="top-nav" aria-label="主导航">
+          <button
+            type="button"
+            className={topView === 'game' ? 'top-nav__link is-active' : 'top-nav__link'}
+            aria-current={topView === 'game' ? 'page' : undefined}
+            onClick={() => setTopView('game')}
+          >
+            对局
+          </button>
+          <button
+            type="button"
+            className={topView === 'model-profiles' ? 'top-nav__link is-active' : 'top-nav__link'}
+            aria-current={topView === 'model-profiles' ? 'page' : undefined}
+            onClick={() => setTopView('model-profiles')}
+          >
+            模型档案
+          </button>
+        </nav>
+        <ExperienceControls
+          audioEnabled={experience.audioEnabled}
+          audioNotice={experience.audioNotice}
+          backgroundTheme={experience.backgroundTheme}
+          onToggleAudio={experience.toggleAudio}
+          onBackgroundChange={experience.changeBackground}
+        />
+      </div>
+      {topView === 'model-profiles' ? (
+        <ModelProfiles onBack={() => setTopView('game')} />
+      ) : (
+        <section className="storyboard">
+          {renderStage()}
+          {game?.status !== 'in_progress' && game?.status !== 'finished' && error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+        </section>
+      )}
     </main>
   );
 

@@ -920,7 +920,7 @@ class TiePolicy implements AgentPolicy {
     this.revoteMap = options.revoteMap ?? {};
   }
 
-  act(input: AgentTurnInput): SpeechActionOutput | VoteActionOutput {
+  async act(input: AgentTurnInput): Promise<SpeechActionOutput | VoteActionOutput> {
     this.actionTypes.push(input.actionType);
     const belief = this.belief(input);
     if (input.actionType === 'describe') {

@@ -1,7 +1,7 @@
 # Agent 运行时规格
 
-- 状态：开发基线
-- 适用范围：首个里程碑使用可控假模型；接口兼容后续真实模型
+- 状态：假模型运行时已实现；真实模型（Tokendance 中转）与错误兜底已实现
+- 适用范围：`FakeAgentPolicy` 与统一中转 `TokendanceAgentPolicy`（由 `AGENT_PROVIDER` 切换）
 
 ## 1. 目标
 
@@ -10,21 +10,26 @@
 ## 2. 组件边界
 
 ```text
-Game Orchestrator
-  -> AgentInputProjector
-  -> AgentPolicy（FakeAgentPolicy | ModelAgentPolicy）
-  -> AgentOutputValidator
-  -> Domain Command
+GameService.advanceUntilHumanOrStop（已实现）
+  -> buildAgentTurnInput（已实现）
+  -> AgentPolicy（FakeAgentPolicy 或 TokendanceAgentPolicy）
+  -> shared 输出/信念 Schema 校验（已实现）
+  -> Domain Command（已实现）
+
+真实模型链路（已实现）：
+  -> TokendanceAgentPolicy（OpenAI 兼容中转）
+  -> 一次格式修复 + 有限系统重试（可注入 Clock）
+  -> AgentSystemError -> GameService 兜底 terminateForSystemError -> system_terminated
 ```
 
-| 组件 | 职责 |
+| 组件 | 当前状态与职责 |
 | --- | --- |
-| `AgentInputProjector` | 从权威状态生成某一 Agent 的最小输入白名单 |
-| `AgentPolicy` | 根据输入返回结构化信念和行动提案 |
-| `FakeAgentPolicy` | 按测试脚本确定性返回，不访问网络 |
-| `ModelAgentPolicy` | 通过统一 OpenAI 兼容客户端调用指定模型 ID |
-| `AgentOutputValidator` | 执行 Zod、概率、目标、内容和阶段校验 |
-| `Game Orchestrator` | 决定何时调用、重试、提交命令或异常终止 |
+| `buildAgentTurnInput` | 已实现；从权威状态生成某一 Agent 的最小输入白名单 |
+| `AgentPolicy` | 已实现接口；根据输入返回结构化信念和行动提案 |
+| `FakeAgentPolicy` | 已实现；支持 `normal` 与 `tie-then-eliminate` 两个显式场景，不访问网络 |
+| `TokendanceAgentPolicy` | 已实现；通过统一 OpenAI 兼容客户端按角色 `modelId` 调用；含一次格式修复与有限系统重试，耗尽后抛脱敏 `AgentSystemError` |
+| shared 输出校验 | 已实现；执行 Zod、概率、目标和内容校验 |
+| `GameService` | 已实现假/真模型自动推进、停止条件、持久化、恢复，以及 `AgentSystemError` 兜底为 `system_terminated` |
 
 策略实现不得直接读取数据库。编排层先生成不可变 `AgentTurnInput`，策略只能读取该对象。
 
@@ -37,7 +42,7 @@ agentRoleId
 displayName
 personalityTags[3]
 personalityPrompt
-modelId（仅服务端配置）
+modelId（服务端权威；可在"模型档案"界面选择并持久化，仅下发 model ID，见 DEC-085）
 ```
 
 首版固定 DeepSeek、豆包、千问三个显示角色。三者共享完全相同的规则、输入字段、输出 Schema、校验和调用参数基线，只增加简短轻人格提示。人格提示不得：
@@ -171,9 +176,9 @@ VoteActionOutput
 
 首个里程碑必须实现校验器及“拒绝后不发布”的契约；连续两次泄词强退在后续里程碑实现。
 
-## 9. 结构修复与系统重试
+## 9. 结构修复与系统重试（已实现）
 
-每个真实模型动作的流程：
+`TokendanceAgentPolicy` 实现以下契约（`FakeAgentPolicy` 不涉及网络，不走此路径）：
 
 ```text
 初始模型调用
@@ -188,23 +193,39 @@ VoteActionOutput
 - 等待通过可注入 `Clock` 实现，测试不真实等待。
 - 所有尝试复用同一个稳定 `actionId`；失败尝试不得生成公开领域行动。
 - 若 `baseRevision` 在调用期间变化，结果作废并依据新状态重新判断，不能提交旧动作。
-- 三次重试后进入不可恢复 `system_terminated`，不判阵营胜负。
+- 三次重试后进入不可恢复 `system_terminated`，不判阵营胜负。`TokendanceAgentPolicy.act` 抛出脱敏 `AgentSystemError`（如 `MODEL_NOT_CONFIGURED`、`CALL_FAILED`、`FORMAT_INVALID`），`GameService.runAdvanceLoop` 捕获后提交 `TerminateForSystemError`，状态机进入 `system_terminated`、`endReason=model_failure_limit`；异常不外泄为 500。
 
 ## 10. 假模型契约
 
-`FakeAgentPolicy` 必须：
+当前 `FakeAgentPolicy` 实际支持：
 
-- 实现与真实模型策略相同的输入和输出类型。
-- 根据 `gameId/round/actionType/actorId` 或测试注入脚本确定性选择输出。
-- 支持脚本化正常描述、投票、平票、再次平票、格式错误、泄词、网络错误和重试后成功。
-- 记录收到的 `AgentTurnInput` 供信息隔离断言。
-- 不读取环境密钥、不访问网络、不通过随机返回掩盖测试意图。
+- 与真实策略共用 `AgentTurnInput` 和结构化输出类型。
+- `normal`：按座位产生确定性描述/辩解，投给首个合法目标。
+- `tie-then-eliminate`：首轮构造部分平票，并在重投选择首个平票候选。
+- 保存收到的输入和每个 Agent 的信念历史，供隔离测试与终局事实复盘。
+- 不读取环境密钥、不访问网络。
+
+`tie-again`、`all-tied`、`human-eliminated` 目前由共享/服务端测试通过确定性投票或随机序列覆盖，不是 `FakeAgentScenario` 的独立枚举。格式修复、瞬时错误、失败上限和系统异常终止尚未实现。
 
 默认开发、单元、集成和端到端测试只使用假模型。
 
-## 11. 真实模型与复盘 Agent
+## 11. 真实模型接入与配置（Tokendance 中转）
 
-后续真实模型接入共用一个 OpenAI 兼容基础地址、认证密钥、客户端、超时和错误映射，仅通过角色 `modelId` 区分。`pnpm test:live` 必须显式触发，不能被 `dev`、`build`、`test` 或 `test:e2e` 调用。
+真实模型通过统一 OpenAI 兼容中转站接入，所有参赛角色与复盘 Agent 共用同一基础地址、认证密钥、客户端、超时和错误映射，仅通过角色 `modelId` 区分。参见 DEC-085。
+
+服务端环境变量（只在服务端 env，绝不进入浏览器、数据库、日志、仓库或复盘）：
+
+```text
+AGENT_PROVIDER=fake|tokendance   # 默认 fake；仅当为 tokendance 且 Base URL、API Key 均非空时才实例化真实策略
+TOKENDANCE_BASE_URL=https://tokendance.space/gateway/v1
+TOKENDANCE_API_KEY=              # 由负责人自填于 gitignored .env，禁止写入仓库
+TOKENDANCE_DEFAULT_MODEL=        # 角色缺持久化 modelId 时的回退默认
+```
+
+- Provider 开关默认 `fake`；`dev`、`test`、`test:e2e` 恒为假模型，绝不联网、不读 Key。仅 `pnpm test:live` 显式触发真实调用。
+- 可下发到浏览器并持久化的只有 model ID；Base URL、API Key、请求头、完整模型响应绝不下发或落库（继承 DEC-082/DEC-052）。
+- 角色 `modelId` 持久化于 server-only 表 `agent_role_models`；存在活动局（`in_progress` / `awaiting_spectator`）时拒绝改配置。
+- 错误兜底：一次格式修复（DEC-034）→ 有限系统重试 → `system_terminated`（DEC-072），见第 9 节。
 
 复盘 Agent 使用独立 `modelId`、提示模板和完整终局上下文，但复用同一连接。它只能在终局事实持久化后运行，其输出与确定性事实分开保存和展示。本规格暂不固定异步队列表结构。
 

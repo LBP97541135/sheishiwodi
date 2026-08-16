@@ -1,6 +1,6 @@
 # API 与事件流规格
 
-- 状态：开发基线
+- 状态：首个里程碑基线与模型档案路由已实现；真实模型错误事件端点部分待实现
 - 适用范围：本机单用户 REST + SSE
 
 ## 1. 总则
@@ -50,7 +50,7 @@
 | 409 | `INVALID_TRANSITION` | 当前状态或阶段不允许该命令 |
 | 409 | `IDEMPOTENCY_CONFLICT` | 相同命令 ID 携带不同请求语义 |
 | 422 | `CONTENT_REJECTED` | 原词泄露等内容规则拒绝；不回显违规原文 |
-| 503 | `MODEL_ACTION_FAILED` | 当前模型动作正在重试或最终失败后的脱敏结果 |
+| 503 | `MODEL_ACTION_FAILED` | 预留给后续真实模型重试；当前假模型链路的未分类策略异常返回安全 `INTERNAL_ERROR` |
 | 500 | `INTERNAL_ERROR` | 未分类服务错误；不得泄露堆栈或敏感配置 |
 
 错误详情只能包含安全的字段名、允许值、修订号、错误类别和重试进度。
@@ -75,7 +75,7 @@ allowedCommands[]
 operationalStatus: 当前安全状态与重试进度
 ```
 
-仅在正常终局、已放弃或系统异常终止后，视图才可以增加与对应终局一致的 `reveal` 和不完整事实复盘入口。正常终局可揭晓全部阵营、词牌和私有行动记录；进行中和淘汰观战状态不得出现这些字段。
+当前 `HumanGameView` 在正常终局和已放弃终局返回与状态一致的字段：`finished` 包含 `winnerCamp`、`reveal` 和 `factReview`；`abandoned` 不包含这些字段。进行中和等待观战状态不得出现完整揭晓。`system_terminated` 及其错误摘要接口尚未实现。
 
 ## 4. REST 端点
 
@@ -169,7 +169,20 @@ confirmed: true
 
 浏览器必须先完成二次确认。服务端仍要求显式 `confirmed: true`，成功后对局进入 `abandoned`，不返回阵营胜者。
 
-## 5. SSE 端点
+### 4.6 模型档案（DEC-085）
+
+| 端点 | 用途 | 返回体 |
+| --- | --- | --- |
+| `GET /api/model-profiles` | 读取三角色档案与当前所选 model ID | `{ providerMode, providerConfigured, editable, profiles[] }` |
+| `GET /api/models` | 服务端代理中转站可选 model 目录 | `{ providerMode, models[] }`；`fake` 或未配置时 `models` 为空 |
+| `PUT /api/model-profiles/:roleId` | 写入角色所选 model ID | 更新后的档案列表 |
+
+- `profiles[]` 每项含 `roleId`、`displayName`、`personalityTags[3]`、`personalityPrompt`、`selectedModelId`（可空）。
+- 响应绝不包含 Base URL、API Key、请求头或完整模型响应；只暴露 model ID（继承 DEC-082/DEC-052）。
+- `providerMode` 为 `fake` 或 `tokendance`；`providerConfigured` 表示 Base URL 与 API Key 是否均已在服务端 env 就绪。`editable=false`（假模型、未配置或存在活动局）时前端禁用选择。
+- 存在活动局（`in_progress` / `awaiting_spectator`）时 `PUT` 返回 409 拒绝改配置；未知 `roleId` 返回 404。
+
+
 
 `GET /api/games/:gameId/stream`
 
@@ -194,12 +207,12 @@ data: <PublicStreamPayload JSON>
 | `event` | 内容边界 |
 | --- | --- |
 | `state_synced` | 当前 `HumanGameView` 与游标 |
-| `agent_activity` | 角色正在观察、思考、重试或已完成；无推理内容 |
-| `domain_event` | 已提交且允许公开的领域事件投影 |
+| `agent_activity` | 预留给后续更细运行状态；当前主要通过 `HumanGameView.operationalStatus` 表示 AI 工作中 |
+| `domain_event` | 领域事件类型直接作为 SSE `event` 名称持久化和发送；不存在统一字面量 `domain_event` 帧 |
 | `vote_progressed` | 完成投票的角色，不含目标 |
 | `votes_revealed` | 全部完成后的一次性投票关系 |
 | `terminal_reveal_ready` | 终局事实已持久化，可以开始前端揭晓 |
-| `stream_error` | 脱敏错误类别和恢复建议 |
+| `stream_error` | 后续真实模型重试的脱敏错误帧，当前未实现 |
 | `heartbeat` | 无业务数据的连接保活 |
 
 ### 5.2 重连算法
@@ -234,7 +247,7 @@ data: <PublicStreamPayload JSON>
 
 - `finished`：可以返回正常胜者、全部阵营和词牌、确定性事实与私有信念历史。
 - `abandoned`：返回放弃状态和截至放弃时的不完整事实；不返回阵营胜者。私有揭晓范围以历史复盘实现阶段的产品规则为准，首个里程碑不伪造完整 AI 总结。
-- `system_terminated`：返回脱敏错误摘要和不完整事实；不可继续失败动作。
+- `system_terminated`：真实模型连续失败达上限后的无胜者终局（DEC-072）。已实现：`GameService` 捕获 `AgentSystemError` 后提交 `TerminateForSystemError`，视图 `status=system_terminated`、`phase=ended`、`endReason=model_failure_limit`，`allowedCommands` 为空，不返回胜者与揭晓；公开事件 `game_system_terminated` 仅含脱敏 `failedActionId`、`errorType`。历史列表的错误摘要与不完整复盘展示留待历史里程碑。
 
 前端逐张翻牌只是对已返回终局事实的呈现，不调用任何改变领域状态的端点。
 

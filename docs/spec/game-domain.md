@@ -1,6 +1,6 @@
 # 游戏领域规格
 
-- 状态：开发基线
+- 状态：首个里程碑已实现基线；预留终局类型待后续启用
 - 适用范围：首版基础玩法
 
 ## 1. 领域术语
@@ -68,7 +68,7 @@ abandoned_by_human
 model_failure_limit
 ```
 
-`winnerCamp` 只允许出现在 `finished`。`abandoned` 与 `system_terminated` 不得伪造阵营胜者。`player_rule_violation` 在重复泄词强退阶段启用，首个里程碑只保留类型兼容。
+`system_terminated`、`model_failure_limit`、`TerminateForSystemError` 和 `game_system_terminated` 目前只在共享 Schema/枚举中预留，尚无状态机转换、服务接口或 Web 展示。`player_rule_violation` 也只保留类型兼容，重复泄词强退尚未实现。
 
 ## 4. 命令
 
@@ -83,7 +83,7 @@ model_failure_limit
 | `SubmitVote` | `in_progress/voting|revoting` | 目标玩家 ID |
 | `ContinueSpectating` | `awaiting_spectator` | 人类玩家 ID |
 | `AbandonGame` | `preparing|in_progress|awaiting_spectator` | 人类玩家 ID |
-| `TerminateForSystemError` | `in_progress` | 失败动作 ID、脱敏错误摘要 |
+| `TerminateForSystemError` | `in_progress` | 预留命令；当前未实现状态机处理 |
 
 AI 和人类提交相同的领域命令；来源差异只影响命令生成方式，不影响规则校验。
 
@@ -120,7 +120,7 @@ internal        只供服务端恢复、审计或错误处理
 | `belief_snapshotted` | `post_game` | AI 行动时的私有信念和理由 |
 | `game_finished` | `post_game` | 正常终局事实、胜者和完整揭晓数据 |
 | `game_abandoned` | `public` | 放弃终局，无阵营胜者 |
-| `game_system_terminated` | `public` | 系统异常终局，无阵营胜者 |
+| `game_system_terminated` | `public` | 预留事件；当前未实现 |
 
 `game_finished` 的完整负载不得直接作为进行中 SSE 事件发送；终局公开投影按 [`frontend-ux.md`](frontend-ux.md) 的揭晓阶段展示。
 
@@ -143,7 +143,7 @@ internal        只供服务端恢复、审计或错误处理
 | 淘汰后 | 人类被淘汰且尚未终局 | `awaiting_spectator` |
 | `awaiting_spectator` | `ContinueSpectating` | 恢复自动推进 |
 | 非终局 | `AbandonGame` | `abandoned/ended` |
-| `in_progress` | `TerminateForSystemError` | `system_terminated/ended` |
+| `in_progress` | `TerminateForSystemError` | 规划：`system_terminated/ended`；当前转换未实现 |
 
 ## 7. 规则不变量
 

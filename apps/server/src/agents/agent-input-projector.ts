@@ -1,16 +1,11 @@
 import {
   agentTurnInputSchema,
+  personalityPromptFor,
   type AgentTurnInput,
   type BeliefSnapshot,
   type GameSnapshot,
   type PublicTimelineItem,
 } from '@sheishiwodi/shared';
-
-const personalityPrompts: Record<string, string> = {
-  deepseek: '表达克制，先比较概念边界，再给出简短线索。',
-  doubao: '表达自然活泼，优先选择生活化但不直接的线索。',
-  qwen: '表达清晰，优先概括类别和用途，不机械重复。',
-};
 
 export function projectAgentTurnInput(
   snapshot: GameSnapshot,
@@ -52,6 +47,6 @@ export function projectAgentTurnInput(
     tieCandidates: snapshot.round.tieCandidateIds,
     publicEvents,
     priorOwnBeliefs,
-    personalityPrompt: personalityPrompts[actor.agentRoleId] ?? '表达简洁，遵守游戏规则。',
+    personalityPrompt: personalityPromptFor(actor.agentRoleId),
   });
 }

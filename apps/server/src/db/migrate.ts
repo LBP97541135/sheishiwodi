@@ -20,4 +20,11 @@ export function migrateDatabase(sqlite: Database.Database) {
       completed_at TEXT NOT NULL
     );
   `);
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS agent_role_models (
+      role_id TEXT PRIMARY KEY,
+      model_id TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
 }

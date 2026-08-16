@@ -4,6 +4,8 @@ import {
   voteActionOutputSchema,
   type AgentTurnInput,
   type BeliefSnapshot,
+  type SpeechActionOutput,
+  type VoteActionOutput,
 } from '@sheishiwodi/shared';
 
 import type { AgentPolicy } from './agent-policy.js';
@@ -18,7 +20,7 @@ export class FakeAgentPolicy implements AgentPolicy {
 
   constructor(private readonly scenario: FakeAgentScenario = 'normal') {}
 
-  act(input: AgentTurnInput) {
+  async act(input: AgentTurnInput): Promise<SpeechActionOutput | VoteActionOutput> {
     this.receivedInputs.push(structuredClone(input));
     const belief = this.createBelief(input);
     this.beliefHistory.set(input.actor.playerId, [

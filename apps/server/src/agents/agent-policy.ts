@@ -5,7 +5,18 @@ import type {
   VoteActionOutput,
 } from '@sheishiwodi/shared';
 
+/**
+ * 内部执行上下文：把当前行动者的角色标识传给策略，用于解析该角色的模型选择。
+ * 该上下文不进入发给模型的白名单 AgentTurnInput，避免污染对外投影。
+ */
+export interface AgentActContext {
+  agentRoleId: string;
+}
+
 export interface AgentPolicy {
-  act(input: AgentTurnInput): SpeechActionOutput | VoteActionOutput;
+  act(
+    input: AgentTurnInput,
+    context?: AgentActContext,
+  ): Promise<SpeechActionOutput | VoteActionOutput>;
   priorBeliefs(playerId: string): readonly BeliefSnapshot[];
 }

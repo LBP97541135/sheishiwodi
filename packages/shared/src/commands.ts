@@ -108,3 +108,4 @@ export type ContinueSpectatingCommand = z.infer<typeof continueSpectatingCommand
 export type ContinueSpectatingRequest = z.infer<typeof continueSpectatingRequestSchema>;
 export type AbandonGameCommand = z.infer<typeof abandonGameCommandSchema>;
 export type AbandonGameRequest = z.infer<typeof abandonGameRequestSchema>;
+export type TerminateForSystemErrorCommand = z.infer<typeof terminateForSystemErrorCommandSchema>;

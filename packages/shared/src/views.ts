@@ -142,7 +142,12 @@ export const humanGameViewSchema = z
     legalVoteTargetIds: z.array(identifierSchema),
     winnerCamp: z.enum(['civilian', 'undercover']).optional(),
     endReason: z
-      .enum(['undercover_eliminated', 'undercover_survived_to_two', 'abandoned_by_human'])
+      .enum([
+        'undercover_eliminated',
+        'undercover_survived_to_two',
+        'abandoned_by_human',
+        'model_failure_limit',
+      ])
       .optional(),
     reveal: finaleRevealSchema.optional(),
     factReview: factReviewSchema.optional(),

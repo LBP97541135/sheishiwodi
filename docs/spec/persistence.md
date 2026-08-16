@@ -1,7 +1,7 @@
 # 持久化规格
 
-- 状态：开发基线
-- 适用范围：SQLite + Drizzle；首个里程碑必须实现事件与快照一致性
+- 状态：首个里程碑基线与 `agent_role_models` 已实现；`model_attempts` 与异步复盘表待实现
+- 适用范围：当前 SQLite + Drizzle 物理 Schema、原子提交与恢复
 
 ## 1. 目标
 
@@ -71,21 +71,19 @@ SQLite 文件是本地运行状态，不是词库或需求的 Git 事实源。
 
 ### 2.5 `agent_actions`
 
-保存 AI 行动的私有审计记录：
+保存 AI 行动的私有审计记录。当前物理列为：
 
-- `actionId`、`gameId`、`playerId`、轮次、行动类型
-- 读取的 `baseRevision` 与公开事件上界
-- 结构化 `BeliefSnapshot`
-- 最终描述、辩解或投票
-- 投票理由
-- 假模型脚本标识或脱敏模型标识
-- 校验结果、尝试次数和完成时间
+- `actionId`、`gameId`、`playerId`、`roundNumber`、`actionType`
+- `baseRevision`
+- `beliefJson`
+- `outputJson`：描述/辩解文本，或投票目标与理由
+- `completedAt`
 
-公开文本只有在状态机提交后才通过 `game_events` 成为事实。失败尝试不得写成公开行动事件。
+当前没有独立的公开事件上界、模型标识、校验结果和尝试次数字段；这些信息如在真实模型切片需要，应通过迁移增加，不能假定已经持久化。公开文本只有在状态机提交后才通过 `game_events` 成为事实。
 
-### 2.6 `model_attempts`
+### 2.6 `model_attempts`（尚未实现）
 
-保存系统错误恢复所需的脱敏元数据：
+后续真实模型系统错误恢复计划保存以下脱敏元数据：
 
 - `attemptId`、`actionId`、尝试序号
 - 结果：成功、结构修复失败、网络、超时、限流、服务端或未知错误
@@ -115,9 +113,19 @@ SQLite 文件是本地运行状态，不是词库或需求的 Git 事实源。
 
 仓库内 JSON 才是版本化事实源。本表可重建；历史对局只读取 `games` 保存的本局词组快照。
 
-### 2.9 后续实体
+### 2.9 `agent_role_models`
 
-异步复盘任务和复盘结果在对应里程碑再落地物理表。本阶段只要求 `gameId`、模型标识和事件/私有记录能够稳定支持后续读取，不提前写死任务调度 Schema。
+当前已存在角色到模型 ID 的配置表：
+
+- `roleId` 主键。
+- `modelId`。
+- `updatedAt`。
+
+该表不保存 Base URL 或 API Key（继承 DEC-082/DEC-052）。仅保存可下发的 model ID。假模型流程不依赖该表；真实模型（Tokendance 中转，`AGENT_PROVIDER=tokendance`）接入时使用同一个中转站，仅按角色读取 model ID。存在活动局（`in_progress` / `awaiting_spectator`）时拒绝改写该表（见 DEC-085 与 `api-and-events.md`）。
+
+### 2.10 后续实体
+
+异步复盘任务、复盘结果与 `model_attempts` 在对应里程碑再完整落地。本阶段的 `gameId`、角色模型映射、事件和私有动作已经为后续读取提供基础。
 
 ## 3. 原子提交协议
 
@@ -181,7 +189,7 @@ enabled
 | 真实阵营 | 否 | 否 | 是 | 是，私有 |
 | AI 信念/投票理由 | 否 | 仅该 AI 当前历史可按策略读取 | 是 | 是，私有 |
 | 被拦截泄词原文 | 否 | 否 | 否 | 否 |
-| 密钥/敏感地址 | 否 | 客户端内部连接使用，不进入上下文 | 否 | 否 |
+| 密钥/敏感地址 | 否 | 当前假模型不使用；后续真实客户端内部连接使用且不进入上下文 | 否 | 否 |
 
 ## 7. 恢复与迁移
 

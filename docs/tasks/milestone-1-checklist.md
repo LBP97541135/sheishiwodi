@@ -96,3 +96,28 @@
 - [x] TASK-033：四类目录和统一文档入口建立。
 - [x] TASK-034：TASK-000～032 已写入持久化台账。
 - [x] TASK-035：所有链接、旧路径、编号连续性和 diff 验证完成。
+
+## 真实模型接入（DEC-085，里程碑一之外）
+
+### 实现（TASK-046～053）
+
+- [x] 共享层角色真源 `agent-roles.ts` 与 `model-profile.ts` schema。
+- [x] `AgentPolicy.act` 异步化，服务端推进链全部 `await`。
+- [x] `tokendance-client.ts` 超时与脱敏错误分类。
+- [x] `tokendance-agent-policy.ts` 一次格式修复 + 有限系统重试（注入 Clock）+ 脱敏 `AgentSystemError`。
+- [x] `GameService` 捕获系统错误后终止为 `system_terminated`/`model_failure_limit`（DEC-072）。
+- [x] server-only `agent_role_models` 表，不进入 `HumanGameView`。
+- [x] provider 开关按 `AGENT_PROVIDER`+Key 决定 Fake/Tokendance，默认 fake；根 `.env.example` Key 留空。
+- [x] 模型档案 REST：profiles/models/`PUT`（活动局 409、未知角色 404），响应不含 URL/Key/请求头。
+- [x] 前端模型档案界面展示 model 下拉，禁展 URL/Key，fake 或活动局禁用选择。
+- [x] 文档与决策先行：DEC-085 及 REQUIREMENTS/frontend-ux/agent-runtime/architecture/persistence/api-and-events/TESTING/CLAUDE 已同步。
+
+### 验证（TASK-054，进行中）
+
+- [x] shared 状态机新增系统终止用例；服务端 `game-system-terminated.test.ts` 兜底终止用例通过。
+- [x] `tokendance-agent-policy.test.ts` 策略级格式修复/重试/脱敏错误通过。
+- [x] 单测证明 Agent 输入/REST/SSE/事件不含 Key/URL/Bearer/完整响应。
+- [ ] `pnpm build`、`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm test:e2e` 本机全量复跑确认。
+- [ ] E2E 断言未实例化真实策略、无出网。
+- [ ] `test:live` 冒烟入口在缺 env 时显式失败；负责人自填 Key 后付费联网验收。
+- [ ] 完成后向负责人汇报，未提交、未推送。

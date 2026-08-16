@@ -9,6 +9,7 @@ import {
   submitDefense,
   submitDescription,
   submitVote,
+  terminateForSystemError,
   type Clock,
   type GameSnapshot,
   type IdSource,
@@ -143,6 +144,64 @@ describe('主动放弃状态机', () => {
       abandonGame(
         abandoned.snapshot,
         { ...base, commandId: 'abandon-again', expectedRevision: abandoned.snapshot.revision },
+        { ids, clock },
+      ),
+    ).toThrow('INVALID_TRANSITION');
+  });
+});
+
+describe('模型系统错误终止状态机', () => {
+  it('进行中终止进入 system_terminated 且不含胜方与揭晓', () => {
+    const { ids, transition } = startedGame();
+    const snapshot = transition.snapshot;
+    const result = terminateForSystemError(
+      snapshot,
+      {
+        type: 'TerminateForSystemError',
+        commandId: 'terminate-1',
+        gameId: snapshot.gameId,
+        actorId: snapshot.humanPlayerId,
+        expectedRevision: snapshot.revision,
+        failedActionId: 'auto/x/describe',
+        errorType: 'CALL_FAILED',
+      },
+      { ids, clock },
+    );
+    expect(result.snapshot.status).toBe('system_terminated');
+    expect(result.snapshot.phase).toBe('ended');
+    expect(result.snapshot.round).toBeNull();
+    expect(result.snapshot.endReason).toBe('model_failure_limit');
+    expect(result.snapshot).not.toHaveProperty('winnerCamp');
+    expect(projectHumanGameView(result.snapshot)).not.toHaveProperty('reveal');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'game_system_terminated',
+        visibility: 'public',
+        payload: { failedActionId: 'auto/x/describe', errorType: 'CALL_FAILED' },
+      }),
+    );
+  });
+
+  it('拒绝过期修订与非进行中状态', () => {
+    const { ids, transition } = startedGame();
+    const snapshot = transition.snapshot;
+    const base = {
+      type: 'TerminateForSystemError' as const,
+      commandId: 'terminate-guard',
+      gameId: snapshot.gameId,
+      actorId: snapshot.humanPlayerId,
+      expectedRevision: snapshot.revision,
+      failedActionId: 'auto/x/vote',
+      errorType: 'FORMAT_INVALID',
+    };
+    expect(() =>
+      terminateForSystemError(snapshot, { ...base, expectedRevision: snapshot.revision + 1 }, { ids, clock }),
+    ).toThrow('REVISION_CONFLICT');
+    const terminated = terminateForSystemError(snapshot, base, { ids, clock });
+    expect(() =>
+      terminateForSystemError(
+        terminated.snapshot,
+        { ...base, commandId: 'terminate-again', expectedRevision: terminated.snapshot.revision },
         { ids, clock },
       ),
     ).toThrow('INVALID_TRANSITION');

@@ -5,6 +5,7 @@ import type {
   SubmitDefenseCommand,
   SubmitDescriptionCommand,
   SubmitVoteCommand,
+  TerminateForSystemErrorCommand,
 } from './commands.js';
 import { gameSnapshotSchema, type GameSnapshot } from './state.js';
 import type { GameEvent } from './events.js';
@@ -83,6 +84,43 @@ export function abandonGame(
       phase: 'ended',
       round: null,
       endReason: 'abandoned_by_human',
+    }),
+  };
+}
+
+export function terminateForSystemError(
+  snapshot: GameSnapshot,
+  command: TerminateForSystemErrorCommand,
+  dependencies: MachineDependencies,
+): MachineTransition {
+  if (snapshot.revision !== command.expectedRevision) throw new Error('REVISION_CONFLICT');
+  if (snapshot.status !== 'in_progress') {
+    throw new Error('INVALID_TRANSITION');
+  }
+  const result = buildTransition(
+    snapshot,
+    command.commandId,
+    [
+      [
+        'game_system_terminated',
+        'public',
+        { failedActionId: command.failedActionId, errorType: command.errorType },
+      ],
+    ],
+    dependencies,
+    null,
+  );
+  const terminated = { ...result.snapshot };
+  delete terminated.winnerCamp;
+  delete terminated.resumeAfterSpectating;
+  return {
+    ...result,
+    snapshot: gameSnapshotSchema.parse({
+      ...terminated,
+      status: 'system_terminated',
+      phase: 'ended',
+      round: null,
+      endReason: 'model_failure_limit',
     }),
   };
 }

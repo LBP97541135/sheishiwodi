@@ -1,0 +1,169 @@
+import { useEffect, useRef, useState } from 'react';
+
+import { audioAssets, sceneAssets } from './character-assets';
+
+export type BackgroundTheme = 'paper' | 'interrogation';
+
+interface ExperienceControlsProps {
+  audioEnabled: boolean;
+  audioNotice: string | null;
+  backgroundTheme: BackgroundTheme;
+  onToggleAudio(): void;
+  onBackgroundChange(theme: BackgroundTheme): void;
+}
+
+export function ExperienceControls({
+  audioEnabled,
+  audioNotice,
+  backgroundTheme,
+  onToggleAudio,
+  onBackgroundChange,
+}: ExperienceControlsProps) {
+  return (
+    <div className="experience-controls" aria-label="显示与声音设置">
+      <button
+        type="button"
+        className="utility-action"
+        aria-pressed={audioEnabled}
+        onClick={onToggleAudio}
+      >
+        <span aria-hidden="true">{audioEnabled ? '♫' : '×'}</span>
+        背景音乐：{audioEnabled ? '开' : '关'}
+      </button>
+      <fieldset className="background-picker">
+        <legend>背景</legend>
+        <div className="segmented-control">
+          <label>
+            <input
+              type="radio"
+              name="background-theme"
+              value="paper"
+              checked={backgroundTheme === 'paper'}
+              onChange={() => onBackgroundChange('paper')}
+            />
+            <span>纸面</span>
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="background-theme"
+              value="interrogation"
+              checked={backgroundTheme === 'interrogation'}
+              onChange={() => onBackgroundChange('interrogation')}
+            />
+            <span>审讯室</span>
+          </label>
+        </div>
+      </fieldset>
+      {audioNotice && (
+        <span className="experience-notice" role="status">
+          {audioNotice}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function useExperienceSettings(shouldPlay: boolean) {
+  const [audioEnabled, setAudioEnabled] = useState(() => readBoolean('sheishiwodi:bgm', true));
+  const [backgroundTheme, setBackgroundTheme] = useState<BackgroundTheme>(() =>
+    readBackgroundTheme(),
+  );
+  const [audioNotice, setAudioNotice] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (typeof Audio === 'undefined') return;
+    const audio = new Audio(audioAssets.gameBgm);
+    audio.loop = true;
+    audio.preload = 'metadata';
+    audio.volume = 0.24;
+    audio.addEventListener('error', () => setAudioNotice('背景音乐暂时无法播放'));
+    audioRef.current = audio;
+    return () => {
+      audio.pause();
+      audio.src = '';
+      audioRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (!audioEnabled || !shouldPlay) {
+      audio.pause();
+      if (!shouldPlay) audio.currentTime = 0;
+      return;
+    }
+    void playAudio(audio)
+      .then(() => setAudioNotice(null))
+      .catch(() => setAudioNotice('点击音乐开关即可开始播放'));
+  }, [audioEnabled, shouldPlay]);
+
+  useEffect(() => {
+    if (!shouldPlay || !audioEnabled) return;
+    const unlock = () => {
+      const audio = audioRef.current;
+      if (audio?.paused) {
+        void playAudio(audio).then(() => setAudioNotice(null)).catch(() => undefined);
+      }
+    };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, [audioEnabled, shouldPlay]);
+
+  const toggleAudio = () => {
+    setAudioEnabled((current) => {
+      const next = !current;
+      localStorage.setItem('sheishiwodi:bgm', String(next));
+      // 开关状态已由按钮自身表达，无需额外浮层提示；仅清除历史提示。
+      setAudioNotice(null);
+      return next;
+    });
+  };
+
+  const changeBackground = (theme: BackgroundTheme) => {
+    setBackgroundTheme(theme);
+    localStorage.setItem('sheishiwodi:background', theme);
+  };
+
+  return {
+    audioEnabled,
+    audioNotice,
+    backgroundTheme,
+    backgroundImage:
+      backgroundTheme === 'interrogation' ? `url("${sceneAssets.interrogationRoom}")` : undefined,
+    toggleAudio,
+    changeBackground,
+  };
+}
+
+// 部分环境（jsdom、旧浏览器）的 HTMLMediaElement.play() 返回 undefined 而非 Promise，
+// 统一包一层，避免对 undefined 调用 then 抛错。
+function playAudio(audio: HTMLAudioElement): Promise<void> {
+  try {
+    const result = audio.play() as unknown;
+    return result && typeof (result as Promise<void>).then === 'function'
+      ? (result as Promise<void>)
+      : Promise.resolve();
+  } catch (error) {
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+function readBoolean(key: string, fallback: boolean) {
+  if (typeof localStorage === 'undefined') return fallback;
+  const value = localStorage.getItem(key);
+  return value === null ? fallback : value === 'true';
+}
+
+function readBackgroundTheme(): BackgroundTheme {
+  if (typeof localStorage === 'undefined') return 'paper';
+  return localStorage.getItem('sheishiwodi:background') === 'interrogation'
+    ? 'interrogation'
+    : 'paper';
+}

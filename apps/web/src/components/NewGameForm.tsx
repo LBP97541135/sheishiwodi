@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react';
 
 import type { CreateGameRequest } from '@sheishiwodi/shared';
 
+import { characterAssets } from '../character-assets';
+
 interface NewGameFormProps {
   busy: boolean;
   onCreate(input: CreateGameRequest): Promise<void>;
@@ -50,10 +52,13 @@ export function NewGameForm({ busy, onCreate }: NewGameFormProps) {
       </label>
 
       <fieldset>
-        <legend>选择剪影</legend>
+        <legend>选择性别</legend>
         <div className="choice-grid choice-grid--silhouette">
-          {(['silhouette_a', 'silhouette_b'] as const).map((value, index) => (
-            <label className="choice-card" key={value}>
+          {([
+            ['silhouette_a', '男性', characterAssets['human-male'].idle],
+            ['silhouette_b', '女性', characterAssets['human-female'].idle],
+          ] as const).map(([value, label, image]) => (
+            <label className="choice-card choice-card--portrait" key={value}>
               <input
                 type="radio"
                 name="silhouette"
@@ -61,8 +66,9 @@ export function NewGameForm({ busy, onCreate }: NewGameFormProps) {
                 checked={silhouette === value}
                 onChange={() => setSilhouette(value)}
               />
-              <span className={`human-silhouette human-silhouette--${index + 1}`} aria-hidden="true" />
-              <strong>剪影 {index + 1}</strong>
+              <img className="choice-portrait" src={image} alt="" />
+              <strong>{label}</strong>
+              <span className="choice-state">{silhouette === value ? '已选择' : '选择此形象'}</span>
             </label>
           ))}
         </div>
