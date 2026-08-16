@@ -38,6 +38,12 @@ export interface ServerDependencies {
   agentPolicyFactory?: () => AgentPolicy;
   modelProvider?: ModelProviderContext;
   roleModelRepository?: AgentRoleModelRepository;
+  /**
+   * 是否后台推进 AI 回合：运行时置 true，命令提交后立即返回、AI 回合异步推进，
+   * 前端靠 SSE 实时接收，避免开始/操作请求被真实模型串行往返长时间阻塞。
+   * 测试默认 false（同步 await），保证断言可确定地读到已推进状态。
+   */
+  backgroundAdvance?: boolean;
 }
 
 export function buildServer(dependencies?: ServerDependencies) {
@@ -109,6 +115,8 @@ export function createRuntimeDependencies(): ServerDependencies {
     agentPolicyFactory,
     modelProvider,
     roleModelRepository,
+    // 运行时后台推进：开始与人类操作立即返回，AI 回合异步推进并经 SSE 实时下发。
+    backgroundAdvance: true,
   };
 }
 

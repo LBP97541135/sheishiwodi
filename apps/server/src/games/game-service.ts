@@ -54,6 +54,7 @@ export class GameServiceError extends Error {
 export class GameService {
   private readonly agentPolicyFactory: () => AgentPolicy;
   private readonly advancingGames = new Set<string>();
+  private readonly backgroundAdvance: boolean;
 
   constructor(
     private readonly games: GameRepository,
@@ -63,9 +64,11 @@ export class GameService {
       ids: IdSource;
       clock: Clock;
       agentPolicyFactory?: () => AgentPolicy;
+      backgroundAdvance?: boolean;
     },
   ) {
     this.agentPolicyFactory = dependencies.agentPolicyFactory ?? (() => new FakeAgentPolicy());
+    this.backgroundAdvance = dependencies.backgroundAdvance ?? false;
   }
 
   createGame(command: CreateGameCommand): HumanGameView {
@@ -140,7 +143,7 @@ export class GameService {
       throw mapMachineError(error);
     }
 
-    await this.advanceUntilHumanOrStop(command.gameId);
+    await this.settleAdvance(command.gameId);
     return this.games.getHumanView(command.gameId)!;
   }
 
@@ -260,8 +263,22 @@ export class GameService {
       throw mapMachineError(error);
     }
 
-    await this.advanceUntilHumanOrStop(command.gameId);
+    await this.settleAdvance(command.gameId);
     return this.games.getHumanView(command.gameId)!;
+  }
+
+  /**
+   * 提交命令后驱动 AI 回合：运行时后台推进（立即返回，AI 回合异步跑、经 SSE 下发），
+   * 测试同步 await（断言可确定读到已推进状态）。后台失败仅脱敏记日志，绝不外泄 Key/URL。
+   */
+  private async settleAdvance(gameId: string) {
+    if (this.backgroundAdvance) {
+      void this.advanceUntilHumanOrStop(gameId).catch((error: unknown) => {
+        console.error('[advance] 后台推进失败：', error instanceof Error ? error.name : 'unknown');
+      });
+      return;
+    }
+    await this.advanceUntilHumanOrStop(gameId);
   }
 
   private async advanceUntilHumanOrStop(gameId: string) {

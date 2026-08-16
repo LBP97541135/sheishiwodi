@@ -31,6 +31,13 @@ export default defineConfig({
       url: 'http://127.0.0.1:3001/api/health',
       reuseExistingServer: false,
       timeout: 60_000,
+      // 强制隔离：E2E 绝不联网、绝不读真实 Key。即便本地 .env 配了 tokendance+Key，
+      // 这里预置的环境变量会被 loadDotEnv 视为“已存在”而不覆盖，服务端一律走 FakeAgentPolicy。
+      env: {
+        AGENT_PROVIDER: 'fake',
+        TOKENDANCE_BASE_URL: '',
+        TOKENDANCE_API_KEY: '',
+      },
     },
     {
       command: 'corepack pnpm --filter @sheishiwodi/web dev --host 127.0.0.1',

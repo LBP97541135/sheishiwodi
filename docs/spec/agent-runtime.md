@@ -33,6 +33,17 @@ GameService.advanceUntilHumanOrStop（已实现）
 
 策略实现不得直接读取数据库。编排层先生成不可变 `AgentTurnInput`，策略只能读取该对象。
 
+## 2.1 推进模式：后台推进与测试同步
+
+`GameService` 通过依赖注入的 `backgroundAdvance` 布尔开关决定人类命令提交后如何驱动后续 AI 回合：
+
+- **运行时（`createRuntimeDependencies` 置 `true`）**：`startGame` 与人类操作在持久化本次转移后立即返回当前视图，AI 回合经 `settleAdvance` 异步推进（`void advanceUntilHumanOrStop(...).catch(...)`），前端靠 SSE 实时接收逐帧公开状态。这样开始/操作请求不会被真实模型的串行往返长时间阻塞——界面立即跳入对局并显示"某 AI 正在思考"，而不是卡在"正在开始…"。后台推进失败只脱敏记日志（仅打印 `error.name`），绝不外泄 Key/URL。
+- **测试（`createTestEnvironment` 默认 `false`）**：`settleAdvance` 同步 `await advanceUntilHumanOrStop(...)`，保证断言能确定地读到已推进到下一个人类行动者（或终局）的状态。
+
+同一进程内 `advancingGames` 去重保证同一对局的推进循环不会并发重入；后台与同步两条路径共用同一 `runAdvanceLoop`，行为一致，仅返回时机不同。
+
+E2E 通过 `playwright.config.ts` 的服务端 `webServer.env` 预置 `AGENT_PROVIDER=fake` 与空 `TOKENDANCE_*`，强制走 `FakeAgentPolicy`：`main.ts` 的 `loadDotEnv()` 对"已存在的环境变量"不覆盖，故即便本机 `.env` 配了 `tokendance`+真实 Key，E2E 仍绝不联网、绝不读 Key、绝不消耗付费额度。`helpers.ts` 的轮询循环改用挂钟截止时间兜底，避免把后台推进期间"当前是 AI 行动者"的自旋等待计入固定步数预算而误判超时。
+
 ## 3. 角色配置
 
 角色配置包含：

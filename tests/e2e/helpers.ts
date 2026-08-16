@@ -39,7 +39,16 @@ export async function playUntilTerminalOrSpectator(page: Page) {
       return body.data;
     };
 
-    for (let step = 0; step < 80; step += 1) {
+    // 运行时后台推进 AI 回合：人类命令提交后立即返回、AI 回合异步跑，
+    // 因此本轮询循环会在“当前是 AI 行动者”时自旋等待（sleep+continue）。
+    // 用挂钟截止时间兜底，避免把 AI 回合的自旋计入固定步数预算而误判超时；
+    // 人类动作用独立计数器命名，另设一个很宽松的迭代上限防真正卡死时死循环。
+    const deadline = Date.now() + 60_000;
+    let humanActions = 0;
+    for (let iteration = 0; iteration < 5000; iteration += 1) {
+      if (Date.now() > deadline) {
+        throw new Error('对局未在限定时间内到达等待观战或终局');
+      }
       const view = await getView();
       if (view.status === 'awaiting_spectator' || view.status === 'finished') return view.status;
       if (view.status !== 'in_progress') return view.status;
@@ -47,15 +56,16 @@ export async function playUntilTerminalOrSpectator(page: Page) {
         await new Promise((resolve) => setTimeout(resolve, 50));
         continue;
       }
+      humanActions += 1;
       const envelope = {
         commandId: crypto.randomUUID(),
         actorId: view.human.playerId,
         expectedRevision: view.revision,
       };
       if (view.round.actionType === 'describe') {
-        await post('descriptions', { ...envelope, text: `日常线索${step + 1}` });
+        await post('descriptions', { ...envelope, text: `日常线索${humanActions}` });
       } else if (view.round.actionType === 'defend') {
-        await post('defenses', { ...envelope, text: `线索一致${step + 1}` });
+        await post('defenses', { ...envelope, text: `线索一致${humanActions}` });
       } else {
         await post('votes', { ...envelope, targetPlayerId: view.legalVoteTargetIds[0] });
       }

@@ -1,5 +1,28 @@
 # 开发记录
 
+## 2026-08-17 优化开始/推进卡顿与修复 E2E 隔离漏洞
+
+### 本轮目标
+
+修复负责人反馈的"点击开始以后不会自动跳转，而且速度特别慢"，并在此过程中修复一个更严重的隐患：E2E 会读取本机 `.env` 的真实 Tokendance Key 并联网烧付费额度。
+
+### 完成内容
+
+- **运行时后台推进（backgroundAdvance）**：`GameService` 新增依赖注入开关 `backgroundAdvance`。运行时置 `true`，`startGame` 与人类操作持久化本次转移后立即返回，AI 回合经 `settleAdvance` 异步推进、经 SSE 逐帧下发；界面立即跳入对局并显示"某 AI 正在思考"，不再卡在"正在开始…"。测试默认 `false`（同步 `await`），断言可确定读到已推进状态。后台推进失败仅脱敏记 `error.name`，绝不外泄 Key/URL。
+- **修复 E2E 联网隔离漏洞**：`main.ts` 的 `loadDotEnv()` 无条件加载本机 `.env`；本机配了 `AGENT_PROVIDER=tokendance`+真实 Key 时，E2E 服务端会走真实策略、每次跑都联网并消耗付费额度，且真实模型往返使对局无法在测试时限内完成。在 `playwright.config.ts` 的服务端 `webServer.env` 预置 `AGENT_PROVIDER=fake`、空 `TOKENDANCE_*`；因 `loadDotEnv` 不覆盖"已存在的环境变量"，服务端一律回退 `FakeAgentPolicy`，E2E 绝不联网、绝不读 Key。
+- **E2E 轮询兜底**：`helpers.ts` 的 `playUntilTerminalOrSpectator` 改用挂钟截止时间（60s）兜底，避免把后台推进期间"当前是 AI 行动者"的自旋等待计入固定步数预算而误判超时。
+- 清理 `game-service.ts` 中排障期临时加入的 `[DBG]` 调试日志。
+- 文档同步：`agent-runtime.md` 新增 §2.1「推进模式：后台推进与测试同步」；`TASKS.md` 登记 TASK-055。
+
+### 验证结果与边界
+
+- `pnpm typecheck`、`pnpm lint` 通过；`pnpm test` 120 项全绿（shared 46 / server 49 / web 25）；`pnpm test:e2e` 10 项全绿（normal 4 / spectator 4 / tie 2）。
+- 用本地探针在强制假模型下验证对局可在后台推进中完整跑到终局。
+- 真实模型（tokendance）下 doubao 等 model 往返较慢属中转站/模型侧特性；后台推进 + 超时重试已让其优雅降级，负责人可按需换更快 model 或用 `TOKENDANCE_EXTRA_BODY` 关推理链提速。
+- `.env` 始终被 gitignore；本轮未提交任何 Key/URL。
+
+本次属于既有功能的性能与隔离修复，不构成产品版本发布，不分配版本号。
+
 ## 2026-08-16 扩充首版 30 组词库
 
 ### 本轮目标
