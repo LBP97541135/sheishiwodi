@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+
+# Local runtime data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+.local/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs and caches
+*.log
+.cache/
+.vite/
+*.tsbuildinfo
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Claude local state
+.claude/worktrees/
+
+# TypeScript incremental state
+*.tsbuildinfo

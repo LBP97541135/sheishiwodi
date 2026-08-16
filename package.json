@@ -1,0 +1,30 @@
+{
+  "name": "sheishiwodi",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @sheishiwodi/shared build && pnpm --parallel --filter @sheishiwodi/shared --filter @sheishiwodi/server --filter @sheishiwodi/web dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "eslint --no-error-on-unmatched-pattern \"apps/**/*.{ts,tsx}\" \"packages/**/*.ts\" \"tests/**/*.ts\"",
+    "test": "pnpm --filter @sheishiwodi/shared build && pnpm -r --if-present test",
+    "test:e2e": "pnpm --filter @sheishiwodi/shared build && pnpm test:e2e:normal && pnpm test:e2e:spectator && pnpm test:e2e:tie",
+    "test:e2e:normal": "node tests/e2e/run.mjs normal",
+    "test:e2e:spectator": "node tests/e2e/run.mjs spectator",
+    "test:e2e:tie": "node tests/e2e/run.mjs tie",
+    "test:live": "node -e \"console.error('真实模型验收尚未在当前里程碑实现'); process.exit(1)\""
+  },
+  "devDependencies": {
+    "@eslint/js": "9.17.0",
+    "@playwright/test": "1.49.1",
+    "eslint": "9.17.0",
+    "globals": "15.14.0",
+    "typescript": "5.7.2",
+    "typescript-eslint": "8.19.0"
+  }
+}

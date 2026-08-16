@@ -1,0 +1,34 @@
+[
+  {
+    "id": "easy-milk-soymilk",
+    "civilianWord": "牛奶",
+    "undercoverWord": "豆浆",
+    "category": "饮品",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "easy-cat-dog",
+    "civilianWord": "猫",
+    "undercoverWord": "狗",
+    "category": "动物",
+    "difficulty": "easy",
+    "enabled": true
+  },
+  {
+    "id": "hard-moon-sun",
+    "civilianWord": "月亮",
+    "undercoverWord": "太阳",
+    "category": "自然",
+    "difficulty": "hard",
+    "enabled": true
+  },
+  {
+    "id": "hard-map-compass",
+    "civilianWord": "地图",
+    "undercoverWord": "指南针",
+    "category": "工具",
+    "difficulty": "hard",
+    "enabled": true
+  }
+]

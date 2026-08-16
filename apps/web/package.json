@@ -1,0 +1,28 @@
+{
+  "name": "@sheishiwodi/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit --pretty false && vite build",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sheishiwodi/shared": "workspace:*",
+    "@vitejs/plugin-react": "4.3.4",
+    "vite": "6.0.7",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.1.0",
+    "@types/react": "19.0.3",
+    "@types/react-dom": "19.0.2",
+    "jsdom": "25.0.1",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8"
+  }
+}

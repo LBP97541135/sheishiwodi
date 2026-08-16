@@ -1,0 +1,248 @@
+# API 与事件流规格
+
+- 状态：开发基线
+- 适用范围：本机单用户 REST + SSE
+
+## 1. 总则
+
+- API 前缀为 `/api`，请求和响应使用 JSON；SSE 端点除外。
+- 所有请求和响应必须通过共享 Zod Schema 定义，前端不得复制手写第二套类型。
+- 服务只监听 `127.0.0.1`，但仍必须按不可信边界校验浏览器输入。
+- 浏览器永远接收 `HumanGameView` 或专用公开投影，不得接收数据库实体或完整领域快照。
+- 改变状态的命令必须带 `commandId` 和 `expectedRevision`；创建对局除外。
+
+## 2. 通用信封
+
+### 2.1 成功响应
+
+```json
+{
+  "data": {},
+  "meta": {
+    "gameId": "game-id",
+    "revision": 3,
+    "eventCursor": 12
+  }
+}
+```
+
+没有对局语义的健康检查可以省略 `meta`。
+
+### 2.2 错误响应
+
+```json
+{
+  "error": {
+    "code": "INVALID_TRANSITION",
+    "message": "当前阶段不能执行该操作",
+    "details": {}
+  }
+}
+```
+
+| HTTP | `code` | 含义 |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | 请求结构、文本长度、句数或字段值不合法 |
+| 403 | `ACTOR_NOT_ALLOWED` | 行动者不是当前允许的玩家 |
+| 404 | `GAME_NOT_FOUND` | 对局不存在 |
+| 409 | `ACTIVE_GAME_EXISTS` | 已有未完成对局 |
+| 409 | `REVISION_CONFLICT` | `expectedRevision` 已过期 |
+| 409 | `INVALID_TRANSITION` | 当前状态或阶段不允许该命令 |
+| 409 | `IDEMPOTENCY_CONFLICT` | 相同命令 ID 携带不同请求语义 |
+| 422 | `CONTENT_REJECTED` | 原词泄露等内容规则拒绝；不回显违规原文 |
+| 503 | `MODEL_ACTION_FAILED` | 当前模型动作正在重试或最终失败后的脱敏结果 |
+| 500 | `INTERNAL_ERROR` | 未分类服务错误；不得泄露堆栈或敏感配置 |
+
+错误详情只能包含安全的字段名、允许值、修订号、错误类别和重试进度。
+
+## 3. `HumanGameView`
+
+进行中视图至少包含：
+
+```text
+gameId
+status
+phase
+revision
+eventCursor
+config: difficulty, undercoverCount
+human: playerId, displayName, silhouette, ownWordCard
+players[]: playerId, seatIndex, kind, displayName, alive, agentRoleDisplay
+round: number, speakingOrder, currentActorId, actionType
+publicTimeline[]
+voteProgress: completedPlayerIds（揭晓前不含目标）
+allowedCommands[]
+operationalStatus: 当前安全状态与重试进度
+```
+
+仅在正常终局、已放弃或系统异常终止后，视图才可以增加与对应终局一致的 `reveal` 和不完整事实复盘入口。正常终局可揭晓全部阵营、词牌和私有行动记录；进行中和淘汰观战状态不得出现这些字段。
+
+## 4. REST 端点
+
+### 4.1 系统与恢复
+
+| 方法与路径 | 用途 | 响应 |
+| --- | --- | --- |
+| `GET /api/health` | 本地服务存活检查 | 服务状态，不包含配置值 |
+| `GET /api/games/active` | 查询唯一未完成对局 | `{ game: HumanGameView | null }` |
+| `GET /api/games/:gameId` | 获取当前人类视图 | `HumanGameView` |
+| `GET /api/games/:gameId/events?after=<streamSeq>` | SSE 失败时补取安全公开帧 | `PublicStreamEntry[]` 与当前游标 |
+
+“未完成”包括 `preparing`、`in_progress` 和 `awaiting_spectator`，不包括三个终局状态。
+
+### 4.2 创建与开始
+
+`POST /api/games`
+
+```text
+commandId
+human.displayName?      缺省为“玩家”
+human.silhouette        允许值之一
+difficulty              easy | hard
+```
+
+模型阵容、玩家数量和卧底人数不由首版浏览器提交。服务端创建固定阵容，随机分配卧底和词组，返回 `preparing` 视图。若存在未完成对局，返回 `ACTIVE_GAME_EXISTS`。
+
+`POST /api/games/:gameId/start`
+
+```text
+commandId
+actorId
+expectedRevision
+```
+
+仅当前人类可在 `preparing` 调用。成功后进入第 1 回合；词牌在浏览器中的翻面状态不提交服务端。
+
+### 4.3 公开发言
+
+`POST /api/games/:gameId/descriptions`
+
+```text
+commandId
+actorId
+expectedRevision
+text
+```
+
+只允许 `speaking` 阶段的当前行动者。服务端执行长度、句数和原词确定性校验；失败不产生公开事件。
+
+`POST /api/games/:gameId/defenses`
+
+字段同描述，只允许 `tie_defense` 阶段的当前候选。描述与辩解共用内容校验器，但命令和事件类型保持分离。
+
+### 4.4 投票
+
+`POST /api/games/:gameId/votes`
+
+```text
+commandId
+actorId
+expectedRevision
+targetPlayerId
+```
+
+- `voting`：投票者为所有存活玩家，目标为另一名存活玩家。
+- `revoting`：投票者为非平票候选的存活玩家，目标必须是平票候选。
+- 成功响应和随后的 SSE 在全部投票完成前均不得包含 `targetPlayerId` 的公开投影。
+- 最后一票提交后，服务端通过独立 `votes_revealed` 帧一次性公开本阶段所有投票关系。
+
+### 4.5 观战与退出
+
+`POST /api/games/:gameId/spectate`
+
+```text
+commandId
+actorId
+expectedRevision
+```
+
+仅被淘汰人类可在 `awaiting_spectator` 调用。成功后恢复 AI 自动推进；视图继续使用普通公开信息边界。
+
+`POST /api/games/:gameId/abandon`
+
+```text
+commandId
+actorId
+expectedRevision
+confirmed: true
+```
+
+浏览器必须先完成二次确认。服务端仍要求显式 `confirmed: true`，成功后对局进入 `abandoned`，不返回阵营胜者。
+
+## 5. SSE 端点
+
+`GET /api/games/:gameId/stream`
+
+请求可携带标准 `Last-Event-ID`；首次连接从当前安全快照开始。响应头至少满足：
+
+```text
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+```
+
+每帧格式：
+
+```text
+id: <streamSeq>
+event: <type>
+data: <PublicStreamPayload JSON>
+```
+
+### 5.1 允许的帧
+
+| `event` | 内容边界 |
+| --- | --- |
+| `state_synced` | 当前 `HumanGameView` 与游标 |
+| `agent_activity` | 角色正在观察、思考、重试或已完成；无推理内容 |
+| `domain_event` | 已提交且允许公开的领域事件投影 |
+| `vote_progressed` | 完成投票的角色，不含目标 |
+| `votes_revealed` | 全部完成后的一次性投票关系 |
+| `terminal_reveal_ready` | 终局事实已持久化，可以开始前端揭晓 |
+| `stream_error` | 脱敏错误类别和恢复建议 |
+| `heartbeat` | 无业务数据的连接保活 |
+
+### 5.2 重连算法
+
+1. 服务端读取 `Last-Event-ID`，补发之后的 `public_stream_entries`。
+2. 补发与实时订阅必须以同一高水位衔接，不得遗漏或乱序。
+3. 随后发送或确认当前 `state_synced`；客户端以更高 `revision/streamSeq` 为准。
+4. 客户端按 `streamSeq` 去重，收到旧帧不得倒退状态。
+5. 若客户端游标无效，服务端返回完整安全视图并从当前高水位继续；不得返回私有原始事件补洞。
+
+`heartbeat` 可以不持久化；它不得推进业务游标。运行状态在重连后以 `HumanGameView.operationalStatus` 恢复。
+
+## 6. 公开投影规则
+
+### 6.1 对局进行中
+
+允许：配置中的难度和卧底人数、玩家显示信息、存活状态、当前阶段、公开描述/辩解、已统一揭晓的历史投票、淘汰名单和非信息性 AI 状态。
+
+禁止：
+
+- 任何玩家的真实阵营。
+- 除当前人类本人外的词牌。
+- 当前阶段尚未统一揭晓的投票目标。
+- 投票理由、身份概率、异阵营词候选和其他 Agent 私有信念。
+- 模型原始输出、格式修复内容和被拦截的描述。
+
+### 6.2 人类淘汰后
+
+继续使用同一公开投影，不增加上帝视角。`allowedCommands` 只包含 `ContinueSpectating` 或 `AbandonGame`；选择观战后人类不再获得描述、辩解或投票命令。
+
+### 6.3 终局
+
+- `finished`：可以返回正常胜者、全部阵营和词牌、确定性事实与私有信念历史。
+- `abandoned`：返回放弃状态和截至放弃时的不完整事实；不返回阵营胜者。私有揭晓范围以历史复盘实现阶段的产品规则为准，首个里程碑不伪造完整 AI 总结。
+- `system_terminated`：返回脱敏错误摘要和不完整事实；不可继续失败动作。
+
+前端逐张翻牌只是对已返回终局事实的呈现，不调用任何改变领域状态的端点。
+
+## 7. 后续端点边界
+
+历史列表、单局完整复盘、Markdown 导出、异步 AI 总结状态和重新生成端点在后续里程碑定义。首个里程碑可以保留导航占位，但不得返回虚构数据或启动真实复盘任务。
+
+## 8. 来源
+
+- 需求：[`../acceptance/REQUIREMENTS.md`](../acceptance/REQUIREMENTS.md) 第 102–125、139–145、163–192 条。
+- 决策：DEC-027 至 DEC-032、DEC-037 至 DEC-040、DEC-045 至 DEC-052、DEC-063、DEC-069 至 DEC-080。

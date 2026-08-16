@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@sheishiwodi/web", "dev", "--host", "127.0.0.1"],
+      "port": 9001
+    },
+    {
+      "name": "server-dev",
+      "runtimeExecutable": "D:/Dev/Node/node-v20.11.1-win-x64/node.exe",
+      "runtimeArgs": ["node_modules/.pnpm/tsx@4.19.2/node_modules/tsx/dist/cli.mjs", "watch", "apps/server/src/main.ts", "--database-path=apps/server/.local/slice6-preview.db"],
+      "port": 3001
+    }
+  ]
+}

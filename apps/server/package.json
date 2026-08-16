@@ -1,0 +1,26 @@
+{
+  "name": "@sheishiwodi/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sheishiwodi/shared": "workspace:*",
+    "better-sqlite3": "11.7.0",
+    "drizzle-orm": "0.38.3",
+    "fastify": "5.2.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.12",
+    "@types/node": "22.10.5",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8"
+  }
+}
