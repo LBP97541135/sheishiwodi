@@ -1,6 +1,6 @@
 # 持久化规格
 
-- 状态：首个里程碑基线与 `agent_role_models` 已实现；`model_attempts` 与异步复盘表待实现
+- 状态：首个里程碑基线、`agent_role_models` 与 `review_summaries` 已实现；`model_attempts` 尚未实现
 - 适用范围：当前 SQLite + Drizzle 物理 Schema、原子提交与恢复
 
 ## 1. 目标
@@ -123,9 +123,13 @@ SQLite 文件是本地运行状态，不是词库或需求的 Git 事实源。
 
 该表不保存 Base URL 或 API Key（继承 DEC-082/DEC-052）。仅保存可下发的 model ID。假模型流程不依赖该表；真实模型（Tokendance 中转，`AGENT_PROVIDER=tokendance`）接入时使用同一个中转站，仅按角色读取 model ID。存在活动局（`in_progress` / `awaiting_spectator`）时拒绝改写该表（见 DEC-085 与 `api-and-events.md`）。
 
-### 2.10 后续实体
+### 2.10 `review_summaries`
 
-异步复盘任务、复盘结果与 `model_attempts` 在对应里程碑再完整落地。本阶段的 `gameId`、角色模型映射、事件和私有动作已经为后续读取提供基础。
+当前已存在按 `gameId` 唯一的异步复盘摘要表，保存 `status`、非敏感 `modelId`、结构化 `summaryJson`、可选脱敏 `errorCode` 与创建/更新时间。正常终局后服务端可入队生成，重启时恢复 `pending/generating` 记录；失败不得改变游戏事实。当前 Web 尚未消费该摘要，用户可见的复盘仍以 `HumanGameView.factReview` 为准。
+
+### 2.11 后续实体
+
+`model_attempts` 与更完整的跨任务调度在对应里程碑再落地。本阶段的 `gameId`、角色模型映射、事件、私有动作和复盘摘要已经为后续读取提供基础。
 
 ## 3. 原子提交协议
 

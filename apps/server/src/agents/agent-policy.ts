@@ -11,6 +11,8 @@ import type {
  */
 export interface AgentActContext {
   agentRoleId: string;
+  /** 内容校验失败后的秘密重生成提示；不携带被拦截原文。 */
+  contentRetry?: 'format' | 'word_leak';
 }
 
 export interface AgentPolicy {

@@ -25,10 +25,15 @@ import {
   type ModelProviderContext,
 } from './agents/model-profile-service.js';
 import type { AgentPolicy } from './agents/agent-policy.js';
+import type { ReviewPolicy } from './agents/review-policy.js';
+import { FakeReviewPolicy } from './agents/fake-review-policy.js';
+import { TokendanceReviewPolicy } from './agents/review-agent-policy.js';
 import { registerGameRoutes } from './games/game-routes.js';
 import { registerModelRoutes } from './games/model-routes.js';
+import { registerReviewRoutes } from './games/review-routes.js';
 import { GameRepository } from './games/game-repository.js';
 import { GameService } from './games/game-service.js';
+import { ReviewService } from './games/review-service.js';
 
 export interface ServerDependencies {
   database: AppDatabase;
@@ -36,6 +41,8 @@ export interface ServerDependencies {
   ids: IdSource;
   clock: Clock;
   agentPolicyFactory?: () => AgentPolicy;
+  /** 复盘策略工厂：运行时依 env 注入真实/假策略；缺省时 ReviewService 自带 FakeReviewPolicy。 */
+  reviewPolicyFactory?: () => ReviewPolicy;
   modelProvider?: ModelProviderContext;
   roleModelRepository?: AgentRoleModelRepository;
   /**
@@ -55,12 +62,23 @@ export function buildServer(dependencies?: ServerDependencies) {
     service: 'sheishiwodi-server' as const,
   }));
 
+  const gameRepository = new GameRepository(runtime.database);
+  const reviewService = new ReviewService(
+    gameRepository,
+    runtime.clock,
+    runtime.reviewPolicyFactory ?? (() => new FakeReviewPolicy()),
+  );
   const gameService = new GameService(
-    new GameRepository(runtime.database),
+    gameRepository,
     new WordPairRepository(runtime.database),
-    runtime,
+    {
+      ...runtime,
+      // 正常终局后异步生成复盘（幂等、单飞、失败仅脱敏落库，绝不阻塞主流程）。
+      onGameFinished: (gameId: string) => reviewService.enqueue(gameId),
+    },
   );
   registerGameRoutes(server, gameService);
+  registerReviewRoutes(server, reviewService);
 
   const roleModelRepository =
     runtime.roleModelRepository ?? new AgentRoleModelRepository(runtime.database);
@@ -76,6 +94,8 @@ export function buildServer(dependencies?: ServerDependencies) {
 
   server.addHook('onReady', async () => {
     await gameService.resumeActiveGame();
+    // 重启恢复：把遗留在 pending/generating 的复盘重新入队后台生成。
+    reviewService.recover();
   });
 
   return server;
@@ -98,7 +118,7 @@ export function createRuntimeDependencies(): ServerDependencies {
 
   const clock: Clock = { now: () => new Date().toISOString() };
   const roleModelRepository = new AgentRoleModelRepository(database);
-  const { agentPolicyFactory, modelProvider } = resolveAgentProvider(
+  const { agentPolicyFactory, reviewPolicyFactory, modelProvider } = resolveAgentProvider(
     roleModelRepository,
     fakeScenario,
   );
@@ -113,6 +133,7 @@ export function createRuntimeDependencies(): ServerDependencies {
     },
     clock,
     agentPolicyFactory,
+    reviewPolicyFactory,
     modelProvider,
     roleModelRepository,
     // 运行时后台推进：开始与人类操作立即返回，AI 回合异步推进并经 SSE 实时下发。
@@ -127,16 +148,25 @@ export function createRuntimeDependencies(): ServerDependencies {
 function resolveAgentProvider(
   roleModelRepository: AgentRoleModelRepository,
   fakeScenario: FakeAgentScenario,
-): { agentPolicyFactory: () => AgentPolicy; modelProvider: ModelProviderContext } {
+): {
+  agentPolicyFactory: () => AgentPolicy;
+  reviewPolicyFactory: () => ReviewPolicy;
+  modelProvider: ModelProviderContext;
+} {
   const provider = (process.env['AGENT_PROVIDER'] ?? 'fake').trim();
   const baseUrl = (process.env['TOKENDANCE_BASE_URL'] ?? '').trim();
   const apiKey = (process.env['TOKENDANCE_API_KEY'] ?? '').trim();
   const defaultModel = (process.env['TOKENDANCE_DEFAULT_MODEL'] ?? '').trim();
+  // 专用复盘模型（DEC-030）：独立 model ID，复用同一中转连接/认证；
+  // 最终缺省 deepseek-v4-flash（负责人所称 “ds-v4flash” 在中转目录的真实 id）。
+  const reviewModel =
+    (process.env['TOKENDANCE_REVIEW_MODEL'] ?? '').trim() || defaultModel || 'deepseek-v4-flash';
   const useTokendance = provider === 'tokendance' && baseUrl.length > 0 && apiKey.length > 0;
 
   if (!useTokendance) {
     return {
       agentPolicyFactory: () => new FakeAgentPolicy(fakeScenario),
+      reviewPolicyFactory: () => new FakeReviewPolicy(),
       modelProvider: {
         mode: provider === 'tokendance' ? 'tokendance' : 'fake',
         configured: false,
@@ -174,6 +204,13 @@ function resolveAgentProvider(
         maxSystemRetries: readPositiveInt('TOKENDANCE_MAX_RETRIES', 2),
         retryDelayMs: readPositiveInt('TOKENDANCE_RETRY_DELAY_MS', 800),
         debug: debugTiming,
+      }),
+    reviewPolicyFactory: () =>
+      new TokendanceReviewPolicy({
+        client,
+        modelId: reviewModel,
+        maxSystemRetries: readPositiveInt('TOKENDANCE_MAX_RETRIES', 2),
+        retryDelayMs: readPositiveInt('TOKENDANCE_RETRY_DELAY_MS', 800),
       }),
     modelProvider: { mode: 'tokendance', configured: true, client },
   };

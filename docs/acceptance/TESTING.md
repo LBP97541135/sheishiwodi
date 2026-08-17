@@ -45,7 +45,7 @@
 - 概率总和读取 `undercoverCount`；用多卧底测试配置证明未写死为 1。
 - 投票目标只接受输入的 `legalTargets`。
 
-已覆盖：`TokendanceAgentPolicy` 的结构错误一次格式修复、修复失败后有限系统重试（注入 Clock，不真实等待）、耗尽后抛脱敏 `AgentSystemError`（见 `tokendance-agent-policy.test.ts`），以及服务端捕获后终止为 `system_terminated`（见 `game-system-terminated.test.ts`）。
+已覆盖：`TokendanceAgentPolicy` 的严格结构校验、一次格式修复、可重试/永久错误分类、有限系统重试（注入 sleep，不真实等待）与脱敏 `AgentSystemError`；服务层覆盖内容重生成、首次泄词秘密拦截、重复泄词强退、过期 revision 结果丢弃，以及提交失败复用同一模型输出（见 `tokendance-agent-policy.test.ts`、`game-agent-recovery.test.ts` 和 `game-system-terminated.test.ts`）。
 
 ### 2.3 持久化集成测试
 
@@ -71,7 +71,8 @@
 - 投票完成进度帧不包含目标；最后一票后才出现一次 `votes_revealed`。
 - SSE 发送失败后事实仍可通过补取恢复。
 - 被拒绝描述、格式修复输出和失败模型尝试不进入公开事件接口。
-- 后续系统异常终止响应不包含阵营胜者；当前已实现放弃响应边界。
+- 系统异常终止响应不包含阵营胜者、模型响应或配置细节；放弃响应同样不包含完整揭晓。
+- 默认路径零出网守卫：stub `globalThis.fetch` 抛错后，默认 `FakeAgentPolicy` 完整对局仍跑通到终局且 fetch 零调用，证明默认命令绝不实例化真实策略、绝不联网（`no-live-in-default.test.ts`）。
 
 ### 2.5 Web 组件与交互测试
 
@@ -146,7 +147,7 @@
 
 ### 5.1 Vitest
 
-`pnpm test` 当前共 104 项：shared 43、server 40、web 21。
+2026-08-17 本轮等价全量门禁共 156 项：shared 47、server 64、web 45。由于工作区 Windows junction 损坏，命令在独立 hoisted 验证副本中以同版本 Node 22、依赖与源码执行；原工作区未读取真实模型配置、未联网。
 
 | 层 | 文件 | 主要覆盖 |
 | --- | --- | --- |
@@ -159,10 +160,13 @@
 | Server | `game-flow.test.ts` | 完整服务端玩法、AI 自动推进、秘密揭票、两种胜负、平票、观战和放弃 |
 | Server | `game-repository.test.ts` | 五个写入位置的故障注入、整事务回滚和安全重试 |
 | Server | `game-recovery.test.ts` | 准备等待、AI 描述/投票重启恢复、稳定 actionId 和高水位损坏拒绝 |
+| Server | `game-agent-recovery.test.ts` | 内容重生成、首次/重复泄词、过期结果丢弃、提交重试不重复调用模型 |
+| Server | `tokendance-agent-policy.test.ts` | strict 结构修复、瞬时/永久错误分类、重试耗尽与安全错误码 |
+| Server | `no-live-in-default.test.ts` | 默认假模型完整对局零 fetch 调用、零真实模型实例化 |
 | Server | `agent-runtime.test.ts` | Agent 输入白名单、投票/重投目标边界和 `FakeAgentPolicy` 合法输出 |
 | Server | `game-stream.test.ts` | SSE/补取游标、`Last-Event-ID`、严格递增、去重和公开帧私有字段缺失 |
 | Web | `App.test.tsx` | 创建与准备恢复、本地翻牌、素材、开始游戏、最近终局恢复和 SSE 游标去重 |
-| Web | `GameScreen.test.tsx` | 描述、投票、辩解、重投、分镜、观战/放弃、终局揭晓和 DOM 隔离 |
+| Web | `GameScreen.test.tsx`、`ReviewScreen.test.tsx` | 描述、投票、辩解、重投、违规/异常分镜、观战/放弃、终局揭晓、复盘和 DOM 隔离 |
 
 ### 5.2 Playwright
 
@@ -173,6 +177,8 @@
 - `tie.spec.ts`：一次部分平票、候选辩解、非候选重投并淘汰。
 
 Playwright 每个模式使用独立临时 SQLite、确定性随机序列和真实本地 Web/Fastify，不访问真实模型。
+
+2026-08-17 本轮 10/10 通过；另以内置浏览器完成 `创建对局 -> 确认词牌 -> 开始游戏 -> 进入第 1 轮人类描述` 可见交互检查，页面标题、非空内容、无框架错误遮罩、控制台零 warning/error 均通过。
 
 ## 6. 首个里程碑验收清单
 
@@ -211,13 +217,33 @@ Playwright 每个模式使用独立临时 SQLite、确定性随机序列和真�
 - [x] 默认命令未调用真实模型。
 - [x] README 包含本地启动、测试、信息隔离和已知问题。
 
-## 7. 真实模型验收
+## 7. 真实模型验收（分层）
 
-`pnpm test:live`（`node tests/live/run.mjs`）已可执行：它先从根 `.env` 载入 `AGENT_PROVIDER`、`TOKENDANCE_BASE_URL`、`TOKENDANCE_API_KEY` 与 smoke 用 model，校验 provider 为 `tokendance` 且 Base URL、API Key 均非空，缺任一即明确失败并退出（绝不静默走假模型）。校验通过后代理 `GET /models` 与一次最小 `POST /chat/completions`，输出仅打印 model 数量与回复字符数，绝不打印 URL/Key/请求头/完整响应。每次执行前需明确存在费用和有效本地配置。后续完整验收将覆盖 DeepSeek、豆包、千问和复盘模型的真实描述、信念、投票、隔离与异步复盘。
+`pnpm test:live` 分层执行，缺 env 一律显式失败退出码 1（绝不静默走假模型），全程脱敏——只记计数/字符长度/错误 kind/耗时/重试/布尔/model ID/role/action，绝不打印 URL/Key/请求头/`Bearer`/完整响应/词牌/信念原文/违规原文。运行架构为混合方案：连通冒烟保持纯 Node，策略级与整局验收由 tsx 编排器（复用 `playwright.config.ts` 同款 tsx 启动，零新依赖）导入真实服务端模块执行。
 
-成功后生成脱敏 Markdown 报告与关键截图，记录时间、模型标识、信息隔离断言、结构校验、耗时、重试次数和复盘结果。报告不得包含密钥、敏感中转地址、请求头、违规原文或无必要的完整响应。
+### 7.1 连通冒烟（`test:live:smoke` / `tests/live/run.mjs`）
 
-`test:live` 不得进入默认 CI、普通开发启动、`pnpm test` 或 `pnpm test:e2e`。负责人自填真实 Key 于 gitignored `.env` 后方可执行付费联网验收。
+从根 `.env` 载入 `AGENT_PROVIDER`、`TOKENDANCE_BASE_URL`、`TOKENDANCE_API_KEY` 与 smoke 用 model，校验 provider 为 `tokendance` 且 Base URL、API Key 均非空。通过后代理 `GET /models` 与一次最小 `POST /chat/completions`，仅打印 model 数量与回复字符数。
+
+### 7.2 策略级实测（`test:live` 默认 / `test:live:policy`，约 6 次调用）
+
+用 shared 纯函数造快照 + `projectAgentTurnInput` 白名单投影（无 DB/服务端/网络成本），对 DeepSeek/豆包/千问三角色各做一次真实 `TokendanceAgentPolicy.act` 的 describe 与 vote：
+
+- 结构校验：`speechActionOutputSchema`/`voteActionOutputSchema`（strict）解析成功；`beliefSnapshotSchema` + `validateBeliefSnapshot`（覆盖全部存活玩家、概率和≈卧底人数）；vote 的 `targetPlayerId` 必属输入 `legalTargets`。
+- 五通道信息隔离负向断言：agent 输入 / 策略公开文本 / 抛出错误消息 / （整局时）公开帧 / 报告文本，均以哨兵集合（动态词牌 + 固定字段 + baseUrl/apiKey/`Bearer`）搜索禁止字段。公开文本命中自己词牌记 WARN（服务端 content validator 为硬闸），配置泄漏记硬失败。
+- 耗时/重试从策略 `debug` 已脱敏时序行采集，零新增泄漏面。
+
+### 7.3 可选整局（`test:live:full` / `LIVE_FULL_GAME=1`）
+
+以真实策略 + `backgroundAdvance:false` + 独立临时 SQLite 驱动完整对局到终局，断言到达 `finished` 或 `system_terminated`（真实模型系统失败经 `AgentSystemError`→`system_terminated`/`model_failure_limit` 亦通过），并对公开事件流做全负向矩阵隔离断言、确认信念私存（`agent_actions` > 0）。调用多、成本高，故显式门控。
+
+### 7.4 报告与边界
+
+成功后生成脱敏 Markdown 报告 `docs/acceptance/reports/live-<时间>.md`，记录时间、模型标识、结构校验、信息隔离断言、耗时、重试次数（及整局终局状态）。报告落盘前自检渲染串，命中 baseUrl/apiKey/`Bearer`/任一词牌哨兵即中止不写并非零退出。报告不得包含密钥、敏感中转地址、请求头、违规原文或无必要的完整响应。
+
+> **复盘模型暂不纳入本层真实调用验收**：服务端已经具备异步复盘任务、`review_summaries` 持久化和查询/重新生成 API，但 Web 尚未请求或展示 `ReviewSummary`，仍未形成用户可用闭环。待前端接通并建立独立任务后，再把复盘模型加入 live 矩阵与报告。
+
+`test:live` 及其子命令不得进入默认 CI、普通开发启动、`pnpm test` 或 `pnpm test:e2e`。默认路径由 `apps/server/src/agents/no-live-in-default.test.ts` 断言零出网、绝不实例化真实策略。负责人自填真实 Key 于 gitignored `.env` 后方可执行付费联网验收。
 
 ## 8. 来源
 

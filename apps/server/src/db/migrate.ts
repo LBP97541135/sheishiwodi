@@ -27,4 +27,15 @@ export function migrateDatabase(sqlite: Database.Database) {
       updated_at TEXT NOT NULL
     );
   `);
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS review_summaries (
+      game_id TEXT PRIMARY KEY REFERENCES games(game_id),
+      status TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      summary_json TEXT NOT NULL,
+      error_code TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
 }

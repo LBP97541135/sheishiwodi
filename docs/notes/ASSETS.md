@@ -1,7 +1,7 @@
 # 角色素材索引
 
 - 状态：角色素材、审讯室背景与背景音乐均已接入
-- 素材目录：`素材/`（原始归档）
+- 运行时素材目录：`apps/web/src/assets/`（仓库根重复原始目录已删除）
 - 检查日期：2026-08-17
 - 当前数量：26 张 PNG、1 个 WAV
 - 覆盖范围：DeepSeek、豆包、千问、男性人类、女性人类各 5 种状态；1 张横版审讯室背景；1 首背景音乐
@@ -10,7 +10,7 @@
 
 当前素材已经完整覆盖三个 AI 角色与男、女人类形象的待机、思考、发言、被怀疑和被淘汰状态。三组 AI 角色保持统一的女性拟人漫画方向；人类素材使用匿名深色剪影，不建立具体面部画像，并通过姿势和场景符号表达状态。各角色在同一组内的人物识别特征基本稳定，五种状态具有可辨识的表情、动作或道具差异。构图比例接近一致，能够直接放入统一的角色容器，并通过 `object-fit: contain` 保持完整人物。
 
-当前代码已经把 25 张角色 PNG 复制到 `apps/web/src/assets/characters/`，并通过 `character-assets.ts` 为 DeepSeek、豆包、千问、男性人类和女性人类建立五状态映射；准备页与对局页均使用这些素材，加载失败时回退为文字占位头像。审讯室背景已经复制到 `apps/web/src/assets/scenes/interrogation-room.png` 并导出为 `sceneAssets.interrogationRoom`，由 `experience-settings.tsx` 的背景切换（纸面/审讯室）消费：选择审讯室时 `App` 给根 `.shell` 加 `shell--interrogation` 类并注入 `--scene-background` CSS 变量，经 `::before` 渲染整幅背景，选择持久化到 `localStorage`。背景音乐 `bgm.wav` 已规范化复制到 `apps/web/src/assets/audio/game-bgm.wav` 并导出为 `audioAssets.gameBgm`（组件不再引用仓库根中文 `素材/` 路径）；`useExperienceSettings` 负责其生命周期：默认关闭、循环、音量 0.24、被浏览器自动播放策略拦截时提示点击解锁、StrictMode 卸载时先摘监听再清空 src 避免伪报错。桌面与 375×812 移动端均实测背景切换、设置控件布局与素材加载正常。
+当前代码在 `apps/web/src/assets/characters/` 保存 25 张角色 PNG，并通过 `character-assets.ts` 为 DeepSeek、豆包、千问、男性人类和女性人类建立五状态映射；准备页与对局页均使用这些素材，加载失败时回退为文字占位头像。审讯室背景位于 `apps/web/src/assets/scenes/interrogation-room.png`，由 `experience-settings.tsx` 的背景切换（纸面/审讯室）消费。背景音乐位于 `apps/web/src/assets/audio/game-bgm.wav` 并导出为 `audioAssets.gameBgm`；`useExperienceSettings` 负责默认关闭、循环、音量 0.24、自动播放解锁与卸载安全。仓库根重复的 `素材/` 目录已删除，不再作为可链接的归档事实源。桌面与 375×812 移动端均实测背景切换、设置控件布局与素材加载正常。
 
 发布前仍需完成：`game-bgm.wav` 为 10.5 MB 未压缩 WAV（构建已提示体积偏大），本机无 ffmpeg 暂未转码，正式发布前应压缩为较小音频格式；角色 PNG 的透明通道核验、统一导出尺寸与 WebP 压缩同属无损工程整理，不阻塞当前开发。
 
@@ -36,71 +36,71 @@
 
 | 状态 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 待机 | [`../../素材/ds-待机.png`](../../素材/ds-待机.png) | 1792 × 2240 | 可直接使用 |
-| 思考 | [`../../素材/ds-思考.png`](../../素材/ds-思考.png) | 1831 × 2288 | 可直接使用；导出时统一画布 |
-| 发言 | [`../../素材/ds-发言.png`](../../素材/ds-发言.png) | 1792 × 2240 | 可直接使用 |
-| 被怀疑 | [`../../素材/ds-被怀疑.png`](../../素材/ds-被怀疑.png) | 1792 × 2240 | 可直接使用 |
-| 被淘汰 | [`../../素材/ds-被淘汰.png`](../../素材/ds-被淘汰.png) | 1792 × 2240 | 可直接使用 |
+| 待机 | `apps/web/src/assets/characters/deepseek/idle.png` | 1792 × 2240 | 已接入 |
+| 思考 | `apps/web/src/assets/characters/deepseek/thinking.png` | 1831 × 2288 | 已接入；发布前统一画布 |
+| 发言 | `apps/web/src/assets/characters/deepseek/speaking.png` | 1792 × 2240 | 已接入 |
+| 被怀疑 | `apps/web/src/assets/characters/deepseek/suspected.png` | 1792 × 2240 | 已接入 |
+| 被淘汰 | `apps/web/src/assets/characters/deepseek/eliminated.png` | 1792 × 2240 | 已接入 |
 
 ### 3.2 豆包
 
 | 状态 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 待机 | [`../../素材/豆包-待机.png`](../../素材/豆包-待机.png) | 1792 × 2240 | 可直接使用 |
-| 思考 | [`../../素材/豆包-思考.png`](../../素材/豆包-思考.png) | 1792 × 2240 | 可直接使用 |
-| 发言 | [`../../素材/豆包-发言.png`](../../素材/豆包-发言.png) | 1792 × 2240 | 可直接使用 |
-| 被怀疑 | [`../../素材/豆包-被怀疑.png`](../../素材/豆包-被怀疑.png) | 1792 × 2240 | 可直接使用 |
-| 被淘汰 | [`../../素材/豆包-被淘汰.png`](../../素材/豆包-被淘汰.png) | 1792 × 2240 | 可直接使用 |
+| 待机 | `apps/web/src/assets/characters/doubao/idle.png` | 1792 × 2240 | 已接入 |
+| 思考 | `apps/web/src/assets/characters/doubao/thinking.png` | 1792 × 2240 | 已接入 |
+| 发言 | `apps/web/src/assets/characters/doubao/speaking.png` | 1792 × 2240 | 已接入 |
+| 被怀疑 | `apps/web/src/assets/characters/doubao/suspected.png` | 1792 × 2240 | 已接入 |
+| 被淘汰 | `apps/web/src/assets/characters/doubao/eliminated.png` | 1792 × 2240 | 已接入 |
 
 ### 3.3 千问
 
 | 状态 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 待机 | [`../../素材/千问-待机.png`](../../素材/千问-待机.png) | 1792 × 2240 | 可直接使用 |
-| 思考 | [`../../素材/千文-思考.png`](../../素材/千文-思考.png) | 1792 × 2240 | 已以规范化副本 `qwen/thinking.png` 接入；原始归档名仍有“千文”笔误 |
-| 发言 | [`../../素材/千问-发言.png`](../../素材/千问-发言.png) | 1792 × 2240 | 可直接使用 |
-| 被怀疑 | [`../../素材/千问-被怀疑.png`](../../素材/千问-被怀疑.png) | 1792 × 2240 | 可直接使用 |
-| 被淘汰 | [`../../素材/千问-被淘汰.png`](../../素材/千问-被淘汰.png) | 1792 × 2240 | 可直接使用 |
+| 待机 | `apps/web/src/assets/characters/qwen/idle.png` | 1792 × 2240 | 已接入 |
+| 思考 | `apps/web/src/assets/characters/qwen/thinking.png` | 1792 × 2240 | 已用规范化名称接入 |
+| 发言 | `apps/web/src/assets/characters/qwen/speaking.png` | 1792 × 2240 | 已接入 |
+| 被怀疑 | `apps/web/src/assets/characters/qwen/suspected.png` | 1792 × 2240 | 已接入 |
+| 被淘汰 | `apps/web/src/assets/characters/qwen/eliminated.png` | 1792 × 2240 | 已接入 |
 
 ### 3.4 男性人类剪影
 
 | 状态 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 待机 | [`../../素材/男-待机.png`](../../素材/男-待机.png) | 1792 × 2240 | 可直接使用 |
-| 思考 | [`../../素材/男-思考.png`](../../素材/男-思考.png) | 1792 × 2240 | 可直接使用 |
-| 发言 | [`../../素材/男-发言.png`](../../素材/男-发言.png) | 1792 × 2240 | 可直接使用 |
-| 被怀疑 | [`../../素材/男-被怀疑.png`](../../素材/男-被怀疑.png) | 1792 × 2240 | 可直接使用 |
-| 被淘汰 | [`../../素材/男-被淘汰.png`](../../素材/男-被淘汰.png) | 1792 × 2240 | 可直接使用 |
+| 待机 | `apps/web/src/assets/characters/human-male/idle.png` | 1792 × 2240 | 已接入 |
+| 思考 | `apps/web/src/assets/characters/human-male/thinking.png` | 1792 × 2240 | 已接入 |
+| 发言 | `apps/web/src/assets/characters/human-male/speaking.png` | 1792 × 2240 | 已接入 |
+| 被怀疑 | `apps/web/src/assets/characters/human-male/suspected.png` | 1792 × 2240 | 已接入 |
+| 被淘汰 | `apps/web/src/assets/characters/human-male/eliminated.png` | 1792 × 2240 | 已接入 |
 
 ### 3.5 女性人类剪影
 
 | 状态 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 待机 | [`../../素材/女-待机.png`](../../素材/女-待机.png) | 1792 × 2240 | 可直接使用 |
-| 思考 | [`../../素材/女-思考.png`](../../素材/女-思考.png) | 1792 × 2240 | 可直接使用 |
-| 发言 | [`../../素材/女-发言.png`](../../素材/女-发言.png) | 1792 × 2240 | 可直接使用 |
-| 被怀疑 | [`../../素材/女-被怀疑.png`](../../素材/女-被怀疑.png) | 1792 × 2240 | 可直接使用 |
-| 被淘汰 | [`../../素材/女-被淘汰.png`](../../素材/女-被淘汰.png) | 1792 × 2240 | 可直接使用 |
+| 待机 | `apps/web/src/assets/characters/human-female/idle.png` | 1792 × 2240 | 已接入 |
+| 思考 | `apps/web/src/assets/characters/human-female/thinking.png` | 1792 × 2240 | 已接入 |
+| 发言 | `apps/web/src/assets/characters/human-female/speaking.png` | 1792 × 2240 | 已接入 |
+| 被怀疑 | `apps/web/src/assets/characters/human-female/suspected.png` | 1792 × 2240 | 已接入 |
+| 被淘汰 | `apps/web/src/assets/characters/human-female/eliminated.png` | 1792 × 2240 | 已接入 |
 
 ### 3.6 对局背景
 
 | 用途 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 对局漫画主背景 | [`../../素材/背景图.png`](../../素材/背景图.png) | 2600 × 1460，约 16:9 | 已去除水印，可直接用于原型；中央与下方留白适合叠加角色和气泡 |
+| 对局漫画主背景 | `apps/web/src/assets/scenes/interrogation-room.png` | 2600 × 1460，约 16:9 | 已接入纸面/审讯室切换 |
 
-当前代码已保留原始 `背景图.png`，并复制为 `apps/web/src/assets/scenes/interrogation-room.png`，由 `sceneAssets` 导出；页面尚未消费该资源。移动端接入时优先使用同一图片配合固定焦点裁切，实际截图验证不足时再补竖版。
+当前背景由 `sceneAssets` 导出并通过 `.shell--interrogation` 与 `--scene-background` 渲染；移动端使用同一图片的固定焦点裁切，桌面与 375×812 已完成实测。
 
 ### 3.7 背景音乐
 
 | 用途 | 当前文件 | 格式 | 可用性 |
 | --- | --- | --- | --- |
-| 对局背景音乐 | [`../../素材/bgm.wav`](../../素材/bgm.wav) | WAV | 可接入原型；发布前核验时长、采样率、声道、响度、循环接缝和授权来源 |
+| 对局背景音乐 | `apps/web/src/assets/audio/game-bgm.wav` | WAV，约 10.5 MB | 已接入；发布前需压缩并核验授权与音频参数 |
 
-背景音乐尚未接入。实现时建议生成 `apps/web/public/audio/game-bgm.ogg` 与 `game-bgm.mp3` 的压缩副本，原始 WAV 保留为母带。浏览器不得在页面加载时强制自动播放；用户开始游戏或首次主动操作后再播放，并提供静音/音量控制。
+背景音乐已由 `useExperienceSettings` 接入，默认关闭，只在允许的对局阶段播放，并提供本地开关。发布前应生成较小的 OGG/MP3 或其他适合 Web 的副本，同时核验响度、循环接缝与授权来源。
 
 ## 4. 接入命名
 
-源文件保留在 `素材/` 作为原始归档。当前前端已经建立以下 PNG 副本目录：
+仓库当前只保留 `apps/web/src/assets/` 下的运行时副本；根目录重复素材已删除。角色目录如下：
 
 | 角色 | 建议目录 |
 | --- | --- |
@@ -166,7 +166,7 @@ AI 生图不适合生成包含文字的词牌、按钮、图标、票数、角�
 1. 当前 25 张角色 PNG 已接入准备页与对局页；后续在不改变状态键的情况下压缩为 WebP。
 2. 词牌、投票、印章、气泡、分镜和所有通用 UI 由开发直接编写，不等待额外图片。
 3. 通用功能图标和字体在工程初始化时从许可清晰的开源资源中选定并登记。
-4. `背景图.png` 已复制并建立代码映射但未渲染，`bgm.wav` 尚未接入；后续分别完成场景消费、Web 压缩音频副本和静音控制。其余装饰物与纸张纹理均为可选。
+4. 审讯室背景与 BGM 已接入；后续只需完成 Web 音频压缩、图片规范化和来源/授权记录。其余装饰物与纸张纹理均为可选。
 
 ## 6. 素材来源记录
 

@@ -112,12 +112,82 @@
 - [x] 前端模型档案界面展示 model 下拉，禁展 URL/Key，fake 或活动局禁用选择。
 - [x] 文档与决策先行：DEC-085 及 REQUIREMENTS/frontend-ux/agent-runtime/architecture/persistence/api-and-events/TESTING/CLAUDE 已同步。
 
-### 验证（TASK-054，进行中）
+### 验证（TASK-054，已完成）
 
 - [x] shared 状态机新增系统终止用例；服务端 `game-system-terminated.test.ts` 兜底终止用例通过。
 - [x] `tokendance-agent-policy.test.ts` 策略级格式修复/重试/脱敏错误通过。
 - [x] 单测证明 Agent 输入/REST/SSE/事件不含 Key/URL/Bearer/完整响应。
-- [ ] `pnpm build`、`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm test:e2e` 本机全量复跑确认。
-- [ ] E2E 断言未实例化真实策略、无出网。
-- [ ] `test:live` 冒烟入口在缺 env 时显式失败；负责人自填 Key 后付费联网验收。
-- [ ] 完成后向负责人汇报，未提交、未推送。
+- [x] `pnpm build`、`pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm test:e2e` 本机全量复跑确认。
+- [x] E2E 通过 `playwright.config.ts` 强制 `AGENT_PROVIDER=fake` 且不读取本机真实配置；更严格的零出网守卫继续由 TASK-057 覆盖。
+- [x] `test:live` 冒烟入口在缺 env 时显式失败且不静默回退；付费分层验收转入 TASK-057。
+- [x] 已向负责人汇报 TASK-054 结果，未提交、未推送。
+
+## 真实模型分层验收（TASK-057）
+
+- [x] `test:live` 链已建立：`run.mjs` 冒烟（缺 env 显式失败）→ `build shared` → tsx 编排器（`agent-live.ts`）。
+- [x] 策略级 3 模型 × describe/vote 共 6 次真实 `.act()` 已通过输出 Schema 与信念校验。
+- [x] Agent 输入、策略公开文本、整局公开帧与报告文本的隔离检查已通过；错误路径继续由默认测试覆盖。
+- [ ] `test:live:full` 已用真实策略和纯 shared 状态机驱动到 `finished`；仍待可用 `better-sqlite3` 环境验证 HTTP/SQLite 完整链。
+- [x] 已生成两份 `docs/acceptance/reports/live-<时间>.md`，包含结构、隔离、耗时和重试的脱敏结果。
+- [x] **默认守卫**：`no-live-in-default.test.ts` 覆盖默认假模型零出网路径。
+- [x] 既有默认门禁证明 `pnpm test`/`test:e2e` 不触发联网或读取 Key；最终收口时仍需在当前依赖环境复跑。
+- [x] 负责人已执行付费策略级与纯状态机整局验收，并留存两份脱敏报告。
+
+## 文档状态一致性（TASK-058）
+
+- [x] README 反映真实模型策略、显式 live 命令和当前能力边界。
+- [x] 任务总览同步至 TASK-057/058。
+- [x] TASK-054 checklist 与任务台账的“已完成”状态一致。
+- [x] TASK-057 继续保持进行中，未将存在文件等同于验收完成。
+- [x] `spec/README.md` 不再把已实现的真实模型、系统终止、模型档案和媒体能力写为未实现。
+- [x] `TESTING.md` 的测试数量、当前边界和错误恢复状态与实际门禁一致。
+- [x] 全部当前状态文档完成过期短语检索与 `git diff --check`。
+
+## Agent 校验与自动恢复（TASK-059）
+
+- [x] 任务先于代码登记，状态设为进行中。
+- [x] 需求与 Agent 运行时规格明确错误分类、重试预算、内容重生成和重复泄词规则。
+- [x] Tokendance 客户端保留脱敏错误 kind/status，策略层映射可重试性与安全错误码。
+- [x] 结构化输出使用 strict Schema；字段缺失、类型错误、非法目标和非法信念触发一次格式修复，不用默认动作掩盖。
+- [x] 超时、网络、429、5xx、空响应按预算自动重试；401/403、模型未配置等永久错误不盲目重试。
+- [x] AI 描述/辩解长度、句数错误自动重生成；失败内容不公开、不落私有动作、不进入后续上下文。
+- [x] 同一发言机会首次泄词秘密重生成，第二次公开违规、强制退出并立即判断胜负。
+- [x] 模型调用期间 revision 变化时丢弃旧结果；持久化失败复用已验证输出，不再次调用模型。
+- [x] 错误事件、SSE、日志、REST 和 DOM 不含 Key、URL、请求头、完整响应或违规原文。
+- [x] shared/server/Web 分层测试与必要 E2E 补齐。
+- [x] `pnpm test`、`pnpm typecheck`、`pnpm lint`、`pnpm build`、`pnpm test:e2e`、`git diff --check` 全部通过（工作区 junction 损坏时在同版本 hoisted 隔离副本执行等价命令）。
+- [x] 完成后实时收口 TASKS/checklist，并在 PROJECT_LOG 写实际变更、验证和边界。
+
+## 对局操作体验（TASK-060）
+
+- [x] 已先登记任务并设为进行中。
+- [x] 人类回合到来且操作区不在视口内时，操作区进入可视范围，不抢占用户的历史回看。
+- [x] 描述/辩解输入明确展示最小字数、长度或格式限制原因。
+- [x] 组件测试已补；桌面、移动浏览器验收由负责人确认通过。
+- [x] 任务台账、checklist 与 PROJECT_LOG 已更新。
+
+## 当前文档一致性收口（TASK-061）
+
+- [x] 依据当前代码复核 README、CLAUDE、工程规格、任务台账和素材说明。
+- [x] 明确异步 AI 总结已有服务端任务、持久化与 API，但 Web 尚未消费，未误报为完整产品能力。
+- [x] TASK-057 同步已有策略级/纯状态机整局报告与剩余 HTTP/SQLite 验收边界。
+- [x] 删除 `ASSETS.md` 中指向已移除根目录素材的失效链接，统一到运行时素材路径。
+- [x] 修正背景、BGM 的“尚未接入”旧描述及 BGM 默认状态。
+- [x] `git diff --check` 与过期状态检索通过；本任务只改文档，不需要重复运行应用测试。
+
+## 投票阶段同步思考状态（TASK-062）
+
+- [x] 任务先于代码登记，状态设为进行中。
+- [x] 普通投票阶段所有存活且未完成玩家的头像同步使用 `thinking`。
+- [x] 已完成投票的玩家恢复待机状态并显示“已投票”。
+- [x] 重投阶段仅非平票候选进入思考，候选继续显示被怀疑状态。
+- [x] 组件测试覆盖初始投票、部分完成和重投资格。
+- [x] 定向 Vitest 23/23、Web typecheck、可见浏览器投票交互与 `git diff --check` 通过；文档和 PROJECT_LOG 已收口。
+
+## 二期历史复盘入口（TASK-063）
+
+- [x] 任务先于代码登记，状态设为进行中。
+- [ ] 顶层导航常驻“历史复盘”入口，不伪装成已实现的历史列表。
+- [ ] 点击入口显示指定 deta 版本提示。
+- [ ] 支持“知道了”、遮罩和 Esc 关闭，关闭后焦点返回入口。
+- [ ] 补组件测试、桌面/移动浏览器验证并收口文档和 PROJECT_LOG。

@@ -3,6 +3,7 @@ import {
   gameSnapshotSchema,
   humanGameViewSchema,
   projectHumanGameView,
+  reviewSummarySchema,
   type ActionType,
   type BeliefSnapshot,
   type FactReview,
@@ -10,6 +11,7 @@ import {
   type GameSnapshot,
   type HumanGameView,
   type PublicTimelineItem,
+  type ReviewSummary,
 } from '@sheishiwodi/shared';
 
 import type { AppDatabase } from '../db/client.js';
@@ -430,5 +432,49 @@ export class GameRepository {
 
   publicTimelineWith(events: readonly GameEvent[]) {
     return events.filter((event) => event.visibility === 'public').map(eventToTimelineItem);
+  }
+
+  /** 复盘摘要 upsert：首次写入 created_at，之后仅更新状态/内容/error/updated_at。 */
+  upsertReviewSummary(summary: ReviewSummary, now: string) {
+    const parsed = reviewSummarySchema.parse(summary);
+    this.database.sqlite
+      .prepare(
+        `INSERT INTO review_summaries (
+          game_id, status, model_id, summary_json, error_code, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(game_id) DO UPDATE SET
+          status = excluded.status,
+          model_id = excluded.model_id,
+          summary_json = excluded.summary_json,
+          error_code = excluded.error_code,
+          updated_at = excluded.updated_at`,
+      )
+      .run(
+        parsed.gameId,
+        parsed.status,
+        parsed.modelId,
+        JSON.stringify(parsed),
+        parsed.errorCode ?? null,
+        now,
+        now,
+      );
+  }
+
+  getReviewSummary(gameId: string): ReviewSummary | null {
+    const row = this.database.sqlite
+      .prepare('SELECT summary_json FROM review_summaries WHERE game_id = ?')
+      .get(gameId) as { summary_json: string } | undefined;
+    if (!row) return null;
+    return reviewSummarySchema.parse(JSON.parse(row.summary_json));
+  }
+
+  /** 服务重启后需要重新生成的复盘（遗留在 pending/generating 的 game_id）。 */
+  listRecoverableReviewGameIds(): string[] {
+    const rows = this.database.sqlite
+      .prepare(
+        "SELECT game_id FROM review_summaries WHERE status IN ('pending', 'generating') ORDER BY created_at",
+      )
+      .all() as Array<{ game_id: string }>;
+    return rows.map((row) => row.game_id);
   }
 }

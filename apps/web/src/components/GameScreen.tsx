@@ -1,15 +1,15 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   validatePublicSpeech,
   type ContentValidationCode,
   type HumanGameView,
   type Player,
-  type PublicTimelineItem,
 } from '@sheishiwodi/shared';
 
 import { characterKeyFor, type CharacterState } from '../character-assets';
 import { CharacterPortrait } from './CharacterPortrait';
+import { ComicTimeline, type TimelineProps } from './ComicTimeline';
 
 interface GameScreenProps {
   game: HumanGameView;
@@ -21,6 +21,7 @@ interface GameScreenProps {
   onSpectate(): Promise<void>;
   onAbandon(): Promise<void>;
   onNewGame(): void;
+  onReview(): void;
 }
 
 const validationMessage: Record<ContentValidationCode, string> = {
@@ -40,6 +41,7 @@ export function GameScreen({
   onSpectate,
   onAbandon,
   onNewGame,
+  onReview,
 }: GameScreenProps) {
   const nameOf = useMemo(() => {
     const map = new Map(game.players.map((player) => [player.playerId, player.displayName]));
@@ -56,18 +58,48 @@ export function GameScreen({
     game.status === 'in_progress' && round?.currentActorId === humanId && humanAlive;
   const isSpeechAction = round?.actionType === 'describe' || round?.actionType === 'defend';
   const isVoteAction = round?.actionType === 'vote' || round?.actionType === 'revote';
+  const actionAreaRef = useRef<HTMLDivElement>(null);
+  const previousHumanActionRef = useRef<string | null>(null);
   const currentActorName = nameOf(round?.currentActorId);
+  const pendingTimelineAction =
+    game.status === 'in_progress' &&
+    round &&
+    round.currentActorId &&
+    round.actionType &&
+    game.players.find((player) => player.playerId === round.currentActorId)?.kind === 'agent'
+      ? { actorId: round.currentActorId, actionType: round.actionType }
+      : undefined;
+  const humanActionKey =
+    isHumanTurn && (isSpeechAction || isVoteAction) && round?.actionType
+      ? `${game.gameId}:${game.revision}:${round.actionType}`
+      : null;
+
+  useEffect(() => {
+    const isNewHumanAction = humanActionKey !== null && previousHumanActionRef.current !== humanActionKey;
+    previousHumanActionRef.current = humanActionKey;
+    if (!isNewHumanAction) return;
+
+    const actionArea = actionAreaRef.current;
+    if (!actionArea) return;
+    const bounds = actionArea.getBoundingClientRect();
+    if (bounds.top >= 0 && bounds.bottom <= window.innerHeight) return;
+
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    actionArea.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+  }, [humanActionKey]);
 
   return (
     <section className="game-screen" aria-labelledby="game-title">
       <header className="game-header">
-        <p className="eyebrow">
-          {game.config.difficulty === 'easy' ? '简单' : '困难'} · {game.config.undercoverCount} 名卧底
-        </p>
         <h1 id="game-title">{isFinished ? '对局结束' : `第 ${round?.number ?? 1} 轮`}</h1>
-        <p className="game-status-line" role="status">
-          {statusLine(game, isHumanTurn, currentActorName)}
-        </p>
+        <div className="game-header__meta">
+          <p className="eyebrow">
+            {game.config.difficulty === 'easy' ? '简单' : '困难'} · {game.config.undercoverCount} 名卧底
+          </p>
+          <p className="game-status-line" role="status">
+            {statusLine(game, isHumanTurn, currentActorName)}
+          </p>
+        </div>
       </header>
 
       <div className="seats seats--game" aria-label="本局玩家">
@@ -84,17 +116,23 @@ export function GameScreen({
         ))}
       </div>
 
-      <ComicTimeline timeline={game.publicTimeline} nameOf={nameOf} />
+      <ComicTimeline
+        timeline={game.publicTimeline}
+        nameOf={nameOf}
+        pendingAction={pendingTimelineAction}
+      />
 
       {game.status === 'in_progress' && isVoteAction && (
         <VoteProgress game={game} nameOf={nameOf} />
       )}
 
-      <div className="action-area">
+      <div className="action-area" ref={actionAreaRef}>
         {isFinished ? (
-          <Finale game={game} nameOf={nameOf} />
+          <Finale game={game} nameOf={nameOf} onReview={onReview} />
         ) : game.status === 'abandoned' ? (
           <AbandonedNotice />
+        ) : game.status === 'system_terminated' ? (
+          <SystemTerminatedNotice />
         ) : game.status === 'awaiting_spectator' ? (
           <SpectatorChoice busy={busy} onSpectate={onSpectate} onAbandon={onAbandon} />
         ) : !humanAlive ? (
@@ -114,7 +152,7 @@ export function GameScreen({
             busy={busy}
             onSubmit={onVote}
           />
-        ) : (
+        ) : pendingTimelineAction ? null : (
           <WaitingNotice currentActorName={currentActorName} actionType={round?.actionType} />
         )}
         {error && (
@@ -125,7 +163,9 @@ export function GameScreen({
         {game.status === 'in_progress' && (
           <AbandonControl busy={busy} onAbandon={onAbandon} />
         )}
-        {(game.status === 'finished' || game.status === 'abandoned') && (
+        {(game.status === 'finished' ||
+          game.status === 'abandoned' ||
+          game.status === 'system_terminated') && (
           <button className="primary-action" type="button" onClick={onNewGame}>
             开始新对局
           </button>
@@ -138,6 +178,9 @@ export function GameScreen({
 function statusLine(game: HumanGameView, isHumanTurn: boolean, currentActorName: string) {
   if (game.status === 'abandoned') {
     return '本局已放弃，不产生阵营胜负';
+  }
+  if (game.status === 'system_terminated') {
+    return '模型服务自动恢复失败，本局已安全终止';
   }
   if (game.status === 'awaiting_spectator') {
     return '你已出局，请选择继续观战或放弃本局';
@@ -167,9 +210,14 @@ function statusLine(game: HumanGameView, isHumanTurn: boolean, currentActorName:
 function portraitState(player: Player, game: HumanGameView): CharacterState {
   if (!player.alive) return 'eliminated';
   const round = game.round;
+  if (game.status === 'in_progress' && isVotingAction(round?.actionType)) {
+    if (isEligibleVoter(player, game)) {
+      return game.voteProgress.completedPlayerIds.includes(player.playerId) ? 'idle' : 'thinking';
+    }
+    if (round?.tieCandidateIds.includes(player.playerId)) return 'suspected';
+  }
   if (round?.tieCandidateIds.includes(player.playerId)) return 'suspected';
   if (game.status === 'in_progress' && round?.currentActorId === player.playerId) {
-    if (round.actionType === 'vote' || round.actionType === 'revote') return 'thinking';
     return 'speaking';
   }
   return 'idle';
@@ -177,153 +225,30 @@ function portraitState(player: Player, game: HumanGameView): CharacterState {
 
 function seatCaption(player: Player, game: HumanGameView) {
   if (!player.alive) return '已出局';
+  if (game.status === 'in_progress' && isVotingAction(game.round?.actionType)) {
+    if (isEligibleVoter(player, game)) {
+      const done = game.voteProgress.completedPlayerIds.includes(player.playerId);
+      if (player.playerId === game.human.playerId) return done ? '你 · 已投票' : '你 · 思考中';
+      return done ? '已投票' : '思考中';
+    }
+    if (game.round?.tieCandidateIds.includes(player.playerId)) return '等待重投';
+  }
   if (player.playerId === game.human.playerId) return '你';
   if (game.voteProgress.completedPlayerIds.includes(player.playerId)) return '已投票';
   if (game.status === 'in_progress' && game.round?.currentActorId === player.playerId) {
-    if (game.round.actionType === 'revote') return '重投中';
-    if (game.round.actionType === 'vote') return '投票中';
     if (game.round.actionType === 'defend') return '辩解中';
     return '发言中';
   }
   return player.kind === 'human' ? '玩家' : 'AI';
 }
 
-interface TimelineProps {
-  timeline: PublicTimelineItem[];
-  nameOf(playerId: string | null | undefined): string;
+function isVotingAction(actionType: string | null | undefined) {
+  return actionType === 'vote' || actionType === 'revote';
 }
 
-function ComicTimeline({ timeline, nameOf }: TimelineProps) {
-  const scrollRef = useRef<HTMLOListElement>(null);
-  const [follow, setFollow] = useState(true);
-  const panels = timeline.filter((item) => renderableTypes.has(item.type));
-
-  useLayoutEffect(() => {
-    const node = scrollRef.current;
-    if (!node || !follow || typeof node.scrollTo !== 'function') return;
-    const reduce =
-      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    node.scrollTo({ top: node.scrollHeight, behavior: reduce ? 'auto' : 'smooth' });
-  }, [panels.length, follow]);
-
-  const handleScroll = () => {
-    const node = scrollRef.current;
-    if (!node) return;
-    const nearBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
-    setFollow(nearBottom);
-  };
-
-  const backToCurrent = () => {
-    setFollow(true);
-    const node = scrollRef.current;
-    if (node && typeof node.scrollTo === 'function') {
-      node.scrollTo({ top: node.scrollHeight });
-    }
-  };
-
-  return (
-    <div className="comic-wrap">
-      <ol className="comic-timeline" ref={scrollRef} onScroll={handleScroll} aria-live="polite">
-        {panels.length === 0 && <li className="comic-empty">对局即将开始…</li>}
-        {panels.map((item) => (
-          <TimelinePanel key={item.eventSeq} item={item} nameOf={nameOf} />
-        ))}
-      </ol>
-      {!follow && (
-        <button type="button" className="back-to-current" onClick={backToCurrent}>
-          回到当前 ↓
-        </button>
-      )}
-    </div>
-  );
-}
-
-const renderableTypes = new Set([
-  'round_started',
-  'speech_published',
-  'vote_progressed',
-  'votes_revealed',
-  'tie_declared',
-  'revote_started',
-  'player_eliminated',
-  'round_ended_without_elimination',
-]);
-
-function TimelinePanel({ item, nameOf }: { item: PublicTimelineItem; nameOf: TimelineProps['nameOf'] }) {
-  const payload = item.payload as Record<string, unknown>;
-  switch (item.type) {
-    case 'round_started':
-      return (
-        <li className="comic-divider" data-type="round">
-          <span>第 {String(payload.roundNumber ?? '')} 轮</span>
-        </li>
-      );
-    case 'speech_published':
-      return (
-        <li className="comic-panel comic-panel--speech">
-          <span className="comic-speaker">{nameOf(payload.actorId as string)}</span>
-          <p className="comic-bubble">{String(payload.text ?? '')}</p>
-        </li>
-      );
-    case 'vote_progressed':
-      return (
-        <li className="comic-panel comic-panel--progress">
-          <span className="comic-speaker">{nameOf(payload.playerId as string)}</span>
-          <p className="comic-secret">已秘密投票</p>
-        </li>
-      );
-    case 'votes_revealed': {
-      const votes = Array.isArray(payload.votes)
-        ? (payload.votes as Array<{ voterId: string; targetPlayerId: string }>)
-        : [];
-      return (
-        <li className="comic-panel comic-panel--reveal">
-          <span className="comic-speaker">统一揭票</span>
-          <ul className="reveal-list">
-            {votes.map((vote, index) => (
-              <li key={index}>
-                {nameOf(vote.voterId)} → {nameOf(vote.targetPlayerId)}
-              </li>
-            ))}
-          </ul>
-        </li>
-      );
-    }
-    case 'tie_declared': {
-      const ids = Array.isArray(payload.candidateIds) ? (payload.candidateIds as string[]) : [];
-      return (
-        <li className="comic-panel comic-panel--tie">
-          <span className="comic-stamp comic-stamp--tie">平票</span>
-          <p>{ids.map(nameOf).join('、')}</p>
-        </li>
-      );
-    }
-    case 'revote_started': {
-      const candidateIds = Array.isArray(payload.candidateIds) ? (payload.candidateIds as string[]) : [];
-      return (
-        <li className="comic-panel comic-panel--tie">
-          <span className="comic-stamp comic-stamp--revote">重投</span>
-          <p>非候选玩家将只在 {candidateIds.map(nameOf).join('、')} 中秘密重投</p>
-        </li>
-      );
-    }
-    case 'round_ended_without_elimination':
-      return (
-        <li className="comic-panel comic-panel--tie">
-          <span className="comic-stamp comic-stamp--no-out">无人出局</span>
-          <p>{payload.reason === 'all_max' ? '全员最高票，本轮直接结束' : '重投仍然平票'}</p>
-        </li>
-      );
-    case 'player_eliminated':
-      return (
-        <li className="comic-panel comic-panel--eliminated">
-          <span className="comic-stamp comic-stamp--out">出局</span>
-          <p>{nameOf(payload.playerId as string)} 被淘汰</p>
-        </li>
-      );
-    default:
-      return null;
-  }
+function isEligibleVoter(player: Player, game: HumanGameView) {
+  if (!player.alive || !isVotingAction(game.round?.actionType)) return false;
+  return game.round?.actionType !== 'revote' || !game.round.tieCandidateIds.includes(player.playerId);
 }
 
 function VoteProgress({
@@ -371,6 +296,7 @@ function SpeechInput({
   const result = trimmed.length > 0 ? validatePublicSpeech(text, ownWordCard) : null;
   const invalidReason = result && !result.valid ? validationMessage[result.code!] : null;
   const canSubmit = !busy && result?.valid === true;
+  const helperText = invalidReason ?? '至少输入 2 个字后可提交；最多 40 字，不能直接说出原词';
 
   const submit = () => {
     if (!canSubmit) return;
@@ -382,12 +308,13 @@ function SpeechInput({
   return (
     <div className={`human-action human-action--${mode}`}>
       <label className="field">
-        <span>轮到你{actionLabel}（不能直接说出你的词）</span>
+        <span>轮到你{actionLabel}</span>
         <textarea
           className="describe-input"
           value={text}
           maxLength={80}
           rows={2}
+          aria-describedby="speech-input-help"
           placeholder={
             mode === 'defend'
               ? '回应大家的怀疑，保持线索一致且不要泄露原词'
@@ -400,11 +327,13 @@ function SpeechInput({
         <span className={length > 40 ? 'char-count char-count--over' : 'char-count'}>
           {length}/40
         </span>
-        {invalidReason && (
-          <span className="form-error form-error--inline" role="alert">
-            {invalidReason}
-          </span>
-        )}
+        <span
+          className={invalidReason ? 'form-error form-error--inline' : 'human-action__hint'}
+          id="speech-input-help"
+          role="status"
+        >
+          {helperText}
+        </span>
       </div>
       <button className="primary-action" type="button" disabled={!canSubmit} onClick={submit}>
         {busy ? '提交中…' : `提交${actionLabel}`}
@@ -465,9 +394,11 @@ function VotePanel({
 function Finale({
   game,
   nameOf,
+  onReview,
 }: {
   game: HumanGameView;
   nameOf: TimelineProps['nameOf'];
+  onReview(): void;
 }) {
   const civilianWin = game.winnerCamp === 'civilian';
   const revealPlayers = game.reveal?.players ?? [];
@@ -521,9 +452,14 @@ function Finale({
         })}
       </ol>
       {allRevealed && (
-        <button type="button" className="secondary-action" onClick={() => setReviewOpen((open) => !open)}>
-          {reviewOpen ? '收起事实复盘' : '查看事实复盘'}
-        </button>
+        <div className="finale-actions">
+          <button type="button" className="primary-action" onClick={onReview}>
+            查看完整复盘
+          </button>
+          <button type="button" className="secondary-action" onClick={() => setReviewOpen((open) => !open)}>
+            {reviewOpen ? '收起事实复盘' : '查看事实复盘'}
+          </button>
+        </div>
       )}
       {reviewOpen && game.factReview && (
         <section className="fact-review" aria-label="确定性事实复盘">
@@ -555,6 +491,7 @@ function actionLabel(actionType: string) {
 function finaleReason(endReason: HumanGameView['endReason']) {
   if (endReason === 'undercover_eliminated') return '卧底被票出，平民阵营获胜。';
   if (endReason === 'undercover_survived_to_two') return '卧底存活到只剩两人，卧底阵营获胜。';
+  if (endReason === 'player_rule_violation') return '有玩家因重复违反发言规则退出，系统已重新判定胜负。';
   return '对局已结束。';
 }
 
@@ -563,6 +500,15 @@ function AbandonedNotice() {
     <div className="notice notice--abandoned">
       <strong>本局已放弃</strong>
       <p>本局不会产生阵营胜负，已保留截至放弃时的不完整记录。</p>
+    </div>
+  );
+}
+
+function SystemTerminatedNotice() {
+  return (
+    <div className="notice notice--system-terminated" role="alert">
+      <strong>模型服务异常，本局已终止</strong>
+      <p>系统已完成自动修复与重试，但仍未获得可提交的合法行动。本局不判定阵营胜负。</p>
     </div>
   );
 }

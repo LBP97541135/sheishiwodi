@@ -145,6 +145,7 @@ export const humanGameViewSchema = z
       .enum([
         'undercover_eliminated',
         'undercover_survived_to_two',
+        'player_rule_violation',
         'abandoned_by_human',
         'model_failure_limit',
       ])

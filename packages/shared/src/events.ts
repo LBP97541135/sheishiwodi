@@ -30,6 +30,7 @@ export const gameEventTypeSchema = z.enum([
   'tie_declared',
   'revote_started',
   'player_eliminated',
+  'player_rule_violated',
   'round_ended_without_elimination',
   'spectating_started',
   'belief_snapshotted',

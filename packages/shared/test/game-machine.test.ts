@@ -4,6 +4,7 @@ import {
   abandonGame,
   continueSpectating,
   createPreparingGame,
+  disqualifyPlayerForRuleViolation,
   projectHumanGameView,
   startPreparingGame,
   submitDefense,
@@ -205,6 +206,51 @@ describe('模型系统错误终止状态机', () => {
         { ids, clock },
       ),
     ).toThrow('INVALID_TRANSITION');
+  });
+});
+
+describe('重复泄词强退状态机', () => {
+  it('公开规则违规但不公开原文，并按淘汰后存活集合立即判胜负', () => {
+    const { ids, transition } = startedGame();
+    const agent = transition.snapshot.players.find((player) => player.kind === 'agent')!;
+    const snapshot: GameSnapshot = {
+      ...transition.snapshot,
+      players: transition.snapshot.players.map((player) => ({
+        ...player,
+        camp: player.playerId === agent.playerId ? 'undercover' : 'civilian',
+        wordCard: player.playerId === agent.playerId ? '豆浆' : '牛奶',
+      })),
+      round: { ...transition.snapshot.round!, currentActorId: agent.playerId },
+    };
+    const result = disqualifyPlayerForRuleViolation(
+      snapshot,
+      {
+        type: 'DisqualifyPlayerForRuleViolation',
+        commandId: 'rule-violation-1',
+        gameId: snapshot.gameId,
+        actorId: agent.playerId,
+        expectedRevision: snapshot.revision,
+        failedActionId: 'auto/x/describe',
+        rule: 'word_leak',
+      },
+      { ids, clock },
+    );
+
+    expect(result.snapshot.status).toBe('finished');
+    expect(result.snapshot.winnerCamp).toBe('civilian');
+    expect(result.snapshot.endReason).toBe('player_rule_violation');
+    expect(result.snapshot.players.find((player) => player.playerId === agent.playerId)?.alive).toBe(false);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'player_rule_violated',
+        payload: {
+          playerId: agent.playerId,
+          rule: 'word_leak',
+          failedActionId: 'auto/x/describe',
+        },
+      }),
+    );
+    expect(JSON.stringify(result.events)).not.toContain('豆浆');
   });
 });
 

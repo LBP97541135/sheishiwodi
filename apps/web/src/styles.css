@@ -449,21 +449,56 @@ legend {
 
 .game-screen {
   display: grid;
-  gap: 20px;
+  gap: 14px;
+}
+
+.storyboard:has(.game-screen) {
+  padding: 26px 34px 30px;
+}
+
+.game-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  min-height: 58px;
 }
 
 .game-header h1 {
-  font-size: clamp(2rem, 6vw, 3.4rem);
+  font-size: 2.5rem;
+  margin: 0;
+}
+
+.game-header__meta {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  text-align: right;
+}
+
+.game-header__meta .eyebrow {
+  margin: 0;
 }
 
 .game-status-line {
-  margin: 8px 0 0;
+  margin: 0;
   color: #3e6f8e;
   font-weight: 700;
 }
 
 .seats--game {
   gap: 10px;
+}
+
+.seats--game .seat {
+  padding: 8px;
+}
+
+.seats--game .portrait {
+  width: min(100%, 168px);
+  height: 210px;
+  aspect-ratio: 4 / 5;
+  justify-self: center;
 }
 
 .seat[data-alive='false'] {
@@ -487,8 +522,9 @@ legend {
 
 .comic-timeline {
   display: grid;
+  align-content: start;
   gap: 12px;
-  max-height: 44vh;
+  height: clamp(260px, 34vh, 380px);
   overflow-y: auto;
   margin: 0;
   border: 2px solid #26231f;
@@ -519,6 +555,7 @@ legend {
 
 .comic-panel {
   display: grid;
+  align-content: start;
   gap: 6px;
   border: 2px solid #26231f;
   background: #fffdf6;
@@ -539,6 +576,22 @@ legend {
   margin: 0;
   font-size: 1.05rem;
   line-height: 1.6;
+}
+
+.comic-panel--thinking {
+  border-color: #3e6f8e;
+  border-style: dashed;
+  box-shadow: 3px 3px 0 rgba(62, 111, 142, 0.28);
+}
+
+.comic-thinking {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 1.7rem;
+  margin: 0;
+  color: #3e6f8e;
+  font-weight: 700;
 }
 
 .comic-secret {
@@ -650,6 +703,7 @@ legend {
 .human-action__meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -661,6 +715,12 @@ legend {
 
 .char-count--over {
   color: #b74335;
+}
+
+.human-action__hint {
+  color: #777066;
+  font-size: 0.86rem;
+  line-height: 1.45;
 }
 
 .form-error--inline {
@@ -855,12 +915,35 @@ legend {
 }
 
 @media (max-width: 720px) {
+  .storyboard:has(.game-screen) {
+    padding: 20px 16px 24px;
+  }
+
+  .game-header {
+    align-items: start;
+    gap: 12px;
+  }
+
+  .game-header h1 {
+    font-size: 2rem;
+  }
+
+  .game-header__meta {
+    max-width: 13rem;
+    padding-top: 4px;
+  }
+
   .seats--game {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .comic-timeline {
-    max-height: 50vh;
+    height: clamp(260px, 42vh, 360px);
+  }
+
+  .seats--game .portrait {
+    width: min(100%, 112px);
+    height: 140px;
   }
 
   .finale-cards {
@@ -947,6 +1030,37 @@ legend {
 .top-nav__link.is-active {
   background: #26231f;
   color: #f7f3e8;
+}
+
+.history-notice-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(38, 35, 31, 0.62);
+  padding: 20px;
+}
+
+.history-notice {
+  display: grid;
+  width: min(100%, 430px);
+  gap: 14px;
+  border: 3px solid #26231f;
+  border-radius: 6px;
+  background: #fffdf6;
+  box-shadow: 10px 10px 0 #3e6f8e;
+  padding: 24px;
+}
+
+.history-notice h2,
+.history-notice p {
+  margin: 0;
+}
+
+.history-notice .primary-action {
+  justify-self: end;
+  min-width: 112px;
 }
 
 .experience-controls {
@@ -1144,4 +1258,400 @@ legend {
   color: #555047;
   font-family: Consolas, monospace;
   font-size: 0.85rem;
+}
+
+/* 赛后复盘页 */
+.finale-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.review-screen {
+  gap: 24px;
+  text-align: left;
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.review-reveal {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  border: 2px solid #26231f;
+  background: #fffdf6;
+  box-shadow: 6px 6px 0 #3e6f8e;
+  padding: 20px;
+}
+
+.review-wordpair {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+}
+
+.review-wordpair > div {
+  display: grid;
+  gap: 4px;
+  border: 2px dashed #777066;
+  padding: 10px;
+  text-align: center;
+}
+
+.review-wordpair dt {
+  color: #555047;
+  font-size: 0.85rem;
+}
+
+.review-wordpair dd {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.review-identities h2,
+.review-timeline-section h2 {
+  margin: 0 0 12px;
+}
+
+/* AI 复盘评价区：与事实区视觉分区，紫调玻璃卡片。 */
+.review-ai {
+  margin: 20px 0;
+  padding: 18px 20px;
+  border: 1px solid #d9cff2;
+  border-left: 4px solid #7c5cff;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f6f2ff 0%, #fbfaff 100%);
+}
+
+.review-ai__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.review-ai__head h2 {
+  margin: 0;
+}
+
+.review-ai__model {
+  font-size: 0.82rem;
+  color: #6a5aa8;
+  font-weight: 700;
+}
+
+.review-ai__disclaimer {
+  margin: 4px 0 14px;
+  color: #6f6a7d;
+  font-size: 0.85rem;
+}
+
+.review-ai__state {
+  margin: 8px 0;
+  color: #4a4560;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.review-ai__state--failed {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.review-ai__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #cdbdf5;
+  border-top-color: #7c5cff;
+  border-radius: 50%;
+  animation: review-ai-spin 0.8s linear infinite;
+}
+
+@keyframes review-ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.review-ai__overall h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.review-ai__overall p {
+  margin: 0 0 14px;
+  line-height: 1.6;
+}
+
+.review-ai__agents {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.review-ai-agent {
+  padding: 12px 14px;
+  background: #ffffffcc;
+  border: 1px solid #e6def8;
+  border-radius: 10px;
+}
+
+.review-ai-agent__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.review-ai-agent__rating {
+  color: #f2a900;
+  letter-spacing: 2px;
+  font-size: 0.9rem;
+}
+
+.review-ai-agent__verdict {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.review-ai-agent__moments {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #4a4560;
+  font-size: 0.9rem;
+}
+
+.review-ai-agent__moments li {
+  margin: 2px 0;
+}
+
+.review-ai__refresh {
+  margin-top: 4px;
+}
+
+.review-hint {
+  margin: 0 0 12px;
+  color: #555047;
+  font-size: 0.9rem;
+}
+
+.review-identity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-identity-card {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  border: 2px solid #26231f;
+  background: #fffdf6;
+  padding: 12px;
+}
+
+.review-identity-card[data-camp='undercover'] {
+  box-shadow: 4px 4px 0 #b74335;
+}
+
+.review-camp-badge {
+  border: 1px solid currentColor;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 2px 10px;
+}
+
+.review-camp-badge.is-undercover {
+  color: #b74335;
+}
+
+.review-camp-badge.is-civilian {
+  color: #3e6f8e;
+}
+
+.review-wordcard {
+  font-size: 1.1rem;
+}
+
+.review-timeline {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-divider {
+  margin: 6px 0 2px;
+  border-bottom: 2px solid #3e6f8e;
+  color: #3e6f8e;
+  font-weight: 800;
+}
+
+.review-node {
+  display: grid;
+  gap: 6px;
+  border: 2px solid #777066;
+  background: #fffdf6;
+  padding: 12px 14px;
+}
+
+.review-node--stamp {
+  border-style: dashed;
+  color: #555047;
+}
+
+.review-node__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.review-node__actor {
+  font-weight: 800;
+}
+
+.review-node__title {
+  color: #555047;
+  font-size: 0.9rem;
+}
+
+.review-node__body {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.review-node__bullets {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.review-belief-toggle {
+  justify-self: start;
+  min-height: 36px;
+  border: 2px solid #3e6f8e;
+  background: #eef4f8;
+  color: #26231f;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 5px 12px;
+}
+
+.review-belief {
+  display: grid;
+  gap: 12px;
+  border-top: 2px dashed #3e6f8e;
+  padding-top: 10px;
+}
+
+.review-belief__summary {
+  margin: 0;
+  font-style: italic;
+  line-height: 1.6;
+}
+
+.review-belief__reason {
+  margin: 0;
+  color: #555047;
+}
+
+.review-belief__reason span {
+  font-weight: 800;
+  color: #26231f;
+}
+
+.review-belief__group h4 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+}
+
+.review-prob-list,
+.review-candidate-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-prob {
+  display: grid;
+  grid-template-columns: minmax(64px, 96px) 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.review-prob__name {
+  font-weight: 700;
+}
+
+.review-prob[data-actual-undercover='true'] .review-prob__name {
+  color: #b74335;
+}
+
+.review-prob__bar {
+  display: block;
+  height: 12px;
+  border: 1px solid #777066;
+  background: #f1ead8;
+}
+
+.review-prob__fill {
+  display: block;
+  height: 100%;
+  background: #3e6f8e;
+}
+
+.review-prob__value {
+  font-family: Consolas, monospace;
+  font-weight: 700;
+}
+
+.review-candidate {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.review-candidate b {
+  font-size: 1.05rem;
+}
+
+.review-candidate__confidence {
+  font-family: Consolas, monospace;
+  color: #3e6f8e;
+  font-weight: 700;
+}
+
+.review-candidate__evidence {
+  color: #555047;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .review-wordpair {
+    grid-template-columns: 1fr;
+  }
 }

@@ -66,6 +66,30 @@ afterEach(() => {
 });
 
 describe('App', () => {
+  it('历史复盘入口显示 deta 版本提示，并支持按钮、遮罩和 Esc 关闭', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ data: { game: null } })));
+
+    render(<App />);
+
+    const trigger = await screen.findByRole('button', { name: '历史复盘' });
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: '历史复盘暂未开放' })).toBeInTheDocument();
+    expect(screen.getByText('当前为deta版本，正式上线后即可畅玩')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '知道了' })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '历史复盘暂未开放' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('button', { name: '知道了' }));
+    expect(screen.queryByRole('dialog', { name: '历史复盘暂未开放' })).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    fireEvent.mouseDown(screen.getByTestId('history-notice-backdrop'));
+    expect(screen.queryByRole('dialog', { name: '历史复盘暂未开放' })).not.toBeInTheDocument();
+  });
+
   it('无活动对局时显示创建表单并提交配置', async () => {
     const fetchMock = vi
       .fn()
@@ -155,7 +179,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: '第 1 轮' })).toBeInTheDocument();
     expect(screen.getByText('当前行动者：DeepSeek')).toBeInTheDocument();
-    expect(screen.getByText('DeepSeek 正在思考…')).toBeInTheDocument();
+    expect(screen.getByLabelText('DeepSeek 正在组织描述…')).toBeInTheDocument();
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/games/game-1/start',
@@ -260,6 +284,8 @@ describe('App', () => {
     render(<App />);
     expect(await screen.findByRole('heading', { name: '第 1 轮' })).toBeInTheDocument();
     expect(eventSources[0]?.url).toBe('/api/games/game-1/stream?after=8');
+    expect(listeners.has('game_system_terminated')).toBe(true);
+    expect(listeners.has('player_rule_violated')).toBe(true);
 
     listeners.get('round_started')?.();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));

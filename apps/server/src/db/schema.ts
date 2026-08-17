@@ -101,3 +101,15 @@ export const agentRoleModels = sqliteTable('agent_role_models', {
   modelId: text('model_id').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
+
+// 赛后复盘（AI 评价）：每局一行。summary_json 存完整脱敏 ReviewSummary，
+// 只含 model ID 与评价文本，绝不含 Base URL / API Key / 模型原始响应。
+export const reviewSummaries = sqliteTable('review_summaries', {
+  gameId: text('game_id').primaryKey(),
+  status: text('status').notNull(),
+  modelId: text('model_id').notNull(),
+  summaryJson: text('summary_json').notNull(),
+  errorCode: text('error_code'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});

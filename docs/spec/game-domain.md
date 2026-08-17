@@ -68,7 +68,7 @@ abandoned_by_human
 model_failure_limit
 ```
 
-`system_terminated`、`model_failure_limit`、`TerminateForSystemError` 和 `game_system_terminated` 目前只在共享 Schema/枚举中预留，尚无状态机转换、服务接口或 Web 展示。`player_rule_violation` 也只保留类型兼容，重复泄词强退尚未实现。
+`system_terminated`、`model_failure_limit`、`TerminateForSystemError` 和 `game_system_terminated` 已实现。`player_rule_violation` 与重复泄词强退由 TASK-059 落地：第二次原词泄露时淘汰违规玩家并立即按存活集合判断胜负。
 
 ## 4. 命令
 
@@ -83,7 +83,8 @@ model_failure_limit
 | `SubmitVote` | `in_progress/voting|revoting` | 目标玩家 ID |
 | `ContinueSpectating` | `awaiting_spectator` | 人类玩家 ID |
 | `AbandonGame` | `preparing|in_progress|awaiting_spectator` | 人类玩家 ID |
-| `TerminateForSystemError` | `in_progress` | 预留命令；当前未实现状态机处理 |
+| `TerminateForSystemError` | `in_progress` | 内部命令；自动恢复耗尽后以脱敏错误终止本局 |
+| `DisqualifyPlayerForRuleViolation` | `in_progress/speaking|tie_defense` | 内部命令；违规玩家 ID、规则类型与失败行动 ID |
 
 AI 和人类提交相同的领域命令；来源差异只影响命令生成方式，不影响规则校验。
 
@@ -115,12 +116,13 @@ internal        只供服务端恢复、审计或错误处理
 | `tie_declared` | `public` | 平票候选集合 |
 | `revote_started` | `public` | 重投参与者与合法候选 |
 | `player_eliminated` | `public` | 只公开淘汰者，不公开阵营和词牌 |
+| `player_rule_violated` | `public` | 只公开玩家违反发言规则，不包含词牌或违规原文 |
 | `round_ended_without_elimination` | `public` | 再次平票或全员最高票 |
 | `spectating_started` | `public` | 人类选择继续观战 |
 | `belief_snapshotted` | `post_game` | AI 行动时的私有信念和理由 |
 | `game_finished` | `post_game` | 正常终局事实、胜者和完整揭晓数据 |
 | `game_abandoned` | `public` | 放弃终局，无阵营胜者 |
-| `game_system_terminated` | `public` | 预留事件；当前未实现 |
+| `game_system_terminated` | `public` | 模型自动恢复耗尽后的脱敏异常终止 |
 
 `game_finished` 的完整负载不得直接作为进行中 SSE 事件发送；终局公开投影按 [`frontend-ux.md`](frontend-ux.md) 的揭晓阶段展示。
 
@@ -143,7 +145,8 @@ internal        只供服务端恢复、审计或错误处理
 | 淘汰后 | 人类被淘汰且尚未终局 | `awaiting_spectator` |
 | `awaiting_spectator` | `ContinueSpectating` | 恢复自动推进 |
 | 非终局 | `AbandonGame` | `abandoned/ended` |
-| `in_progress` | `TerminateForSystemError` | 规划：`system_terminated/ended`；当前转换未实现 |
+| `in_progress` | `TerminateForSystemError` | `system_terminated/ended`，无阵营胜负 |
+| `speaking|tie_defense` | 同一行动第二次原词泄露 | 公开规则违规、强制退出并立即判断胜负；未终局则进入下一轮 |
 
 ## 7. 规则不变量
 
@@ -159,7 +162,7 @@ internal        只供服务端恢复、审计或错误处理
 - 描述和辩解均为 2 至 40 个字符、最多两句。
 - 不得包含自己词牌的规范化原词；规范化规则见 [`agent-runtime.md`](agent-runtime.md)。
 - 不执行跨玩家、跨轮次或描述与辩解之间的重复文本拦截。
-- 首次泄词内容不产生 `speech_published`；重复泄词强退不属于首个里程碑实现范围。
+- 首次泄词内容不产生 `speech_published`，服务端秘密要求重新生成；同一行动第二次泄词产生 `player_rule_violated` 和 `player_eliminated`，违规原文始终不持久化。
 
 ### 7.3 投票
 
@@ -192,7 +195,7 @@ internal        只供服务端恢复、审计或错误处理
 
 首个里程碑必须实现：准备、正常描述、秘密投票、平票辩解、重投、淘汰、正常终局、持久化恢复、主动放弃、人类淘汰后观战。
 
-首个里程碑不实现：真实模型、异步 AI 复盘、重复泄词强退、猜词玩法、可选人数、多卧底和阵容选择。未实现分支不得以无效按钮或假数据伪装完成。
+首个里程碑不实现：异步 AI 复盘、猜词玩法、可选人数、多卧底和阵容选择。未实现分支不得以无效按钮或假数据伪装完成。
 
 ## 9. 来源
 

@@ -53,6 +53,7 @@ const screenProps = {
   onSpectate: noop,
   onAbandon: noop,
   onNewGame: vi.fn(),
+  onReview: vi.fn(),
 };
 
 afterEach(() => {
@@ -61,6 +62,12 @@ afterEach(() => {
 });
 
 describe('GameScreen 描述输入', () => {
+  it('空输入时说明提交条件', () => {
+    render(<GameScreen game={makeView()} {...screenProps} />);
+    expect(screen.getByText('至少输入 2 个字后可提交；最多 40 字，不能直接说出原词')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '提交描述' })).toBeDisabled();
+  });
+
   it('过短描述禁用提交并给出提示', () => {
     render(<GameScreen game={makeView()} {...screenProps} />);
     const textarea = screen.getByPlaceholderText(/描述你的词/);
@@ -115,6 +122,17 @@ describe('GameScreen 秘密投票', () => {
     expect(onVote).toHaveBeenCalledWith('agent-2');
   });
 
+  it('投票开始时所有存活玩家同步进入思考状态', () => {
+    render(<GameScreen game={votingView} {...screenProps} />);
+
+    expect(screen.getByTestId('portrait-human-male')).toHaveAttribute('data-state', 'thinking');
+    expect(screen.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'thinking');
+    expect(screen.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'thinking');
+    expect(screen.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'thinking');
+    expect(screen.getByText('你 · 思考中')).toBeInTheDocument();
+    expect(screen.getAllByText('思考中')).toHaveLength(3);
+  });
+
   it('投票进度只显示完成人数，不出现目标', () => {
     const view = makeView({
       phase: 'voting',
@@ -141,11 +159,52 @@ describe('GameScreen 秘密投票', () => {
     );
     expect(screen.getByText('投票进度 1/4')).toBeInTheDocument();
     expect(screen.getByText('已秘密投票')).toBeInTheDocument();
+    expect(screen.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'idle');
+    expect(screen.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'thinking');
+    expect(screen.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'thinking');
     expect(container.innerHTML).not.toContain('targetPlayerId');
+  });
+
+  it('重投时只有非候选且尚未完成的玩家进入思考状态', () => {
+    const view = makeView({
+      phase: 'revoting',
+      round: {
+        number: 1,
+        speakingOrder: ['human-1', 'agent-1', 'agent-2', 'agent-3'],
+        currentActorId: 'human-1',
+        actionType: 'revote',
+        tieCandidateIds: ['agent-1', 'agent-2'],
+      },
+      legalVoteTargetIds: ['agent-1', 'agent-2'],
+      voteProgress: { completedPlayerIds: ['agent-3'] },
+    });
+
+    render(<GameScreen game={view} {...screenProps} />);
+
+    expect(screen.getByTestId('portrait-human-male')).toHaveAttribute('data-state', 'thinking');
+    expect(screen.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'suspected');
+    expect(screen.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'suspected');
+    expect(screen.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'idle');
   });
 });
 
 describe('GameScreen 漫画事件', () => {
+  it('AI 行动时在时间线内显示临时思考卡', () => {
+    const view = makeView({
+      round: {
+        number: 1,
+        speakingOrder: ['human-1', 'agent-1', 'agent-2', 'agent-3'],
+        currentActorId: 'agent-1',
+        actionType: 'describe',
+        tieCandidateIds: [],
+      },
+      allowedCommands: [],
+    });
+    render(<GameScreen game={view} {...screenProps} />);
+    expect(screen.getByLabelText('DeepSeek 正在组织描述…')).toBeInTheDocument();
+    expect(screen.getByText('正在组织描述…')).toBeInTheDocument();
+  });
+
   it('统一揭票展示投票者与目标关系', () => {
     const view = makeView({
       publicTimeline: [
@@ -180,6 +239,65 @@ describe('GameScreen 漫画事件', () => {
     });
     render(<GameScreen game={view} {...screenProps} />);
     expect(screen.getByText('豆包 被淘汰')).toBeInTheDocument();
+  });
+
+  it('用户查看历史时暂停镜头跟随，并可回到最新内容', () => {
+    const view = makeView({
+      publicTimeline: [
+        {
+          eventSeq: 4,
+          type: 'speech_published',
+          occurredAt: '2026-08-16T12:00:00.000Z',
+          payload: { actorId: 'agent-1', actionType: 'describe', text: '一种常见的白色饮品' },
+        },
+        {
+          eventSeq: 5,
+          type: 'speech_published',
+          occurredAt: '2026-08-16T12:00:01.000Z',
+          payload: { actorId: 'agent-2', actionType: 'describe', text: '每天早餐经常会喝到' },
+        },
+      ],
+    });
+    render(<GameScreen game={view} {...screenProps} />);
+    const timeline = screen.getByRole('list', { name: '对局时间线' });
+    const scrollTo = vi.fn();
+    Object.defineProperties(timeline, {
+      scrollHeight: { configurable: true, value: 600 },
+      clientHeight: { configurable: true, value: 200 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+
+    fireEvent.wheel(timeline, { deltaY: -120 });
+    fireEvent.scroll(timeline);
+    expect(screen.getByRole('button', { name: '回到当前 ↓' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '回到当前 ↓' }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 600, behavior: 'smooth' });
+  });
+});
+
+describe('GameScreen 人类操作区', () => {
+  it('新的人类回合仅在操作区不在视口内时定位至该区域', () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      bottom: 900,
+      height: 200,
+      left: 0,
+      right: 800,
+      top: 700,
+      width: 800,
+      x: 0,
+      y: 700,
+      toJSON: () => ({}),
+    });
+
+    render(<GameScreen game={makeView()} {...screenProps} />);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', behavior: 'smooth' });
   });
 });
 
@@ -379,5 +497,52 @@ describe('GameScreen 信息隔离', () => {
     expect(html).not.toContain('undercover');
     expect(html).not.toContain('civilian');
     expect(html).not.toContain('豆浆');
+  });
+});
+
+describe('GameScreen Agent 错误结果', () => {
+  it('系统自动恢复耗尽后显示安全终止提示并允许开始新局', () => {
+    const onNewGame = vi.fn();
+    render(
+      <GameScreen
+        game={makeView({
+          status: 'system_terminated',
+          phase: 'ended',
+          round: null,
+          endReason: 'model_failure_limit',
+          allowedCommands: [],
+          operationalStatus: { state: 'idle' },
+        })}
+        {...screenProps}
+        onNewGame={onNewGame}
+      />,
+    );
+
+    expect(screen.getByText('模型服务异常，本局已终止')).toBeInTheDocument();
+    expect(screen.getByText(/本局不判定阵营胜负/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '开始新对局' }));
+    expect(onNewGame).toHaveBeenCalledTimes(1);
+  });
+
+  it('规则违规分镜只显示安全结论，不显示词牌或失败原文', () => {
+    const { container } = render(
+      <GameScreen
+        game={makeView({
+          publicTimeline: [
+            {
+              eventSeq: 7,
+              type: 'player_rule_violated',
+              occurredAt: '2026-08-17T12:00:00.000Z',
+              payload: { playerId: 'agent-1', rule: 'word_leak', failedActionId: 'safe-id' },
+            },
+          ],
+        })}
+        {...screenProps}
+      />,
+    );
+
+    expect(screen.getByText('DeepSeek 连续违反发言规则')).toBeInTheDocument();
+    expect(container.innerHTML).not.toContain('豆浆');
+    expect(container.innerHTML).not.toContain('ownWordCard');
   });
 });

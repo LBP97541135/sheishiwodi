@@ -17,7 +17,11 @@
     "test:e2e:normal": "node tests/e2e/run.mjs normal",
     "test:e2e:spectator": "node tests/e2e/run.mjs spectator",
     "test:e2e:tie": "node tests/e2e/run.mjs tie",
-    "test:live": "node tests/live/run.mjs"
+    "test:live": "node tests/live/run.mjs && pnpm --filter @sheishiwodi/shared build && node tests/live/launch.mjs",
+    "test:live:smoke": "node tests/live/run.mjs",
+    "test:live:policy": "pnpm --filter @sheishiwodi/shared build && node tests/live/launch.mjs policy",
+    "test:live:review": "pnpm --filter @sheishiwodi/shared build && node tests/live/launch-review.mjs",
+    "test:live:full": "pnpm --filter @sheishiwodi/shared build && node tests/live/launch.mjs full"
   },
   "devDependencies": {
     "@eslint/js": "9.17.0",

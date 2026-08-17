@@ -61,6 +61,12 @@ export const terminateForSystemErrorCommandSchema = commandEnvelopeSchema.extend
   errorType: z.string().trim().min(1).max(64),
 });
 
+export const disqualifyPlayerForRuleViolationCommandSchema = commandEnvelopeSchema.extend({
+  type: z.literal('DisqualifyPlayerForRuleViolation'),
+  failedActionId: identifierSchema,
+  rule: z.literal('word_leak'),
+});
+
 export const createGameRequestSchema = createGameCommandSchema.omit({ type: true });
 export const startGameRequestSchema = startGameCommandSchema.omit({ type: true, gameId: true });
 
@@ -91,6 +97,7 @@ export const gameCommandSchema = z.discriminatedUnion('type', [
   continueSpectatingCommandSchema,
   abandonGameCommandSchema,
   terminateForSystemErrorCommandSchema,
+  disqualifyPlayerForRuleViolationCommandSchema,
 ]);
 
 export type GameCommand = z.infer<typeof gameCommandSchema>;
@@ -109,3 +116,6 @@ export type ContinueSpectatingRequest = z.infer<typeof continueSpectatingRequest
 export type AbandonGameCommand = z.infer<typeof abandonGameCommandSchema>;
 export type AbandonGameRequest = z.infer<typeof abandonGameRequestSchema>;
 export type TerminateForSystemErrorCommand = z.infer<typeof terminateForSystemErrorCommandSchema>;
+export type DisqualifyPlayerForRuleViolationCommand = z.infer<
+  typeof disqualifyPlayerForRuleViolationCommandSchema
+>;

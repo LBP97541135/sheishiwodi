@@ -13,7 +13,7 @@ import {
 
 import { projectAgentTurnInput } from './agent-input-projector.js';
 import { AgentSystemError, TokendanceAgentPolicy } from './tokendance-agent-policy.js';
-import type { ChatMessage, TokendanceClient } from './tokendance-client.js';
+import { TokendanceError, type ChatMessage, type TokendanceClient } from './tokendance-client.js';
 
 class Ids implements IdSource {
   private value = 0;
@@ -184,7 +184,7 @@ describe('TokendanceAgentPolicy', () => {
 
   it('系统级调用持续失败时耗尽重试并抛系统错误', async () => {
     const { input, roleId } = describeInput();
-    const failure = new Error('boom');
+    const failure = new TokendanceError('network');
     const client = new ScriptedClient([failure, failure, failure, failure, failure]);
     const policy = new TokendanceAgentPolicy({
       client: asClient(client),
@@ -196,5 +196,64 @@ describe('TokendanceAgentPolicy', () => {
     await expect(policy.act(input, { agentRoleId: roleId })).rejects.toBeInstanceOf(AgentSystemError);
     // 初次 + 3 次系统重试 = 4 次调用。
     expect(client.calls).toHaveLength(4);
+  });
+
+  it('认证与模型不存在属于永久错误，不执行无意义重试', async () => {
+    for (const status of [401, 403, 404]) {
+      const { input, roleId } = describeInput();
+      const client = new ScriptedClient([new TokendanceError('http', status)]);
+      const policy = new TokendanceAgentPolicy({
+        client: asClient(client),
+        roleModelMap: { [roleId]: 'model-x' },
+        maxSystemRetries: 3,
+        sleep: noWait,
+      });
+
+      await expect(policy.act(input, { agentRoleId: roleId })).rejects.toMatchObject({
+        code: status === 404 ? 'MODEL_NOT_FOUND' : 'AUTH_FAILED',
+      });
+      expect(client.calls).toHaveLength(1);
+    }
+  });
+
+  it('超时、限流、服务异常和空响应按预算重试并保留最终分类', async () => {
+    const cases = [
+      { error: new TokendanceError('timeout'), code: 'CALL_TIMEOUT' },
+      { error: new TokendanceError('http', 429), code: 'RATE_LIMITED' },
+      { error: new TokendanceError('http', 503), code: 'PROVIDER_UNAVAILABLE' },
+      { error: new TokendanceError('bad_response'), code: 'BAD_RESPONSE' },
+    ] as const;
+    for (const { error, code } of cases) {
+      const { input, roleId } = describeInput();
+      const client = new ScriptedClient([error, error]);
+      const policy = new TokendanceAgentPolicy({
+        client: asClient(client),
+        roleModelMap: { [roleId]: 'model-x' },
+        maxSystemRetries: 1,
+        sleep: noWait,
+      });
+
+      await expect(policy.act(input, { agentRoleId: roleId })).rejects.toMatchObject({ code });
+      expect(client.calls).toHaveLength(2);
+    }
+  });
+
+  it('字段缺失不能由默认发言或伪造信念掩盖，必须触发格式修复', async () => {
+    const { input, roleId } = describeInput();
+    const livingIds = input.players.filter((player) => player.alive).map((player) => player.playerId);
+    const client = new ScriptedClient([
+      JSON.stringify({ text: '' }),
+      speechReply(livingIds, '修复字段后的合法发言'),
+    ]);
+    const policy = new TokendanceAgentPolicy({
+      client: asClient(client),
+      roleModelMap: { [roleId]: 'model-x' },
+      sleep: noWait,
+    });
+
+    const output = await policy.act(input, { agentRoleId: roleId });
+    expect(output).toHaveProperty('text', '修复字段后的合法发言');
+    expect(client.calls).toHaveLength(2);
+    expect(JSON.stringify(client.calls[1])).toContain('只返回一个 JSON');
   });
 });

@@ -37,5 +37,13 @@ Thumbs.db
 # Claude local state
 .claude/worktrees/
 
+# Local package-store repair mirrors (used to fix broken pnpm installs; never commit)
+.verify_hoisted/
+.verify_modules/
+**/.verify_modules/
+
+# Generated live acceptance reports (desensitized run artifacts; keep the folder via .gitkeep)
+docs/acceptance/reports/*.md
+
 # TypeScript incremental state
 *.tsbuildinfo

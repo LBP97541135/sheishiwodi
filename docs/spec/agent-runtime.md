@@ -18,7 +18,7 @@ GameService.advanceUntilHumanOrStop（已实现）
 
 真实模型链路（已实现）：
   -> TokendanceAgentPolicy（OpenAI 兼容中转）
-  -> 一次格式修复 + 有限系统重试（可注入 Clock）
+  -> strict 输出校验 + 一次格式修复 + 内容重生成 + 有限系统重试（可注入 sleep）
   -> AgentSystemError -> GameService 兜底 terminateForSystemError -> system_terminated
 ```
 
@@ -27,8 +27,8 @@ GameService.advanceUntilHumanOrStop（已实现）
 | `buildAgentTurnInput` | 已实现；从权威状态生成某一 Agent 的最小输入白名单 |
 | `AgentPolicy` | 已实现接口；根据输入返回结构化信念和行动提案 |
 | `FakeAgentPolicy` | 已实现；支持 `normal` 与 `tie-then-eliminate` 两个显式场景，不访问网络 |
-| `TokendanceAgentPolicy` | 已实现；通过统一 OpenAI 兼容客户端按角色 `modelId` 调用；含一次格式修复与有限系统重试，耗尽后抛脱敏 `AgentSystemError` |
-| shared 输出校验 | 已实现；执行 Zod、概率、目标和内容校验 |
+| `TokendanceAgentPolicy` | 已实现；通过统一 OpenAI 兼容客户端按角色 `modelId` 调用；执行 strict 结构校验、一次格式修复与按可重试性分类的系统重试 |
+| shared 输出校验 | 已实现；执行 strict Schema、概率、目标和内容校验，并由服务层处理内容重生成与重复泄词恢复 |
 | `GameService` | 已实现假/真模型自动推进、停止条件、持久化、恢复，以及 `AgentSystemError` 兜底为 `system_terminated` |
 
 策略实现不得直接读取数据库。编排层先生成不可变 `AgentTurnInput`，策略只能读取该对象。
@@ -185,26 +185,45 @@ VoteActionOutput
 
 同音字、拼音、隐喻、拆字、编辑距离和语义相似度不触发确定性处罚。被拒绝的原文不得公开、写入其他 Agent 上下文、日志或复盘。
 
-首个里程碑必须实现校验器及“拒绝后不发布”的契约；连续两次泄词强退在后续里程碑实现。
+首个里程碑已实现校验器及“拒绝后不发布”的契约；连续两次泄词时公开安全违规结论、强退违规玩家并立即判断胜负。
 
-## 9. 结构修复与系统重试（已实现）
+## 9. 结构修复、内容重生成与系统重试（已实现）
 
 `TokendanceAgentPolicy` 实现以下契约（`FakeAgentPolicy` 不涉及网络，不走此路径）：
 
 ```text
 初始模型调用
-  -> 若 JSON/Schema 错误：一次仅修复格式的请求
-  -> 修复仍失败，或网络/超时/限流/服务端错误：进入系统重试
+  -> 若 JSON/Schema/信念/目标错误：一次仅修复结构的请求
+  -> 若长度/句数错误：秘密作废并重新生成一次
+  -> 若首次原词泄露：秘密作废并重新生成一次
+  -> 若第二次原词泄露：规则违规强退并立即判断胜负
+  -> 结构修复仍失败，或网络/超时/限流/服务端/空响应错误：进入系统重试
   -> 最多自动重试 3 次，每次前等待 2 秒
   -> 仍失败：提交 TerminateForSystemError
 ```
 
 - 连同初始动作执行，同一行动最多四次有效尝试；每个重试周期仍可包含一次格式修复。
-- 从第一次系统重试开始，SSE 显示脱敏错误类别、当前次数和总次数。
-- 等待通过可注入 `Clock` 实现，测试不真实等待。
+- 自动恢复期间 SSE/视图只显示非信息性的工作或重试状态；耗尽后才公开脱敏错误摘要，不显示失败响应或违规内容。
+- 等待通过可注入 `sleep` 实现，测试不真实等待。
 - 所有尝试复用同一个稳定 `actionId`；失败尝试不得生成公开领域行动。
 - 若 `baseRevision` 在调用期间变化，结果作废并依据新状态重新判断，不能提交旧动作。
 - 三次重试后进入不可恢复 `system_terminated`，不判阵营胜负。`TokendanceAgentPolicy.act` 抛出脱敏 `AgentSystemError`（如 `MODEL_NOT_CONFIGURED`、`CALL_FAILED`、`FORMAT_INVALID`），`GameService.runAdvanceLoop` 捕获后提交 `TerminateForSystemError`，状态机进入 `system_terminated`、`endReason=model_failure_limit`；异常不外泄为 500。
+
+错误分类与重试性：
+
+| 分类 | 是否自动重试 | 最终安全错误 |
+| --- | --- | --- |
+| timeout / network | 是 | `CALL_TIMEOUT` / `NETWORK_FAILED` |
+| HTTP 429 | 是，尊重统一等待预算 | `RATE_LIMITED` |
+| HTTP 5xx | 是 | `PROVIDER_UNAVAILABLE` |
+| empty/bad response | 是 | `BAD_RESPONSE` |
+| HTTP 401/403 | 否 | `AUTH_FAILED` |
+| HTTP 404 / model missing | 否 | `MODEL_NOT_FOUND` |
+| JSON/Schema/belief/target | 一次格式修复，随后进入系统重试 | `FORMAT_INVALID` |
+| content length/sentence | 一次内容重生成 | `CONTENT_INVALID` |
+| word leak | 首次重生成，第二次规则强退 | 不属于系统错误 |
+| stale revision | 丢弃，不计模型错误 | 无公开错误 |
+| persistence failure | 只重试提交 | `INTERNAL_ERROR`（耗尽后） |
 
 ## 10. 假模型契约
 
@@ -216,7 +235,7 @@ VoteActionOutput
 - 保存收到的输入和每个 Agent 的信念历史，供隔离测试与终局事实复盘。
 - 不读取环境密钥、不访问网络。
 
-`tie-again`、`all-tied`、`human-eliminated` 目前由共享/服务端测试通过确定性投票或随机序列覆盖，不是 `FakeAgentScenario` 的独立枚举。格式修复、瞬时错误、失败上限和系统异常终止尚未实现。
+`tie-again`、`all-tied`、`human-eliminated` 目前由共享/服务端测试通过确定性投票或随机序列覆盖，不是 `FakeAgentScenario` 的独立枚举。格式修复、瞬时错误、失败上限和系统异常终止已由真实策略测试与服务端集成测试覆盖。
 
 默认开发、单元、集成和端到端测试只使用假模型。
 

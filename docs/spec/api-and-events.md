@@ -75,7 +75,7 @@ allowedCommands[]
 operationalStatus: 当前安全状态与重试进度
 ```
 
-当前 `HumanGameView` 在正常终局和已放弃终局返回与状态一致的字段：`finished` 包含 `winnerCamp`、`reveal` 和 `factReview`；`abandoned` 不包含这些字段。进行中和等待观战状态不得出现完整揭晓。`system_terminated` 及其错误摘要接口尚未实现。
+当前 `HumanGameView` 在正常终局、已放弃终局和系统异常终止时返回与状态一致的字段：`finished` 包含 `winnerCamp`、`reveal` 和 `factReview`；`abandoned` 与 `system_terminated` 不包含这些字段。进行中和等待观战状态不得出现完整揭晓。系统异常终止只返回脱敏错误类型，不返回模型响应或配置细节。
 
 ## 4. REST 端点
 
@@ -212,7 +212,7 @@ data: <PublicStreamPayload JSON>
 | `vote_progressed` | 完成投票的角色，不含目标 |
 | `votes_revealed` | 全部完成后的一次性投票关系 |
 | `terminal_reveal_ready` | 终局事实已持久化，可以开始前端揭晓 |
-| `stream_error` | 后续真实模型重试的脱敏错误帧，当前未实现 |
+| `stream_error` | 保留事件类型；当前自动重试期间不发布技术错误，恢复耗尽后以 `game_system_terminated` 通知 |
 | `heartbeat` | 无业务数据的连接保活 |
 
 ### 5.2 重连算法
@@ -251,9 +251,9 @@ data: <PublicStreamPayload JSON>
 
 前端逐张翻牌只是对已返回终局事实的呈现，不调用任何改变领域状态的端点。
 
-## 7. 后续端点边界
+## 7. 复盘与后续端点边界
 
-历史列表、单局完整复盘、Markdown 导出、异步 AI 总结状态和重新生成端点在后续里程碑定义。首个里程碑可以保留导航占位，但不得返回虚构数据或启动真实复盘任务。
+当前服务端已提供 `GET /api/games/:gameId/review` 与 `POST /api/games/:gameId/review/regenerate`，只对正常终局返回经过 `reviewSummarySchema` 校验的异步总结状态或触发重新生成；响应仅含 model ID、状态、结构化评价和脱敏错误码。当前 Web 尚未调用这两个端点。历史列表、Markdown 导出及跨对局复盘管理仍属后续里程碑，不得返回虚构数据。
 
 ## 8. 来源
 

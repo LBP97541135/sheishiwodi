@@ -93,3 +93,5 @@
 | CMD-087 | 2026-08-16（具体时间不可用） | 所有模型角色和复盘 Agent 通过同一个 OpenAI 兼容中转站配置，共用地址、密钥和客户端，每个角色只更换模型 ID。 | 已确认 | `docs/acceptance/REQUIREMENTS.md`、`docs/notes/DECISIONS.md` |
 | CMD-088 | 2026-08-16（具体时间不可用） | 后续玩法继续保留，但先完成基础玩法开发；评估当前是否可以进入开发环节。 | 已评估，可进入开发 | `docs/acceptance/REQUIREMENTS.md`、`docs/notes/DECISIONS.md`、`docs/history/PROJECT_LOG.md` |
 | CMD-089 | 2026-08-16（具体时间不可用） | 检查新建素材包；若有缺口则说明，若可直接使用则将素材索引写入项目文档。 | 已完成 | `docs/notes/ASSETS.md`、`docs/spec/frontend-ux.md`、`docs/acceptance/milestone-1.md` |
+| CMD-090 | 2026-08-17（具体时间不可用） | Agent 错误尽可能自动解决；覆盖发言超时、关键词泄露、结构化发言错误和数据返回失败，只有自动恢复不了时才报错并提醒玩家；严格遵守先写 TASK、再开发、最后补测试与完成记录的流程。 | 已完成 | `docs/tasks/TASKS.md` TASK-059、`docs/notes/DECISIONS.md` DEC-086、`docs/spec/agent-runtime.md`、`docs/history/PROJECT_LOG.md` |
+| CMD-091 | 2026-08-17（具体时间不可用） | 投票并行进行时，让所有模型和人类玩家同时进入思考环节，不再只显示 DeepSeek 进入思考。 | 已完成 | `docs/tasks/TASKS.md` TASK-062、`docs/notes/DECISIONS.md` DEC-087、`docs/spec/frontend-ux.md` §4.5、`apps/web/src/components/GameScreen.tsx` |

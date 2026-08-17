@@ -4,12 +4,14 @@ import {
   abandonGame as abandonGameMachine,
   continueSpectating as continueSpectatingMachine,
   createPreparingGame,
+  disqualifyPlayerForRuleViolation as disqualifyPlayerForRuleViolationMachine,
   projectHumanGameView,
   startPreparingGame,
   submitDefense as submitDefenseMachine,
   submitDescription as submitDescriptionMachine,
   submitVote as submitVoteMachine,
   terminateForSystemError as terminateForSystemErrorMachine,
+  validatePublicSpeech,
   type AbandonGameCommand,
   type Clock,
   type ContinueSpectatingCommand,
@@ -65,6 +67,8 @@ export class GameService {
       clock: Clock;
       agentPolicyFactory?: () => AgentPolicy;
       backgroundAdvance?: boolean;
+      /** 正常终局后回调（用于触发赛后复盘异步生成）。幂等，失败不得影响主流程。 */
+      onGameFinished?: (gameId: string) => void;
     },
   ) {
     this.agentPolicyFactory = dependencies.agentPolicyFactory ?? (() => new FakeAgentPolicy());
@@ -259,6 +263,7 @@ export class GameService {
         requestHash,
         response: view,
       });
+      this.notifyIfFinished(transition.snapshot);
     } catch (error) {
       throw mapMachineError(error);
     }
@@ -297,6 +302,7 @@ export class GameService {
     // 可把“当前起、到第一个人类为止的连续 AI 投票者”的模型调用并行预取，再按机器顺序逐个提交。
     let voteBatch: Map<string, VoteActionOutput> | null = null;
     let batchCovers = new Set<string>();
+    let voteFailures = new Map<string, unknown>();
     for (let guard = 0; guard < 500; guard += 1) {
       const snapshot = this.games.findSnapshot(gameId);
       if (!snapshot || snapshot.status !== 'in_progress' || !snapshot.round) {
@@ -330,28 +336,97 @@ export class GameService {
         // 新一轮投票阶段开始，丢弃上一阶段可能残留的预取批次。
         voteBatch = null;
         batchCovers = new Set();
+        voteFailures = new Map();
       }
       if (isVotePhase && !batchCovers.has(actor.playerId)) {
         const prefetched = await this.prefetchVoteBatch(gameId, snapshot, round, policy);
         voteBatch = prefetched.batch;
         batchCovers = prefetched.covers;
+        voteFailures = prefetched.failures;
       }
 
-      let output: SpeechActionOutput | VoteActionOutput;
+      let output: SpeechActionOutput | VoteActionOutput | undefined;
       // 仅投票/重投阶段消费预取批次；辩解/描述绝不读它，避免把上一阶段的投票输出误当发言。
       const cached = isVotePhase ? voteBatch?.get(actor.playerId) : undefined;
+      const cachedFailure = isVotePhase ? voteFailures.get(actor.playerId) : undefined;
+      if (cachedFailure) {
+        if (cachedFailure instanceof AgentSystemError) {
+          this.terminateForSystemError(gameId, snapshot, commandId, cachedFailure.code, publicEvents);
+          return;
+        }
+        throw cachedFailure;
+      }
       if (cached) {
         output = cached;
       } else {
-        try {
-          output = await policy.act(input, { agentRoleId: actor.agentRoleId ?? actor.playerId });
-        } catch (error) {
-          if (error instanceof AgentSystemError) {
-            this.terminateForSystemError(gameId, snapshot, commandId, error.code, publicEvents);
+        let contentRetry: 'format' | 'word_leak' | undefined;
+        let contentFailureCount = 0;
+        let wordLeakCount = 0;
+        for (;;) {
+          try {
+            output = await policy.act(input, {
+              agentRoleId: actor.agentRoleId ?? actor.playerId,
+              ...(contentRetry ? { contentRetry } : {}),
+            });
+          } catch (error) {
+            if (error instanceof AgentSystemError) {
+              this.terminateForSystemError(gameId, snapshot, commandId, error.code, publicEvents);
+              return;
+            }
+            // 未分类异常可能是进程/程序故障，不能伪装成模型错误并永久终止；
+            // 保留当前 revision，允许既有启动恢复机制在服务重启后继续。
+            throw error;
+          }
+
+          const latest = this.games.findSnapshot(gameId);
+          if (
+            !latest ||
+            latest.status !== 'in_progress' ||
+            latest.revision !== snapshot.revision ||
+            latest.round?.currentActorId !== actor.playerId ||
+            latest.round.actionType !== round.actionType
+          ) {
+            // 模型调用期间人类可能放弃或状态已由其他执行者推进；旧结果直接作废。
+            output = undefined;
+            break;
+          }
+
+          if (round.actionType !== 'describe' && round.actionType !== 'defend') break;
+          const speech = output as SpeechActionOutput;
+          const validation = validatePublicSpeech(speech.text, actor.wordCard);
+          if (validation.valid) break;
+
+          contentFailureCount += 1;
+          if (validation.code === 'WORD_LEAK') {
+            wordLeakCount += 1;
+            if (wordLeakCount >= 2) {
+              this.disqualifyForWordLeak(gameId, snapshot, actor.playerId, commandId, publicEvents);
+              output = undefined;
+              break;
+            }
+            contentRetry = 'word_leak';
+            continue;
+          }
+
+          if (contentFailureCount >= 2) {
+            this.terminateForSystemError(gameId, snapshot, commandId, 'CONTENT_INVALID', publicEvents);
             return;
           }
-          throw error;
+          contentRetry = 'format';
         }
+      }
+
+      if (!output) continue;
+
+      const latestBeforeCommit = this.games.findSnapshot(gameId);
+      if (
+        !latestBeforeCommit ||
+        latestBeforeCommit.status !== 'in_progress' ||
+        latestBeforeCommit.revision !== snapshot.revision ||
+        latestBeforeCommit.round?.currentActorId !== actor.playerId ||
+        latestBeforeCommit.round.actionType !== round.actionType
+      ) {
+        continue;
       }
 
       let transition: MachineTransition;
@@ -425,15 +500,30 @@ export class GameService {
           ? { agentActions: [...persistedFactReview.agentActions, privateAction] }
           : undefined,
       );
-      this.games.commitTransition({
-        previous: snapshot,
-        snapshot: transition.snapshot,
-        events: transition.events,
-        commandId,
-        requestHash: hashCommand({ commandId, actionType: round.actionType }),
-        response: view,
-        privateAction,
-      });
+      try {
+        this.commitTransitionWithRetry({
+          previous: snapshot,
+          snapshot: transition.snapshot,
+          events: transition.events,
+          commandId,
+          requestHash: hashCommand({ commandId, actionType: round.actionType }),
+          response: view,
+          privateAction,
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'REVISION_CONFLICT') continue;
+        const latest = this.games.findSnapshot(gameId);
+        if (latest?.status === 'in_progress') {
+          this.terminateForSystemError(
+            gameId,
+            latest,
+            commandId,
+            'INTERNAL_ERROR',
+            this.games.listPublicTimeline(gameId),
+          );
+        }
+        return;
+      }
     }
   }
 
@@ -447,7 +537,11 @@ export class GameService {
     snapshot: GameSnapshot,
     round: NonNullable<GameSnapshot['round']>,
     policy: AgentPolicy,
-  ): Promise<{ batch: Map<string, VoteActionOutput>; covers: Set<string> }> {
+  ): Promise<{
+    batch: Map<string, VoteActionOutput>;
+    covers: Set<string>;
+    failures: Map<string, unknown>;
+  }> {
     const living = snapshot.players.filter((player) => player.alive);
     const isRevote = round.actionType === 'revote';
     const eligible = isRevote
@@ -465,7 +559,8 @@ export class GameService {
     }
     const covers = new Set(run.map((player) => player.playerId));
     const batch = new Map<string, VoteActionOutput>();
-    if (run.length < 2) return { batch, covers }; // 单个投票者无需并行，走普通串行路径。
+    const failures = new Map<string, unknown>();
+    if (run.length < 2) return { batch, covers, failures }; // 单个投票者无需并行，走普通串行路径。
 
     const publicEvents = this.games.listPublicTimeline(gameId);
     const settled = await Promise.allSettled(
@@ -476,12 +571,67 @@ export class GameService {
         return { playerId: player.playerId, output };
       }),
     );
-    for (const entry of settled) {
+    settled.forEach((entry, index) => {
       if (entry.status === 'fulfilled') {
         batch.set(entry.value.playerId, entry.value.output as VoteActionOutput);
+      } else {
+        failures.set(run[index]!.playerId, entry.reason);
+      }
+    });
+    return { batch, covers, failures };
+  }
+
+  private disqualifyForWordLeak(
+    gameId: string,
+    snapshot: GameSnapshot,
+    playerId: string,
+    failedActionId: string,
+    publicEvents: readonly PublicTimelineItem[],
+  ) {
+    const commandId = `${failedActionId}/rule-violation`;
+    if (this.games.findProcessedCommand(commandId)) return;
+    const transition = disqualifyPlayerForRuleViolationMachine(
+      snapshot,
+      {
+        type: 'DisqualifyPlayerForRuleViolation',
+        commandId,
+        gameId,
+        actorId: playerId,
+        expectedRevision: snapshot.revision,
+        failedActionId,
+        rule: 'word_leak',
+      },
+      this.machineDeps(),
+    );
+    const timeline = [...publicEvents, ...this.games.publicTimelineWith(transition.events)];
+    const view = projectHumanGameView(
+      transition.snapshot,
+      timeline,
+      transition.snapshot.status === 'finished' ? this.games.getFactReview(gameId) : undefined,
+    );
+    this.commitTransitionWithRetry({
+      previous: snapshot,
+      snapshot: transition.snapshot,
+      events: transition.events,
+      commandId,
+      requestHash: hashCommand({ commandId, rule: 'word_leak' }),
+      response: view,
+    });
+  }
+
+  private commitTransitionWithRetry(input: Parameters<GameRepository['commitTransition']>[0]) {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        this.games.commitTransition(input);
+        this.notifyIfFinished(input.snapshot);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (error instanceof Error && error.message === 'REVISION_CONFLICT') throw error;
       }
     }
-    return { batch, covers };
+    throw lastError;
   }
 
   private terminateForSystemError(
@@ -508,7 +658,7 @@ export class GameService {
     );
     const timeline = [...publicEvents, ...this.games.publicTimelineWith(transition.events)];
     const view = projectHumanGameView(transition.snapshot, timeline, undefined);
-    this.games.commitTransition({
+    this.commitTransitionWithRetry({
       previous: snapshot,
       snapshot: transition.snapshot,
       events: transition.events,
@@ -516,6 +666,16 @@ export class GameService {
       requestHash: hashCommand({ commandId, errorType }),
       response: view,
     });
+  }
+
+  /** 正常终局（status==='finished' 隐含带 reveal/factReview）时触发复盘回调；异常终局不触发。 */
+  private notifyIfFinished(snapshot: GameSnapshot) {
+    if (snapshot.status !== 'finished') return;
+    try {
+      this.dependencies.onGameFinished?.(snapshot.gameId);
+    } catch (error) {
+      console.error('[review] 终局回调失败：', error instanceof Error ? error.name : 'unknown');
+    }
   }
 
   private machineDeps(): MachineDependencies {

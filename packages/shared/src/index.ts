@@ -9,6 +9,7 @@ export * from './events.js';
 export * from './game-machine.js';
 export * from './game-setup.js';
 export * from './projection.js';
+export * from './review.js';
 export * from './state.js';
 export * from './views.js';
 export * from './word-pairs.js';

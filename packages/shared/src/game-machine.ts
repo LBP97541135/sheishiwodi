@@ -2,6 +2,7 @@ import type { Clock, IdSource } from './game-setup.js';
 import type {
   AbandonGameCommand,
   ContinueSpectatingCommand,
+  DisqualifyPlayerForRuleViolationCommand,
   SubmitDefenseCommand,
   SubmitDescriptionCommand,
   SubmitVoteCommand,
@@ -123,6 +124,40 @@ export function terminateForSystemError(
       endReason: 'model_failure_limit',
     }),
   };
+}
+
+export function disqualifyPlayerForRuleViolation(
+  snapshot: GameSnapshot,
+  command: DisqualifyPlayerForRuleViolationCommand,
+  dependencies: MachineDependencies,
+): MachineTransition {
+  const round = snapshot.round;
+  if (snapshot.revision !== command.expectedRevision) throw new Error('REVISION_CONFLICT');
+  if (snapshot.status !== 'in_progress' || !round) throw new Error('INVALID_TRANSITION');
+  if (round.currentActorId !== command.actorId) throw new Error('ACTOR_NOT_ALLOWED');
+  const actor = snapshot.players.find(
+    (player) => player.playerId === command.actorId && player.kind === 'agent' && player.alive,
+  );
+  if (!actor) throw new Error('ACTOR_NOT_ALLOWED');
+  if (round.actionType !== 'describe' && round.actionType !== 'defend') {
+    throw new Error('INVALID_TRANSITION');
+  }
+
+  return eliminateResult(
+    snapshot,
+    round,
+    [
+      [
+        'player_rule_violated',
+        'public',
+        { playerId: actor.playerId, rule: command.rule, failedActionId: command.failedActionId },
+      ],
+    ],
+    actor.playerId,
+    command.commandId,
+    dependencies,
+    'player_rule_violation',
+  );
 }
 
 export function submitDescription(
@@ -306,6 +341,7 @@ function eliminateResult(
   eliminatedId: string,
   commandId: string,
   dependencies: MachineDependencies,
+  terminalReasonOverride?: 'player_rule_violation',
 ): MachineTransition {
   definitions.push(['player_eliminated', 'public', { playerId: eliminatedId }]);
   const players = snapshot.players.map((player) =>
@@ -323,14 +359,14 @@ function eliminateResult(
       status: 'finished',
       phase: 'ended',
       winnerCamp: 'civilian',
-      endReason: 'undercover_eliminated',
+      endReason: terminalReasonOverride ?? 'undercover_eliminated',
     };
   } else if (living.length === 2 && living.some((player) => player.camp === 'undercover')) {
     terminal = {
       status: 'finished',
       phase: 'ended',
       winnerCamp: 'undercover',
-      endReason: 'undercover_survived_to_two',
+      endReason: terminalReasonOverride ?? 'undercover_survived_to_two',
     };
   }
 

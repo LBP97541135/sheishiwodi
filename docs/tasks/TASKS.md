@@ -4,7 +4,14 @@
 
 ## 状态总览
 
-- `TASK-000`～`TASK-043`：已完成。
+- `TASK-000`～`TASK-056`：已完成。
+- `TASK-057`：进行中；策略级与纯状态机整局真实模型报告已产出，HTTP/SQLite 整局验证和最终收口尚未完成。
+- `TASK-058`：已完成；规格索引、测试文档和 README 的实现状态已同步。
+- `TASK-059`：已完成；统一 Agent 校验、自动恢复与错误处理已实现并通过门禁。
+- `TASK-060`：已完成；人类回合操作区可达性与提交前反馈已收口。
+- `TASK-061`：已完成；当前代码、规格、任务、素材与验收报告的状态差异已完成文档收口。
+- `TASK-062`：已完成；投票阶段所有有资格且尚未完成的玩家同步进入思考视觉状态，已投票者和重投候选保持正确状态。
+- `TASK-063`：进行中；为二期历史复盘配置可见入口与未开放提示弹层。
 - 首个里程碑 7 个切片全部通过默认测试、E2E、构建、类型、静态检查和文档门禁。
 
 ## 验收依据缩写
@@ -128,3 +135,34 @@
 | TASK-054 test:live 与全量验证 | 已完成 | `test:live` 可执行冒烟入口（缺 env 显式失败、绝不静默走假模型、脱敏输出）；`pnpm build/typecheck/lint/test/test:e2e` 全绿并断言 E2E 未实例化真实策略、无出网 | DEC-085、TEST §7 | `tests/live/run.mjs`、`package.json`；单测含策略/路由/组件/负向隔离；本机全量门禁复跑：typecheck/lint、默认测试 128 项、build、test:e2e 10 项全绿；E2E 由 `playwright.config.ts` 服务端 `env` 强制假模型、绝不出网；`test:live` 实测在非 tokendance env 下显式退出码 1、绝不静默走假模型、不发起网络调用；真实付费冒烟由负责人用自填 Key 执行 |
 | TASK-055 排查并优化开始/推进卡顿 | 已完成 | 修复"点击开始不自动跳转且很慢"：运行时后台推进 AI 回合（提交即返回、SSE 实时下发），测试同步 await；修复 E2E 泄读本机 `.env` 真实 Key 的隔离漏洞 | DEC-085、SPEC agent-runtime §2.1 | `game-service.ts` `settleAdvance`/`backgroundAdvance`、`server.ts` DI 开关、`playwright.config.ts` 服务端 `env` 强制假模型、`helpers.ts` 挂钟兜底轮询；typecheck/lint/test（120）与 test:e2e（10）全绿；后台推进失败仅脱敏记 `error.name` |
 | TASK-056 按模型家族关闭推理链 | 已完成 | 为 deepseek/豆包(seed)/千问(qwen) 三个游戏模型分别按厂商关闭推理链、加速直出，其他模型不受影响；抬高默认超时消除"超时→重试→多次调用"风暴 | DEC-085、SPEC agent-runtime §11 | 新增 `agents/model-reasoning.ts` `reasoningDisableBodyFor`（qwen→`enable_thinking:false`；seed/doubao 与 deepseek→`thinking.type=disabled`；其他→`{}`）；`tokendance-client.ts` 每次调用支持 `extraBody`；`tokendance-agent-policy.ts` 按 modelId 透传；`server.ts` 默认超时 20000→60000；新增 `model-reasoning.test.ts` 与策略层按家族断言；本机真实中转站实测 qwen 48→7s、seed 168→7.4s、deepseek 12→1.5s 且 content 仍合法 JSON；typecheck/lint、默认测试（shared 46/server 55/web 33）、build 全绿 |
+
+## 真实模型分层验收（DEC-085 续）
+
+负责人 2026-08-17 指令：在既有 `test:live` 冒烟之上补充**真实模型分层验收**与**脱敏 Markdown 报告**。`TASK-054` 已完成冒烟入口与默认门禁，本轮为覆盖 `TESTING §7` 后延的完整验收。范围包括策略级与可选整局；复盘模型不在本任务的真实调用矩阵内。当前异步复盘已有服务端任务、持久化与 API 基础设施，但 Web 尚未消费 `ReviewSummary`，应作为独立产品闭环继续跟踪。
+
+| 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
+| --- | --- | --- | --- | --- |
+| TASK-057 分层真实模型验收与脱敏报告 | 进行中 | 在既有 `test:live` 冒烟之上增加①真实 `TokendanceAgentPolicy.act` × 3 角色 × describe/vote；②可选真实整局；③写前自检的脱敏 Markdown 报告；④默认/E2E 零出网守卫 | DEC-085、TEST §7、REQUIREMENTS 189–193 | 已产出编排器、隔离/报告工具、默认守卫与两份脱敏报告；第二份报告通过 6 次策略调用，并以纯 shared 状态机驱动一局到 `finished`。仍待在可用 `better-sqlite3` 环境完成 HTTP/SQLite 整局链、复核默认全门禁并最终关闭任务 |
+
+## 文档状态一致性
+
+| 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
+| --- | --- | --- | --- | --- |
+| TASK-058 同步当前项目状态文档 | 已完成 | 修正 README、规格索引、测试文档中真实模型、系统终止、模型档案与媒体能力的过期描述；同步任务总览和 TASK-054 checklist；保持 TASK-057 未验证项为进行中 | GOV、TASK-054～057 | README、`spec/README.md`、`TESTING.md`、任务台账与 checklist 已同步；过期短语检索和 `git diff --check` 通过；完成记录见 PROJECT_LOG |
+| TASK-061 收口当前文档一致性 | 已完成 | 依据当前工作区代码复核真实模型验收、异步复盘、媒体接入、运行时素材路径与发布边界；只更新文档，不改变产品行为 | GOV、SPEC、TASK-057～060 | README、CLAUDE、spec、ASSETS、TASKS、checklist 与 PROJECT_LOG 已同步；明确异步总结后端已具备基础但 Web 未接通，TASK-057 仍保留未完成边界；过期素材链接清理并通过 `git diff --check` |
+
+## Agent 校验与自动恢复
+
+负责人 2026-08-17 指令：先登记任务，再开发，最后补齐测试与完成记录。Agent 行动应尽可能自动恢复；自动恢复耗尽后才以脱敏错误提醒玩家。沿用已确认规则：结构错误先修复，发言格式错误重新生成，首次泄词秘密拦截并重生成、再次泄词强制退出并立即判断胜负；系统调用耗尽后进入 `system_terminated`，本轮不新增未确认的可恢复暂停状态。
+
+| 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
+| --- | --- | --- | --- | --- |
+| TASK-059 统一 Agent 校验、恢复与错误处理 | 已完成 | ①建立 transport/http/empty-response/structure/schema/belief/illegal-action/content/word-leak/stale-result/persistence/internal 分类；②严格解析结构输出，仅允许安全规范化；③网络、限流、服务异常按可重试性处理，配置错误不盲目重试；④AI 内容不合法时自动重生成，重复泄词按规则强退；⑤模型调用期间 revision 变化时丢弃旧结果，提交失败不重复付费调用；⑥所有错误与公开帧脱敏；⑦补 shared/server/Web/E2E 所需测试 | REQUIREMENTS 57～71、129～146；SPEC agent-runtime §8～9；TEST §2～3 | shared 47、server 64、web 45 共 156 条单测通过；typecheck/lint/build 通过；E2E 10/10 与可见浏览器交互通过；默认假模型零出网；完成记录见 PROJECT_LOG |
+
+## 对局操作体验
+
+| 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
+| --- | --- | --- | --- | --- |
+| TASK-060 优化人类回合操作可达性 | 已完成 | ①当人类描述、辩解或投票回合首次到来且操作区在视口外时，平滑定位至操作区；不干扰用户手动回看时间线。②描述/辩解输入在禁用提交时显示最小字数、长度、泄词或格式原因。③补组件测试、桌面/移动浏览器验证和完成记录 | SPEC frontend §4.3～4.5、§6；TEST §2.5 | `GameScreen` 已实现操作区一次性定位与提交条件提示，补充组件测试；`git diff --check` 通过。当前环境无法运行 Vitest/服务端，但负责人已确认验证通过；完成记录见 `PROJECT_LOG` 2026-08-17 条目 |
+| TASK-062 投票阶段同步思考状态 | 已完成 | 普通投票时所有存活且未完成玩家显示思考状态；重投时仅非平票候选参与；已投玩家恢复待机并显示已投票，不改变秘密目标、并行预取或顺序提交规则 | SPEC frontend §4.5、DEC-087 | `GameScreen` 已按投票资格与完成进度派生座位状态；初始投票、部分完成、重投组件测试通过，定向 Vitest 23/23、Web typecheck、可见浏览器完整投票交互与 `git diff --check` 通过；完成记录见 `PROJECT_LOG` 2026-08-17 条目 |
+| TASK-063 配置二期历史复盘入口 | 进行中 | 顶层导航常驻“历史复盘”入口；点击后显示“当前为deta版本，正式上线后即可畅玩”，支持按钮、遮罩和 Esc 关闭，不进入未实现页面 | SPEC frontend §3 | 待完成：入口与无障碍弹层、组件测试、桌面/移动浏览器验证、文档与完成记录 |

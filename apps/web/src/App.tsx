@@ -23,9 +23,10 @@ import { ExperienceControls, useExperienceSettings } from './experience-settings
 import { ModelProfiles } from './components/ModelProfiles';
 import { NewGameForm } from './components/NewGameForm';
 import { PreparingGame } from './components/PreparingGame';
+import { ReviewScreen } from './components/ReviewScreen';
 
 type LoadState = 'loading' | 'ready' | 'failed';
-type TopView = 'game' | 'model-profiles';
+type TopView = 'game' | 'model-profiles' | 'review';
 
 const LAST_GAME_KEY = 'sheishiwodi:last-game-id';
 
@@ -41,9 +42,11 @@ const STREAM_EVENT_TYPES = [
   'revote_started',
   'round_ended_without_elimination',
   'player_eliminated',
+  'player_rule_violated',
   'spectating_started',
   'game_abandoned',
   'terminal_reveal_ready',
+  'game_system_terminated',
 ];
 
 export function App() {
@@ -52,6 +55,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [topView, setTopView] = useState<TopView>('game');
+  const [historyNoticeOpen, setHistoryNoticeOpen] = useState(false);
   // 首帧一次性捕获待恢复的最近对局 ID（在任何 effect 之前），
   // 以便持久化 effect 的空态分支可以安全地清除 key 而不影响恢复。
   const [restoredLastGameId] = useState<string | null>(() =>
@@ -59,6 +63,7 @@ export function App() {
   );
   const gameRef = useRef<HumanGameView | null>(null);
   const eventCursorRef = useRef(0);
+  const historyTriggerRef = useRef<HTMLButtonElement>(null);
   // 背景音乐在整个应用（含主页、模型档案）持续播放，由顶部开关与浏览器自动播放解锁控制。
   const shouldPlayBgm = true;
   const experience = useExperienceSettings(shouldPlayBgm);
@@ -263,7 +268,19 @@ export function App() {
     localStorage.removeItem(LAST_GAME_KEY);
     setError(null);
     setGame(null);
+    setTopView('game');
   };
+
+  const closeHistoryNotice = useCallback(() => {
+    setHistoryNoticeOpen(false);
+    historyTriggerRef.current?.focus();
+  }, []);
+
+  const isFinished = game?.status === 'finished';
+  // 复盘页依赖终局事实；一旦离开终局（新局/放弃）自动退回对局页，避免空态残留。
+  useEffect(() => {
+    if (topView === 'review' && !isFinished) setTopView('game');
+  }, [topView, isFinished]);
 
   if (loadState === 'loading') {
     return <StatusPage title="正在恢复对局…" description="正在读取本机保存的安全公开状态。" />;
@@ -300,6 +317,26 @@ export function App() {
           >
             模型档案
           </button>
+          <button
+            ref={historyTriggerRef}
+            type="button"
+            className="top-nav__link"
+            aria-haspopup="dialog"
+            aria-expanded={historyNoticeOpen}
+            onClick={() => setHistoryNoticeOpen(true)}
+          >
+            历史复盘
+          </button>
+          {isFinished && (
+            <button
+              type="button"
+              className={topView === 'review' ? 'top-nav__link is-active' : 'top-nav__link'}
+              aria-current={topView === 'review' ? 'page' : undefined}
+              onClick={() => setTopView('review')}
+            >
+              复盘
+            </button>
+          )}
         </nav>
         <ExperienceControls
           audioEnabled={experience.audioEnabled}
@@ -309,8 +346,11 @@ export function App() {
           onBackgroundChange={experience.changeBackground}
         />
       </div>
+      <HistoryReviewNotice open={historyNoticeOpen} onClose={closeHistoryNotice} />
       {topView === 'model-profiles' ? (
         <ModelProfiles onBack={() => setTopView('game')} />
+      ) : topView === 'review' && game && isFinished ? (
+        <ReviewScreen game={game} onBack={() => setTopView('game')} />
       ) : (
         <section className="storyboard">
           {renderStage()}
@@ -342,9 +382,51 @@ export function App() {
         onSpectate={handleSpectate}
         onAbandon={handleAbandon}
         onNewGame={handleNewGame}
+        onReview={() => setTopView('review')}
       />
     );
   }
+}
+
+function HistoryReviewNotice({ open, onClose }: { open: boolean; onClose(): void }) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    closeButtonRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="history-notice-backdrop"
+      data-testid="history-notice-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="history-notice"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="history-notice-title"
+        aria-describedby="history-notice-description"
+      >
+        <p className="eyebrow">二期功能</p>
+        <h2 id="history-notice-title">历史复盘暂未开放</h2>
+        <p id="history-notice-description">当前为deta版本，正式上线后即可畅玩</p>
+        <button ref={closeButtonRef} type="button" className="primary-action" onClick={onClose}>
+          知道了
+        </button>
+      </section>
+    </div>
+  );
 }
 
 function StatusPage({ title, description }: { title: string; description: string }) {

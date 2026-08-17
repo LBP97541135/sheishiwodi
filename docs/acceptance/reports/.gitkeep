@@ -1,0 +1,4 @@
+# 真实模型分层验收报告输出目录（TASK-057）。
+# 由 `pnpm test:live` / `test:live:policy` / `test:live:full` 生成 live-<时间>.md。
+# 报告已脱敏：只含 role / action / model ID / 结构校验 / 隔离类别 / 耗时 / 重试 / 布尔，
+# 绝不含 Base URL、API Key、请求头、完整模型响应或词牌明文。

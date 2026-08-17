@@ -6,10 +6,12 @@ import {
   humanGameViewSchema,
   modelProfileListSchema,
   modelProfileSchema,
+  reviewSummarySchema,
   type AbandonGameRequest,
   type ContinueSpectatingRequest,
   type CreateGameRequest,
   type HumanGameView,
+  type ReviewSummary,
   type StartGameRequest,
   type SubmitDefenseRequest,
   type SubmitDescriptionRequest,
@@ -110,7 +112,21 @@ export async function abandonGame(gameId: string, input: AbandonGameRequest) {
   return apiSuccessSchema(humanGameViewSchema).parse(body).data;
 }
 
-export type { HumanGameView };
+export type { HumanGameView, ReviewSummary };
+
+export async function getReview(gameId: string) {
+  const body = await request(`/api/games/${gameId}/review`);
+  return apiSuccessSchema(reviewSummarySchema).parse(body).data;
+}
+
+export async function regenerateReview(gameId: string) {
+  const body = await request(`/api/games/${gameId}/review/regenerate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  return apiSuccessSchema(reviewSummarySchema).parse(body).data;
+}
 
 export async function getModelProfiles() {
   const body = await request('/api/model-profiles');
