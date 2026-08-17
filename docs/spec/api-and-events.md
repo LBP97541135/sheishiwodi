@@ -253,7 +253,7 @@ data: <PublicStreamPayload JSON>
 
 ## 7. 复盘与后续端点边界
 
-当前服务端已提供 `GET /api/games/:gameId/review` 与 `POST /api/games/:gameId/review/regenerate`，只对正常终局返回经过 `reviewSummarySchema` 校验的异步总结状态或触发重新生成；响应仅含 model ID、状态、结构化评价和脱敏错误码。当前 Web 尚未调用这两个端点。历史列表、Markdown 导出及跨对局复盘管理仍属后续里程碑，不得返回虚构数据。
+当前服务端已提供 `GET /api/games/:gameId/review` 与 `POST /api/games/:gameId/review/regenerate`，只对正常终局返回经过 `reviewSummarySchema` 校验的异步总结状态或触发重新生成；响应仅含 model ID、状态、结构化评价和脱敏错误码。Web 已在单局复盘页轮询该状态并支持失败后重新生成。`GET /api/games/:gameId/export.md` 导出当前单局的脱敏 Markdown；跨局历史列表与跨对局复盘管理仍属后续里程碑，不得返回虚构数据。
 
 ## 8. 来源
 

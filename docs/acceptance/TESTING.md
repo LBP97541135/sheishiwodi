@@ -164,6 +164,7 @@
 | Server | `game-recovery.test.ts` | 准备等待、AI 描述/投票重启恢复、稳定 actionId 和高水位损坏拒绝 |
 | Server | `game-agent-recovery.test.ts` | 内容重生成、首次/重复泄词、过期结果丢弃、提交重试不重复调用模型 |
 | Server | `tokendance-agent-policy.test.ts` | strict 结构修复、瞬时/永久错误分类、重试耗尽与安全错误码 |
+| Server | `review-agent-policy.test.ts` | 复盘评价短输出预算、证据优先、反结果论、统一评分锚点与 JSON 输出契约 |
 | Server | `no-live-in-default.test.ts` | 默认假模型完整对局零 fetch 调用、零真实模型实例化 |
 | Server | `agent-runtime.test.ts` | Agent 输入白名单、投票/重投目标边界和 `FakeAgentPolicy` 合法输出 |
 | Server | `game-stream.test.ts` | SSE/补取游标、`Last-Event-ID`、严格递增、去重和公开帧私有字段缺失 |
@@ -245,7 +246,7 @@ Playwright 每个模式使用独立临时 SQLite、确定性随机序列和真�
 
 成功后生成脱敏 Markdown 报告 `docs/acceptance/reports/live-<时间>.md`，记录时间、模型标识、结构校验、信息隔离断言、耗时、重试次数（及整局终局状态）。报告落盘前自检渲染串，命中 baseUrl/apiKey/`Bearer`/任一词牌哨兵即中止不写并非零退出。报告不得包含密钥、敏感中转地址、请求头、违规原文或无必要的完整响应。
 
-> **复盘模型暂不纳入本层真实调用验收**：服务端已经具备异步复盘任务、`review_summaries` 持久化和查询/重新生成 API，但 Web 尚未请求或展示 `ReviewSummary`，仍未形成用户可用闭环。待前端接通并建立独立任务后，再把复盘模型加入 live 矩阵与报告。
+复盘模型已具备独立真实调用入口 `pnpm test:live:review`：使用终局事实夹具调用 `TokendanceReviewPolicy`，校验 `reviewGenerationSchema`、全部 AI 的 `playerId` 覆盖和输出敏感哨兵。Web 已轮询并展示 `ReviewSummary`，支持失败后重新生成；评价与确定性事实分区。当前尚无经人工确认可提交的真实复盘模型运行结果，因此交付证据只声明入口和默认自动化已覆盖，不声明付费复盘调用已经通过。
 
 `test:live` 及其子命令不得进入默认 CI、普通开发启动、`pnpm test` 或 `pnpm test:e2e`。默认路径由 `apps/server/src/agents/no-live-in-default.test.ts` 断言零出网、绝不实例化真实策略。负责人自填真实 Key 于 gitignored `.env` 后方可执行付费联网验收。
 

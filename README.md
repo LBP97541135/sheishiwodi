@@ -1,89 +1,180 @@
-# 谁是卧底
+# 谁是卧底 · AI Multi-Agent 游戏
 
-首个纵向里程碑已经完成，当前具备“创建对局—准备—查看词牌—开始游戏—描述—秘密投票—统一揭票—平票辩解—候选重投—淘汰或无人淘汰—人类淘汰后观战/放弃—正常终局揭晓与事实复盘”的可持久化、可恢复纵向链路。里程碑之外已接入受服务端开关保护的 Tokendance 真实模型策略。
+[GitHub 仓库](https://github.com/LBP97541135/sheishiwodi)
 
-## 本地开发
+一个可以在本地完成整局的 AI 版“谁是卧底”：1 名人类玩家与 DeepSeek、豆包、千问 3 名 AI 玩家依次描述、秘密投票、平票辩解、重投和淘汰，终局后展示身份、词牌、信念轨迹、AI 评价并支持导出 Markdown。
 
-需要 Node.js 20.11+ 与 pnpm 9.15.9。安装依赖后运行：
+项目的重点不是让多个模型自由聊天，而是用一个确定性的 Agent harness 管理它们：服务端状态机裁定阶段、合法目标和胜负；每个 Agent 只收到自己的词牌、自己的历史信念和已经公开的信息；模型只提出结构化行动，不能直接修改游戏状态。
+
+## 快速开始
+
+### 环境要求
+
+- Node.js 20.11+，推荐 Node.js 22 LTS。
+- pnpm 9.15.9。
 
 ```bash
+git clone https://github.com/LBP97541135/sheishiwodi.git
+cd sheishiwodi
+corepack enable
+pnpm install
 pnpm dev
 ```
 
-浏览器访问 `http://127.0.0.1:9001`，Fastify API 监听 `http://127.0.0.1:3001`。默认开发流程只使用本地词库和 SQLite，不调用真实模型。
+浏览器访问 `http://127.0.0.1:9001`，Fastify API 监听 `http://127.0.0.1:3001`。默认使用 `FakeAgentPolicy`、本地词库和 SQLite，不需要 API Key、不会联网，也不会产生模型费用。
 
-常用验证命令：
-
-```bash
-pnpm test
-```
+首次运行 E2E 时，如本机还没有 Chromium：
 
 ```bash
-pnpm typecheck
+pnpm exec playwright install chromium
 ```
 
-```bash
-pnpm lint
+### 启用真实模型
+
+复制 [`.env.example`](.env.example) 为 `.env`，只在本机填写：
+
+```dotenv
+AGENT_PROVIDER=tokendance
+TOKENDANCE_BASE_URL=https://your-openai-compatible-endpoint/v1
+TOKENDANCE_API_KEY=your-local-secret
+TOKENDANCE_REVIEW_MODEL=deepseek-v4-flash
 ```
 
-```bash
-pnpm build
+重新运行 `pnpm dev`。三个参赛角色的 model ID 可以在“模型档案”中选择并持久化；复盘模型使用独立的 `TOKENDANCE_REVIEW_MODEL`。Base URL、API Key 和请求头只存在于服务端进程内，不进入浏览器、SQLite、日志、复盘或 Git。
+
+如果 `AGENT_PROVIDER`、Base URL 或 API Key 任一缺失，运行时会明确保持假模型模式，不会半配置地调用外网。付费真实模型验收也必须通过下文的显式命令触发。
+
+## 五分钟验收
+
+1. 打开首页，点击标题中的“谁”配置玩家名称和形象，选择难度并进入经典模式。
+2. 翻看自己的词牌并开始游戏；观察 3 个 AI 自动描述，人类回合到来时提交描述。
+3. 进入秘密投票；投票完成前只能看到完成进度，全部完成后才统一揭票。
+4. 继续到淘汰和终局，查看身份/词牌揭晓、事实时间线、AI 信念与复盘评价。
+5. 导出当前对局 Markdown，检查其中没有密钥、接口地址或模型原始响应。
+
+“猜词模式”是二期占位入口，当前只显示未开放提示，不会创建对局。
+
+## 核心架构
+
+```mermaid
+flowchart LR
+  UI["React Web<br/>只读取 HumanGameView"]
+  API["Fastify<br/>REST 命令 + SSE 安全帧"]
+  GS["GameService<br/>Agent 编排与恢复"]
+  SM["共享纯状态机<br/>阶段/规则/胜负"]
+  PJ["AgentInputProjector<br/>最小白名单上下文"]
+  A1["Agent 1"]
+  A2["Agent 2"]
+  A3["Agent 3"]
+  DB["SQLite<br/>事件/快照/私有动作"]
+
+  UI --> API --> GS
+  GS --> SM
+  GS --> PJ
+  PJ --> A1
+  PJ --> A2
+  PJ --> A3
+  A1 --> GS
+  A2 --> GS
+  A3 --> GS
+  GS --> DB
+  GS --> API --> UI
 ```
 
-```bash
-pnpm test:e2e
-```
+- [`packages/shared`](packages/shared) 保存领域类型、Zod Schema、内容校验和纯状态机，不依赖 React、Fastify、数据库或网络。
+- [`apps/server`](apps/server) 是唯一权威裁判。模型输出必须经过结构、信念、合法目标和内容校验，再转换成领域命令。
+- [`apps/web`](apps/web) 只消费公开的 `HumanGameView` 和 SSE 安全帧，不读取数据库实体、完整快照或私有 Agent 动作。
+- SQLite 在同一事务中提交新快照、不可变事件、私有 Agent 动作、公开安全帧和幂等命令结果。
 
-首次运行 E2E 前若本机尚无 Playwright Chromium，执行 `pnpm exec playwright install chromium`。E2E 会自动启动真实 Web/Server，使用可控假模型、确定性随机序列和独立本地 SQLite，不读取密钥或调用付费模型。
+## Multi-Agent 与 Harness
 
-## 核心设计
+每个 AI 是独立策略实例，共享规则但不共享私有上下文。描述必须按公开顺序生成，因为前一人的描述会成为后一人的公开信息；同一投票阶段的 AI 选票互不可见、互不依赖，因此可以并行预取，再按状态机顺序校验和提交。
 
-- `packages/shared` 承载领域类型、Zod Schema、纯内容校验和纯状态机；不依赖 React、Fastify、数据库或网络。
-- Fastify 是权威裁判，通过 REST 接收命令，通过 SSE 发布安全公开帧；SQLite/Drizzle 同一事务提交快照、不可变事件、私有 Agent 动作、公开流和幂等结果。
-- React 只消费 `HumanGameView` 和公开事件，不读取数据库实体或完整领域快照。
-- Agent 策略支持 `FakeAgentPolicy` 与 Tokendance（OpenAI 兼容）真实模型。默认 `AGENT_PROVIDER=fake`；只有服务端显式配置 provider、Base URL 和 API Key 后才启用真实策略。三个 AI 角色通过持久化 model ID 区分，密钥和中转地址不进入浏览器或数据库。
+| Harness 层 | 解决的问题 | 实现方式 |
+| --- | --- | --- |
+| 输入投影 | 防止模型看到不该知道的信息 | `AgentInputProjector` 从权威快照构造不可变白名单，只含自己的词牌、公开事件、合法目标和自己的历史信念 |
+| 结构合同 | 防止自然语言直接控制系统 | 描述、投票、信念和复盘都使用 strict Zod Schema；未知字段、漏字段、非法概率和非法目标会被拒绝 |
+| 状态裁决 | 防止模型决定规则或胜负 | 模型只返回行动提案；共享纯状态机决定行动者、平票分支、淘汰和终局 |
+| 自动恢复 | 降低真实模型的不稳定性 | 一次格式修复；内容错误重新生成；超时、网络、429、5xx 有限重试；永久配置错误不盲目重试 |
+| 并发防护 | 防止慢请求覆盖新状态 | 每次调用绑定 `baseRevision`；返回后重新核对状态、行动者和动作类型，过期结果直接丢弃 |
+| 幂等与恢复 | 防止刷新/重启产生重复行动 | 稳定 `commandId`、事务写入、活动局恢复、SSE 游标补发与客户端去重 |
+| 可替换策略 | 兼顾可测性和真实体验 | 默认 `FakeAgentPolicy` 提供确定性测试；显式 provider 开关才实例化真实 Tokendance 策略 |
 
-## AI 工具与验收
-
-AI 开发助手用于需求拆解、规格维护、代码实现、测试、浏览器验证和素材索引；项目负责人把关产品范围、重大架构、付费真实模型调用、Git 提交/推送和发布。角色与场景素材的来源、状态映射和发布前处理记录见 [`docs/notes/ASSETS.md`](docs/notes/ASSETS.md)。
-
-默认 `pnpm test` 和 `pnpm test:e2e` 都不访问网络、不读取模型密钥、不产生模型费用。真实模型验收使用显式付费命令：`pnpm test:live:smoke` 检查连通性，`pnpm test:live:policy` 执行策略级校验，`pnpm test:live:full` 可选执行完整对局。缺少真实模型配置时这些命令会明确失败，不会静默回退假模型；策略级与完整对局验收生成脱敏 Markdown 报告。
+完整运行时契约见 [Agent 运行时规格](docs/spec/agent-runtime.md)。
 
 ## 信息隔离
 
-正常终局前，真实阵营、其他玩家词牌、AI 信念与理由、未揭晓选票目标均不得进入 REST、SSE、日志、Agent 非授权上下文或 DOM；淘汰观战仍使用普通公开视图。只有 `finished` 视图包含 `reveal` 与 `factReview`；`abandoned` 无 `winnerCamp`、完整揭晓或私有行动复盘。测试使用“字段不存在”的负向断言，而不是只依赖页面隐藏。
+隔离依赖服务端数据投影和字段不存在测试，不依赖提示词中的“请勿泄露”或前端 CSS 隐藏。
 
-恢复与幂等方面，事件、私有 Agent 动作、公开安全帧、快照与命令结果在同一 SQLite 事务提交；服务重启会恢复轮到 AI 的活动局，轮到人类时继续等待；SSE 使用持久化 `streamSeq`、`Last-Event-ID`/`after` 补发与客户端游标去重，刷新或重复恢复不会生成重复动作。
+| 信息 | 对局中的当前 Agent | 浏览器 / REST / SSE | 终局复盘 |
+| --- | --- | --- | --- |
+| 自己的词牌 | 可见 | 仅人类自己的词牌可见 | 可见 |
+| 其他玩家词牌、真实阵营 | 不可见 | 不存在 | 正常终局后可见 |
+| 自己的历史信念 | 可见 | 不存在 | 可见 |
+| 其他 Agent 信念和理由 | 不可见 | 不存在 | 正常终局后可见 |
+| 当前阶段未揭晓选票 | 不可见 | 只公开完成进度 | 揭票事件后可见 |
+| Base URL、API Key、请求头 | 不可见 | 不存在 | 永不进入复盘 |
 
-## 当前实现
+淘汰后观战仍使用普通公开视图；主动放弃不会返回胜方、完整揭晓或私有行动复盘。只有正常 `finished` 视图包含 `reveal` 和 `factReview`。相关负向矩阵见 [测试与验收规格](docs/acceptance/TESTING.md)。
 
-当前支持新对局配置、固定四人阵容、难度词组抽取、随机卧底与首轮顺序、SQLite 恢复、词牌本地翻面和显式开始游戏。首页将标题中的“谁”作为玩家身份入口，点击后可在弹层中统一编辑名称和人物形象；页面中央突出“经典模式”，在其下提供较小的“猜词模式”占位入口，难度选择独立放在模式入口下方。猜词模式当前只显示 deta 版本提示，不会创建对局。
+## 系统稳健性
 
-开始后由当前选定的 Agent 策略自动推进 AI 描述、辩解、秘密投票与重投，服务端循环执行 AI 直到轮到存活人类、等待淘汰玩家选择或终局；人类在轮到自己时提交描述/辩解或秘密投票。普通投票出现部分平票时，候选依次辩解，非候选随后只在候选集合内重投；重投唯一最高票时淘汰，再次平票或全员最高票时本轮无人淘汰并轮换进入下一轮。正常终局按座位依次揭晓全部阵营与词牌，随后开放确定性事实复盘；普通投票和重投都只公开完成进度，全部合法票完成后才统一揭示目标。
+- 可恢复错误与永久错误分开处理，避免认证失败或模型不存在时重复付费调用。
+- 模型格式错误只允许一次结构修复；长度、句数等内容错误重新生成。
+- 首次直接泄词会被秘密拦截；重复泄词会以不含原文的公开事件强制该玩家退出。
+- 自动恢复耗尽后进入脱敏 `system_terminated`，不伪造阵营胜负，也不暴露上游响应。
+- AI 调用期间发生放弃或其他状态变化时，旧 revision 的模型结果不会入库。
+- 复盘异步生成、可持久化恢复和重新生成，不阻塞终局事实或开始新对局。
 
-## 已知边界
+## AI 工具的使用与代码责任
 
-异步 AI 总结已有服务端任务、持久化与 API 基础设施，但当前复盘页仍只展示确定性事实和历史信念，尚未请求或展示异步总结，因此还不是用户可用闭环；当前单局复盘已支持 Markdown 导出，但顶层不提供历史复盘入口，跨局历史列表仍未实现。首版 30 组词库已经补齐；Agent 结构、内容与系统调用错误会按分类自动恢复，重复泄词会强退违规玩家，恢复耗尽后可脱敏终止为 `system_terminated`。角色、场景与 BGM 已接入，但 10.5MB WAV、角色 PNG 和素材来源记录仍需在发布前收口。TASK-057 已生成策略级与纯状态机整局真实模型脱敏报告，HTTP/SQLite 整局验收及任务最终收口仍待完成；默认开发、测试和 E2E 始终走假模型。
+这里区分两类 AI：
 
-## 迭代与讨论记录
+1. **产品内 AI**：DeepSeek、豆包、千问负责生成描述、信念和投票；独立复盘模型负责终局评价。它们都受相同的输入白名单、输出 Schema、状态机和错误恢复约束。
+2. **开发辅助 Agent**：用于需求拆解、文档维护、代码实现、测试生成、浏览器检查和素材整理。负责人决定产品范围、架构边界、付费调用、Git 提交与发布，并对最终代码负责。
 
-为了便于分享和复盘，项目把“当前工程契约”和“历史过程”分开维护：
+对 Agent 生成代码的验证不是“运行一次看起来能用”，而是：先登记 TASK 和验收点，再更新规格；把核心规则放入可独立测试的纯状态机；用 Schema 和负向断言验证边界；用假模型做确定性回归；最后才用显式真实模型命令验证结构、合法目标、耗时和隔离。关键取舍与修正记录在 [决策记录](docs/notes/DECISIONS.md)，每轮目标、变更、证据和未完成边界记录在 [开发记录](docs/history/PROJECT_LOG.md)。
 
-- [`docs/tasks/TASKS.md`](docs/tasks/TASKS.md) 与 [`docs/tasks/milestone-1-checklist.md`](docs/tasks/milestone-1-checklist.md)：当前任务、检查点和证据。
-- [`docs/history/PROJECT_LOG.md`](docs/history/PROJECT_LOG.md)：每个开发切片的目标、实现、验证和已知边界。
-- [`docs/history/COMMAND_LOG.md`](docs/history/COMMAND_LOG.md) 与 [`docs/notes/DECISIONS.md`](docs/notes/DECISIONS.md)：负责人命令和关键决策。
-- [`docs/history/chat/INDEX.md`](docs/history/chat/INDEX.md)：重要会话的脱敏归档索引。
-- [`CHANGELOG.md`](CHANGELOG.md)：带版本号的较大变更；日常切片不滥用版本号。
+## 测试与验证
 
-历史文档用于追溯，当前行为始终以 [`docs/acceptance/`](docs/acceptance/README.md) 和 [`docs/spec/`](docs/spec/README.md) 为准。
+```bash
+pnpm test
+pnpm typecheck
+pnpm lint
+pnpm build
+pnpm test:e2e
+```
 
-## 项目文档
+默认测试和 E2E 强制假模型、临时 SQLite 和确定性随机序列，不读取 `.env` 中的 Key，也不访问网络。E2E 覆盖桌面与移动端的正常终局、刷新恢复、放弃、淘汰观战和平票重投。
 
-- [文档总导航](docs/README.md)
-- [任务台账](docs/tasks/TASKS.md)
-- [里程碑 Checklist](docs/tasks/milestone-1-checklist.md)
-- [工程规格](docs/spec/README.md)
-- [验收标准](docs/acceptance/README.md)
-- [注意事项](docs/notes/README.md)
-- [历史记录](docs/history/README.md)
-- [版本变更记录](CHANGELOG.md)
+真实模型验证只能显式执行：
+
+```bash
+pnpm test:live:smoke   # 中转连通性与最小回复
+pnpm test:live:policy  # 三个角色各执行真实 describe + vote
+pnpm test:live:review  # 独立复盘模型的结构与隔离
+pnpm test:live:full    # 可选，真实模型整局，调用和费用更多
+```
+
+缺少真实模型配置时，上述命令会以非零退出码明确失败，不会静默回退假模型。可提交的脱敏结果、测试层级和当前环境边界见 [验收证据](docs/acceptance/EVIDENCE.md)。
+
+## 已知问题与取舍
+
+- 猜词模式尚未实现，目前只有明确的二期占位提示。
+- 当前只提供本局复盘和 Markdown 导出，没有跨局历史列表。
+- 真实模型已完成策略级 3 模型 × 2 动作验收，以及复用同一状态机的真实模型整局；HTTP + SQLite 的真实付费整局仍待在匹配的 Node 22 / `better-sqlite3` 环境完成。
+- 角色 PNG 和 10.5 MB WAV 仍需在正式发布前压缩，并补齐最终素材来源记录。
+- 模型输出具有随机性；默认自动化证明 harness 和规则稳定，不能保证每一次真实模型内容都同样精彩。
+
+## 文档与迭代记录
+
+- [文档导航](docs/README.md)：事实源优先级和阅读顺序。
+- [产品需求](docs/acceptance/REQUIREMENTS.md)：当前范围与验收要求。
+- [验收证据](docs/acceptance/EVIDENCE.md)：自动化、E2E、真实模型与浏览器验证摘要。
+- [工程规格](docs/spec/README.md)：状态机、持久化、API、Agent 和前端契约。
+- [任务台账](docs/tasks/TASKS.md) / [Checklist](docs/tasks/milestone-1-checklist.md)：任务状态和完成证据。
+- [开发记录](docs/history/PROJECT_LOG.md)：按迭代记录目标、实现、验证和边界。
+- [命令记录](docs/history/COMMAND_LOG.md) / [决策记录](docs/notes/DECISIONS.md)：需求演进和关键取舍。
+- [版本记录](CHANGELOG.md)：较大版本变更。
+
+历史记录用于解释“为什么这样做”，当前行为以 `docs/acceptance/` 和 `docs/spec/` 为准。

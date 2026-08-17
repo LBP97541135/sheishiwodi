@@ -108,23 +108,22 @@ function buildReviewMessages(input: ReviewInput): ChatMessage[] {
   const agents = input.players.filter((player) => player.kind === 'agent');
   const agentIds = agents.map((player) => player.playerId);
   const outputShape =
-    `{"perAgent": [` +
-    agentIds
-      .map(
-        (id) =>
-          `{"playerId": "${id}", "verdict": "对该AI的简评(600字内)", "keyMoments": ["关键节点1", "关键节点2"], "rating": 1到5的整数}`,
-      )
-      .join(', ') +
-    `], "overall": "全局点评：关键转折与胜负手(2000字内)"}`;
+    `{"perAgent":[{"playerId":"必须取自指定列表","verdict":"结论、核心依据和一条改进",` +
+    `"keyMoments":["第N轮｜行为 → 判断或影响"],"rating":1}],` +
+    `"overall":"胜负手、关键转折和最大反事实"}`;
 
   const system =
-    `你是资深中文桌游“谁是卧底”赛后复盘教练。现在给你一局已结束对局的完整真相：` +
-    `每位玩家的真实身份与词牌、全部公开发言与投票、以及每个 AI 每一步的私有心理活动（信念）。` +
-    `请客观复盘：评估每个 AI 的判断质量、发言策略、投票是否合理、信念是否与事实吻合，指出其高光与失误；` +
-    `再给出一段全局点评，说明本局的关键转折与决定胜负的节点。` +
-    `rating 为 1~5 的整数（5 为发挥最佳）。语言精炼、就事论事，不要复述规则。` +
+    `你是“谁是卧底”赛后复盘教练。目标是提炼最有解释力的结论，不复述整局。\n` +
+    `评价顺序：①判断是否随公开证据合理更新；②发言、投票是否与当时判断一致；③行动对淘汰和胜负的实际影响。\n` +
+    `评价规则：\n` +
+    `- 只依据行动当时可见的信息评价，不得因最终胜负倒推表现，不得编造动机或事实。\n` +
+    `- 每名 AI 的 verdict 用 60～100 个中文字符：结论先行，给出最强事实依据，最后给一条具体改进。\n` +
+    `- keyMoments 只保留最关键的 1～2 条，每条不超过 50 个中文字符，写成“第N轮｜行为 → 判断或影响”。\n` +
+    `- overall 用 100～160 个中文字符，只写胜负手、关键转折和一个最值得改变的决策，不逐人重复。\n` +
+    `- 禁止复述规则、身份词牌和完整流程；禁止空泛表扬；私有信念只作判断依据，不长段照抄。\n` +
+    `评分锚点：5=持续准确且行动决定胜负；4=整体可靠，仅有小失误；3=有得有失；2=多次误判或行动脱节；1=核心判断失据并明显伤害局势。不得只按所属阵营输赢评分。\n` +
     `perAgent 必须且只能覆盖这些 AI 的 playerId：${agentIds.join('、')}，每个恰好一条。` +
-    `只输出一个 JSON 对象，不要输出多余文字或代码块标记，格式如下：\n${outputShape}`;
+    `只输出一个 JSON 对象，不要解释或代码块标记。格式：\n${outputShape}`;
 
   const identityLines = [...input.reveal.players]
     .sort((a, b) => a.seatIndex - b.seatIndex)

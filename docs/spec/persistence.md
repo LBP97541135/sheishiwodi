@@ -125,7 +125,7 @@ SQLite 文件是本地运行状态，不是词库或需求的 Git 事实源。
 
 ### 2.10 `review_summaries`
 
-当前已存在按 `gameId` 唯一的异步复盘摘要表，保存 `status`、非敏感 `modelId`、结构化 `summaryJson`、可选脱敏 `errorCode` 与创建/更新时间。正常终局后服务端可入队生成，重启时恢复 `pending/generating` 记录；失败不得改变游戏事实。当前 Web 尚未消费该摘要，用户可见的复盘仍以 `HumanGameView.factReview` 为准。
+当前已存在按 `gameId` 唯一的异步复盘摘要表，保存 `status`、非敏感 `modelId`、结构化 `summaryJson`、可选脱敏 `errorCode` 与创建/更新时间。正常终局后服务端可入队生成，重启时恢复 `pending/generating` 记录；失败不得改变游戏事实。Web 在单局复盘页轮询并展示该摘要，允许失败后重新生成；AI 评价始终与 `HumanGameView.factReview` 的确定性事实分区展示，不能覆盖事实。
 
 ### 2.11 后续实体
 

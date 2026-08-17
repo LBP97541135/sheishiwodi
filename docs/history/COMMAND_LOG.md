@@ -100,3 +100,6 @@
 | CMD-094 | 2026-08-17（具体时间不可用） | 当前同时存在“复盘”和“历史复盘”两块，移除“历史复盘”，保留正常终局后的“复盘”。 | 已完成 | `docs/tasks/TASKS.md` TASK-065、`docs/spec/frontend-ux.md` §3、`apps/web/src/App.tsx` |
 | CMD-095 | 2026-08-17（具体时间不可用） | 优化新对局首页：经典模式放大居中、猜词模式缩小置于下方；标题“谁”作为玩家身份入口，名称和人物形象统一放入弹层，难度独立下置。 | 已完成 | `docs/tasks/TASKS.md` TASK-066、`docs/notes/DECISIONS.md` DEC-088、`apps/web/src/components/NewGameForm.tsx` |
 | CMD-096 | 2026-08-17（具体时间不可用） | 更新项目文档，并将本轮改动提交、推送到 `master` 分支。 | 已完成 | `README.md`、`docs/`、Git `master` |
+| CMD-097 | 2026-08-17（具体时间不可用） | 优化评价 LLM 的提示词，使评价更加精炼并突出重点。 | 已完成 | `docs/tasks/TASKS.md` TASK-067、`docs/spec/agent-runtime.md`、`apps/server/src/agents/review-agent-policy.ts` |
+| CMD-098 | 2026-08-17（具体时间不可用） | 按最终 GitHub 交付要求补充 README、测试或验证证据，并突出产品完整性、Multi-Agent、信息边界、系统稳健性和 Agent 代码验证。 | 已完成 | `README.md`、`docs/acceptance/EVIDENCE.md`、`docs/tasks/TASKS.md` TASK-068 |
+| CMD-099 | 2026-08-17（具体时间不可用） | 将复盘评价提示词优化与最终面试交付文档提交并推送到 `master`。 | 已完成 | Git `master`、TASK-067、TASK-068 |
