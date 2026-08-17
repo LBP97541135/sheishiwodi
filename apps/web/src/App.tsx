@@ -55,7 +55,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [topView, setTopView] = useState<TopView>('game');
-  const [historyNoticeOpen, setHistoryNoticeOpen] = useState(false);
+  const [guessModeNoticeOpen, setGuessModeNoticeOpen] = useState(false);
   // 首帧一次性捕获待恢复的最近对局 ID（在任何 effect 之前），
   // 以便持久化 effect 的空态分支可以安全地清除 key 而不影响恢复。
   const [restoredLastGameId] = useState<string | null>(() =>
@@ -63,7 +63,7 @@ export function App() {
   );
   const gameRef = useRef<HumanGameView | null>(null);
   const eventCursorRef = useRef(0);
-  const historyTriggerRef = useRef<HTMLButtonElement>(null);
+  const guessModeTriggerRef = useRef<HTMLButtonElement | null>(null);
   // 背景音乐在整个应用（含主页、模型档案）持续播放，由顶部开关与浏览器自动播放解锁控制。
   const shouldPlayBgm = true;
   const experience = useExperienceSettings(shouldPlayBgm);
@@ -271,9 +271,9 @@ export function App() {
     setTopView('game');
   };
 
-  const closeHistoryNotice = useCallback(() => {
-    setHistoryNoticeOpen(false);
-    historyTriggerRef.current?.focus();
+  const closeGuessModeNotice = useCallback(() => {
+    setGuessModeNoticeOpen(false);
+    guessModeTriggerRef.current?.focus();
   }, []);
 
   const isFinished = game?.status === 'finished';
@@ -317,16 +317,6 @@ export function App() {
           >
             模型档案
           </button>
-          <button
-            ref={historyTriggerRef}
-            type="button"
-            className="top-nav__link"
-            aria-haspopup="dialog"
-            aria-expanded={historyNoticeOpen}
-            onClick={() => setHistoryNoticeOpen(true)}
-          >
-            历史复盘
-          </button>
           {isFinished && (
             <button
               type="button"
@@ -346,7 +336,7 @@ export function App() {
           onBackgroundChange={experience.changeBackground}
         />
       </div>
-      <HistoryReviewNotice open={historyNoticeOpen} onClose={closeHistoryNotice} />
+      <GuessModeNotice open={guessModeNoticeOpen} onClose={closeGuessModeNotice} />
       {topView === 'model-profiles' ? (
         <ModelProfiles onBack={() => setTopView('game')} />
       ) : topView === 'review' && game && isFinished ? (
@@ -366,7 +356,16 @@ export function App() {
 
   function renderStage() {
     if (!game) {
-      return <NewGameForm busy={busy} onCreate={handleCreate} />;
+      return (
+        <NewGameForm
+          busy={busy}
+          onCreate={handleCreate}
+          onOpenGuessMode={(trigger) => {
+            guessModeTriggerRef.current = trigger;
+            setGuessModeNoticeOpen(true);
+          }}
+        />
+      );
     }
     if (game.status === 'preparing') {
       return <PreparingGame game={game} busy={busy} onStart={handleStart} onAbandon={handleAbandon} />;
@@ -388,7 +387,7 @@ export function App() {
   }
 }
 
-function HistoryReviewNotice({ open, onClose }: { open: boolean; onClose(): void }) {
+function GuessModeNotice({ open, onClose }: { open: boolean; onClose(): void }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -396,6 +395,10 @@ function HistoryReviewNotice({ open, onClose }: { open: boolean; onClose(): void
     closeButtonRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        closeButtonRef.current?.focus();
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
@@ -405,22 +408,22 @@ function HistoryReviewNotice({ open, onClose }: { open: boolean; onClose(): void
 
   return (
     <div
-      className="history-notice-backdrop"
-      data-testid="history-notice-backdrop"
+      className="coming-soon-backdrop"
+      data-testid="coming-soon-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <section
-        className="history-notice"
+        className="coming-soon-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="history-notice-title"
-        aria-describedby="history-notice-description"
+        aria-labelledby="coming-soon-title"
+        aria-describedby="coming-soon-description"
       >
         <p className="eyebrow">二期功能</p>
-        <h2 id="history-notice-title">历史复盘暂未开放</h2>
-        <p id="history-notice-description">当前为deta版本，正式上线后即可畅玩</p>
+        <h2 id="coming-soon-title">猜词模式暂未开放</h2>
+        <p id="coming-soon-description">当前为deta版本，正式上线后即可畅玩</p>
         <button ref={closeButtonRef} type="button" className="primary-action" onClick={onClose}>
           知道了
         </button>

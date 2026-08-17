@@ -249,6 +249,16 @@ legend {
   opacity: 0.55;
 }
 
+.game-mode-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.game-mode-actions > button {
+  width: 100%;
+}
+
 .form-error {
   margin: 0;
   border-left: 5px solid #b74335;
@@ -432,6 +442,10 @@ legend {
 }
 
 @media (max-width: 420px) {
+  .game-mode-actions {
+    grid-template-columns: 1fr;
+  }
+
   .choice-grid {
     grid-template-columns: 1fr;
   }
@@ -1032,7 +1046,7 @@ legend {
   color: #f7f3e8;
 }
 
-.history-notice-backdrop {
+.coming-soon-backdrop {
   position: fixed;
   z-index: 1000;
   inset: 0;
@@ -1042,7 +1056,7 @@ legend {
   padding: 20px;
 }
 
-.history-notice {
+.coming-soon-dialog {
   display: grid;
   width: min(100%, 430px);
   gap: 14px;
@@ -1053,12 +1067,12 @@ legend {
   padding: 24px;
 }
 
-.history-notice h2,
-.history-notice p {
+.coming-soon-dialog h2,
+.coming-soon-dialog p {
   margin: 0;
 }
 
-.history-notice .primary-action {
+.coming-soon-dialog .primary-action {
   justify-self: end;
   min-width: 112px;
 }
@@ -1278,6 +1292,22 @@ legend {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.review-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 导出链接复用 .secondary-action 外观，但作为 <a> 需要补齐盒模型与对齐。 */
+a.review-export {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: #26231f;
 }
 
 .review-reveal {

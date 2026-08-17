@@ -11,7 +11,7 @@ import type {
   ReviewSummary,
 } from '@sheishiwodi/shared';
 
-import { getReview, regenerateReview } from '../api';
+import { getReview, regenerateReview, reviewExportPath } from '../api';
 import { characterKeyFor } from '../character-assets';
 import { CharacterPortrait } from './CharacterPortrait';
 
@@ -73,7 +73,7 @@ export function ReviewScreen({ game, onBack }: ReviewScreenProps) {
 
   return (
     <section className="storyboard review-screen" aria-labelledby="review-title">
-      <ReviewHeader onBack={onBack} />
+      <ReviewHeader onBack={onBack} exportHref={reviewExportPath(game.gameId)} />
 
       <div className="review-reveal">
         <span
@@ -315,16 +315,23 @@ function renderAiBody({
   );
 }
 
-function ReviewHeader({ onBack }: { onBack: () => void }) {
+function ReviewHeader({ onBack, exportHref }: { onBack: () => void; exportHref?: string }) {
   return (
     <header className="review-header">
       <div>
         <p className="eyebrow">赛后复盘</p>
         <h1 id="review-title">对局复盘</h1>
       </div>
-      <button type="button" className="secondary-action" onClick={onBack}>
-        返回对局
-      </button>
+      <div className="review-header__actions">
+        {exportHref && (
+          <a className="secondary-action review-export" href={exportHref} download>
+            导出 Markdown
+          </a>
+        )}
+        <button type="button" className="secondary-action" onClick={onBack}>
+          返回对局
+        </button>
+      </div>
     </header>
   );
 }

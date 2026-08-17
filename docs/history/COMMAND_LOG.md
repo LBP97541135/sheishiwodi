@@ -95,3 +95,6 @@
 | CMD-089 | 2026-08-16（具体时间不可用） | 检查新建素材包；若有缺口则说明，若可直接使用则将素材索引写入项目文档。 | 已完成 | `docs/notes/ASSETS.md`、`docs/spec/frontend-ux.md`、`docs/acceptance/milestone-1.md` |
 | CMD-090 | 2026-08-17（具体时间不可用） | Agent 错误尽可能自动解决；覆盖发言超时、关键词泄露、结构化发言错误和数据返回失败，只有自动恢复不了时才报错并提醒玩家；严格遵守先写 TASK、再开发、最后补测试与完成记录的流程。 | 已完成 | `docs/tasks/TASKS.md` TASK-059、`docs/notes/DECISIONS.md` DEC-086、`docs/spec/agent-runtime.md`、`docs/history/PROJECT_LOG.md` |
 | CMD-091 | 2026-08-17（具体时间不可用） | 投票并行进行时，让所有模型和人类玩家同时进入思考环节，不再只显示 DeepSeek 进入思考。 | 已完成 | `docs/tasks/TASKS.md` TASK-062、`docs/notes/DECISIONS.md` DEC-087、`docs/spec/frontend-ux.md` §4.5、`apps/web/src/components/GameScreen.tsx` |
+| CMD-092 | 2026-08-17（具体时间不可用） | 配置二期复盘入口；点击后弹出“当前为deta版本，正式上线后即可畅玩”。 | 已完成 | `docs/tasks/TASKS.md` TASK-063、`docs/spec/frontend-ux.md` §3、`apps/web/src/App.tsx` |
+| CMD-093 | 2026-08-17（具体时间不可用） | 将“猜词模式”入口放在新对局配置页的开始操作旁，并将原开始操作改名为“经典模式”；猜词模式点击后显示同一 deta 提示。 | 已完成 | `docs/tasks/TASKS.md` TASK-064、`docs/spec/frontend-ux.md` §4.1、`apps/web/src/components/NewGameForm.tsx` |
+| CMD-094 | 2026-08-17（具体时间不可用） | 当前同时存在“复盘”和“历史复盘”两块，移除“历史复盘”，保留正常终局后的“复盘”。 | 已完成 | `docs/tasks/TASKS.md` TASK-065、`docs/spec/frontend-ux.md` §3、`apps/web/src/App.tsx` |

@@ -7,9 +7,10 @@ import { characterAssets } from '../character-assets';
 interface NewGameFormProps {
   busy: boolean;
   onCreate(input: CreateGameRequest): Promise<void>;
+  onOpenGuessMode(trigger: HTMLButtonElement): void;
 }
 
-export function NewGameForm({ busy, onCreate }: NewGameFormProps) {
+export function NewGameForm({ busy, onCreate, onOpenGuessMode }: NewGameFormProps) {
   const [displayName, setDisplayName] = useState('');
   const [silhouette, setSilhouette] = useState<'silhouette_a' | 'silhouette_b'>('silhouette_a');
   const [difficulty, setDifficulty] = useState<'easy' | 'hard'>('easy');
@@ -97,9 +98,20 @@ export function NewGameForm({ busy, onCreate }: NewGameFormProps) {
       </fieldset>
 
       {validation && <p className="form-error">{validation}</p>}
-      <button className="primary-action" type="submit" disabled={busy}>
-        {busy ? '正在创建…' : '开始新对局'}
-      </button>
+      <div className="game-mode-actions" role="group" aria-label="选择游戏模式">
+        <button className="primary-action" type="submit" disabled={busy}>
+          {busy ? '正在创建…' : '经典模式'}
+        </button>
+        <button
+          className="secondary-action"
+          type="button"
+          disabled={busy}
+          aria-haspopup="dialog"
+          onClick={(event) => onOpenGuessMode(event.currentTarget)}
+        >
+          猜词模式
+        </button>
+      </div>
     </form>
   );
 }

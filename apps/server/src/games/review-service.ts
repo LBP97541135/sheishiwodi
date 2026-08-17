@@ -3,6 +3,7 @@ import type { Clock, ReviewErrorCode, ReviewSummary } from '@sheishiwodi/shared'
 import { FakeReviewPolicy } from '../agents/fake-review-policy.js';
 import { buildReviewInput, type ReviewPolicy } from '../agents/review-policy.js';
 import { ReviewSystemError } from '../agents/review-agent-policy.js';
+import { buildReviewMarkdown } from './review-markdown.js';
 import type { GameRepository } from './game-repository.js';
 
 export type ReviewServiceErrorCode = 'GAME_NOT_FOUND' | 'NOT_FINISHED';
@@ -64,6 +65,18 @@ export class ReviewService {
     if (!view) throw new ReviewServiceError('GAME_NOT_FOUND');
     if (view.status !== 'finished' || !view.reveal) throw new ReviewServiceError('NOT_FINISHED');
     return this.enqueue(gameId, { force: true });
+  }
+
+  /**
+   * 导出单局复盘为脱敏 Markdown（DEC-047）：组合终局事实与已生成的 AI 评价。
+   * AI 评价缺失/生成中/失败时仍可导出（仅事实部分，评价区标注状态）。
+   */
+  exportMarkdown(gameId: string): string {
+    const view = this.games.getHumanView(gameId);
+    if (!view) throw new ReviewServiceError('GAME_NOT_FOUND');
+    const input = buildReviewInput(view);
+    if (!input) throw new ReviewServiceError('NOT_FINISHED');
+    return buildReviewMarkdown({ input, summary: this.games.getReviewSummary(gameId) });
   }
 
   /** 重启恢复：把遗留 pending/generating 的复盘重新入队。 */

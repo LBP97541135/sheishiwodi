@@ -9,6 +9,7 @@ import { ReviewScreen } from './ReviewScreen';
 vi.mock('../api', () => ({
   getReview: vi.fn(),
   regenerateReview: vi.fn(),
+  reviewExportPath: (gameId: string) => `/api/games/${gameId}/export.md`,
 }));
 
 const getReviewMock = vi.mocked(getReview);
@@ -197,6 +198,13 @@ describe('ReviewScreen', () => {
     render(<ReviewScreen game={makeFinishedView()} onBack={vi.fn()} />);
     // 时间线里只有 agent-1 一次描述带信念，human 未描述；揭票里 human 无信念节点
     expect(screen.queryByText('投给 DeepSeek')).not.toBeInTheDocument();
+  });
+
+  it('提供导出 Markdown 的下载链接', () => {
+    render(<ReviewScreen game={makeFinishedView()} onBack={vi.fn()} />);
+    const link = screen.getByRole('link', { name: '导出 Markdown' });
+    expect(link).toHaveAttribute('href', '/api/games/game-review-1/export.md');
+    expect(link).toHaveAttribute('download');
   });
 
   it('返回按钮触发 onBack', () => {

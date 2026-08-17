@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
@@ -66,28 +66,21 @@ afterEach(() => {
 });
 
 describe('App', () => {
-  it('历史复盘入口显示 deta 版本提示，并支持按钮、遮罩和 Esc 关闭', async () => {
+  it('仅保留猜词模式二期入口，复用 deta 版本提示并把焦点返回自身', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ data: { game: null } })));
 
     render(<App />);
 
-    const trigger = await screen.findByRole('button', { name: '历史复盘' });
+    const modeGroup = await screen.findByRole('group', { name: '选择游戏模式' });
+    expect(screen.queryByRole('button', { name: '历史复盘' })).not.toBeInTheDocument();
+    expect(within(modeGroup).getByRole('button', { name: '经典模式' })).toBeInTheDocument();
+    const trigger = within(modeGroup).getByRole('button', { name: '猜词模式' });
     fireEvent.click(trigger);
-    expect(screen.getByRole('dialog', { name: '历史复盘暂未开放' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '猜词模式暂未开放' })).toBeInTheDocument();
     expect(screen.getByText('当前为deta版本，正式上线后即可畅玩')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '知道了' })).toHaveFocus();
-
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: '历史复盘暂未开放' })).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
-
-    fireEvent.click(trigger);
     fireEvent.click(screen.getByRole('button', { name: '知道了' }));
-    expect(screen.queryByRole('dialog', { name: '历史复盘暂未开放' })).not.toBeInTheDocument();
-
-    fireEvent.click(trigger);
-    fireEvent.mouseDown(screen.getByTestId('history-notice-backdrop'));
-    expect(screen.queryByRole('dialog', { name: '历史复盘暂未开放' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '猜词模式暂未开放' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it('无活动对局时显示创建表单并提交配置', async () => {
@@ -100,10 +93,10 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('button', { name: '开始新对局' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '经典模式' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('你的名字'), { target: { value: '小祎' } });
     fireEvent.click(screen.getByRole('radio', { name: /困难/ }));
-    fireEvent.click(screen.getByRole('button', { name: '开始新对局' }));
+    fireEvent.click(screen.getByRole('button', { name: '经典模式' }));
 
     await screen.findByRole('heading', { name: '记住你的词牌' });
     expect(fetchMock).toHaveBeenLastCalledWith(
@@ -221,9 +214,11 @@ describe('App', () => {
 
     render(<App />);
     expect(await screen.findByText('平民胜利')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '复盘' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '历史复盘' })).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenLastCalledWith('/api/games/game-1', undefined);
     fireEvent.click(screen.getByRole('button', { name: '开始新对局' }));
-    expect(await screen.findByRole('button', { name: '开始新对局' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '经典模式' })).toBeInTheDocument();
     expect(localStorage.getItem('sheishiwodi:last-game-id')).toBeNull();
   });
 

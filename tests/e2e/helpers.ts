@@ -3,7 +3,7 @@ import { expect, type Page } from '@playwright/test';
 export async function createAndStartGame(page: Page, name: string) {
   await page.goto('/');
   await page.getByLabel('你的名字').fill(name);
-  await page.getByRole('button', { name: '开始新对局' }).click();
+  await page.getByRole('button', { name: '经典模式' }).click();
   await expect(page.getByRole('heading', { name: '记住你的词牌' })).toBeVisible();
   const startButton = page.getByRole('button', { name: '我已记住，开始游戏' });
   const startedHeading = page.getByRole('heading', { name: /第 1 轮|对局结束/ });

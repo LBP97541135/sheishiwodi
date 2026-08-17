@@ -119,6 +119,11 @@ export async function getReview(gameId: string) {
   return apiSuccessSchema(reviewSummarySchema).parse(body).data;
 }
 
+/** 复盘 Markdown 导出地址（同源，经 Vite 代理到服务端；附件下载）。 */
+export function reviewExportPath(gameId: string) {
+  return `/api/games/${gameId}/export.md`;
+}
+
 export async function regenerateReview(gameId: string) {
   const body = await request(`/api/games/${gameId}/review/regenerate`, {
     method: 'POST',
