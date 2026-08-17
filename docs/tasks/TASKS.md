@@ -109,7 +109,7 @@
 | 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
 | --- | --- | --- | --- | --- |
 | TASK-044 扩充首版完整词库 | 已完成 | 将版本化词库从里程碑 4 组子集扩充为 30 组；简单/困难各 15 组；人工审核固定阵营、公平性、描述空间与泄词风险 | REQUIREMENTS 词库、DEC-075/076、SPEC persistence | `data/word-pairs.json` 30 组；`word-pairs.test.ts` 增加事实源数量/难度/启用/唯一性断言；文件级结构核对通过，完整命令门禁待本机执行环境恢复后补跑 |
-| TASK-045 视觉与媒体收口 | 进行中 | 接入 BGM 与开关；整理五角色五状态素材；完善视觉/无障碍；支持默认纸面与审讯室背景切换 | frontend UX、ASSETS、负责人 2026-08-16 指令 | 待产出 Web 设置控件、媒体生命周期、背景主题、组件测试、桌面/移动验证与 LOG |
+| TASK-045 视觉与媒体收口 | 已完成 | 接入 BGM 与开关；整理五角色五状态素材；完善视觉/无障碍；支持默认纸面与审讯室背景切换 | frontend UX、ASSETS、负责人 2026-08-16 指令 | `experience-settings.tsx` 设置控件（背景音乐开关默认关、纸面/审讯室背景单选）与 `useExperienceSettings` 媒体生命周期；`App` 根 shell 应用 `shell--<theme>` 与 `--scene-background`；`bgm.wav` 规范化为 `assets/audio/game-bgm.wav`（去掉仓库根中文路径导入）；新增 `experience-settings.test.tsx` 8 项组件/hook 测试（默认关、持久化、背景切换、底图、音源非中文路径）；typecheck/lint、默认测试 128 项、build 全绿；桌面与 375×812 实测背景切换与控件布局正常；待发布前压缩 10.5MB WAV（本机无 ffmpeg） |
 
 ## 真实模型接入（DEC-085）
 
@@ -125,5 +125,6 @@
 | TASK-051 模型档案 REST 路由 | 已完成 | `GET /api/model-profiles`、`GET /api/models`（服务端代理，仅回 id）、`PUT /api/model-profiles/:roleId`（活动局 409、未知角色 404）；响应不含 URL/Key/请求头 | SPEC api §4.6 | `model-routes.ts`+`.test.ts`、`model-profile-service.ts` |
 | TASK-052 前端模型档案界面 | 已完成 | `App.tsx` 增 `topView` 导航；`ModelProfiles.tsx` 三卡展示头像/标签/人格 prompt/model 下拉，禁展 URL/Key，fake 或活动局禁用选择 | SPEC frontend §3/§5 | `App.tsx`、`api.ts`、`ModelProfiles.tsx`+`.test.tsx` |
 | TASK-053 文档与决策先行 | 已完成 | 落 DEC-085；同步 REQUIREMENTS、frontend-ux、agent-runtime、architecture、persistence、api-and-events、TESTING、CLAUDE 状态；登记本轮台账与检查点 | DEC-085、GOV | DECISIONS DEC-085；上述规格与验收文档已更新；本节与 checklist 已登记 |
-| TASK-054 test:live 与全量验证 | 进行中 | `test:live` 可执行冒烟入口（缺 env 显式失败、绝不静默走假模型、脱敏输出）；`pnpm build/typecheck/lint/test/test:e2e` 全绿并断言 E2E 未实例化真实策略、无出网 | DEC-085、TEST §7 | `tests/live/run.mjs`、`package.json`；单测新增策略/路由/组件/负向隔离；全量门禁待本机执行环境复跑确认 |
+| TASK-054 test:live 与全量验证 | 已完成 | `test:live` 可执行冒烟入口（缺 env 显式失败、绝不静默走假模型、脱敏输出）；`pnpm build/typecheck/lint/test/test:e2e` 全绿并断言 E2E 未实例化真实策略、无出网 | DEC-085、TEST §7 | `tests/live/run.mjs`、`package.json`；单测含策略/路由/组件/负向隔离；本机全量门禁复跑：typecheck/lint、默认测试 128 项、build、test:e2e 10 项全绿；E2E 由 `playwright.config.ts` 服务端 `env` 强制假模型、绝不出网；`test:live` 实测在非 tokendance env 下显式退出码 1、绝不静默走假模型、不发起网络调用；真实付费冒烟由负责人用自填 Key 执行 |
 | TASK-055 排查并优化开始/推进卡顿 | 已完成 | 修复"点击开始不自动跳转且很慢"：运行时后台推进 AI 回合（提交即返回、SSE 实时下发），测试同步 await；修复 E2E 泄读本机 `.env` 真实 Key 的隔离漏洞 | DEC-085、SPEC agent-runtime §2.1 | `game-service.ts` `settleAdvance`/`backgroundAdvance`、`server.ts` DI 开关、`playwright.config.ts` 服务端 `env` 强制假模型、`helpers.ts` 挂钟兜底轮询；typecheck/lint/test（120）与 test:e2e（10）全绿；后台推进失败仅脱敏记 `error.name` |
+| TASK-056 按模型家族关闭推理链 | 已完成 | 为 deepseek/豆包(seed)/千问(qwen) 三个游戏模型分别按厂商关闭推理链、加速直出，其他模型不受影响；抬高默认超时消除"超时→重试→多次调用"风暴 | DEC-085、SPEC agent-runtime §11 | 新增 `agents/model-reasoning.ts` `reasoningDisableBodyFor`（qwen→`enable_thinking:false`；seed/doubao 与 deepseek→`thinking.type=disabled`；其他→`{}`）；`tokendance-client.ts` 每次调用支持 `extraBody`；`tokendance-agent-policy.ts` 按 modelId 透传；`server.ts` 默认超时 20000→60000；新增 `model-reasoning.test.ts` 与策略层按家族断言；本机真实中转站实测 qwen 48→7s、seed 168→7.4s、deepseek 12→1.5s 且 content 仍合法 JSON；typecheck/lint、默认测试（shared 46/server 55/web 33）、build 全绿 |

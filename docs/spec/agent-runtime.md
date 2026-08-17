@@ -231,12 +231,17 @@ AGENT_PROVIDER=fake|tokendance   # 默认 fake；仅当为 tokendance 且 Base U
 TOKENDANCE_BASE_URL=https://tokendance.space/gateway/v1
 TOKENDANCE_API_KEY=              # 由负责人自填于 gitignored .env，禁止写入仓库
 TOKENDANCE_DEFAULT_MODEL=        # 角色缺持久化 modelId 时的回退默认
+TOKENDANCE_TIMEOUT_MS=           # 单次模型请求超时（毫秒），默认 60000
+TOKENDANCE_MAX_RETRIES=          # 系统级失败最大重试次数，默认 2
+TOKENDANCE_RETRY_DELAY_MS=       # 每次重试前等待毫秒，默认 800
+TOKENDANCE_EXTRA_BODY=           # 通用兜底：其他模型的附加请求参数（JSON），会被家族专用关推理参数覆盖
 ```
 
 - Provider 开关默认 `fake`；`dev`、`test`、`test:e2e` 恒为假模型，绝不联网、不读 Key。仅 `pnpm test:live` 显式触发真实调用。
 - 可下发到浏览器并持久化的只有 model ID；Base URL、API Key、请求头、完整模型响应绝不下发或落库（继承 DEC-082/DEC-052）。
 - 角色 `modelId` 持久化于 server-only 表 `agent_role_models`；存在活动局（`in_progress` / `awaiting_spectator`）时拒绝改配置。
 - 错误兜底：一次格式修复（DEC-034）→ 有限系统重试 → `system_terminated`（DEC-072），见第 9 节。
+- **关闭推理链（加速直出）**：`agents/model-reasoning.ts` 的 `reasoningDisableBodyFor(modelId)` 按模型家族计算关推理参数，`TokendanceAgentPolicy` 每次调用作为 `extraBody` 透传，优先级高于 `TOKENDANCE_EXTRA_BODY`。经真实中转站实测（2026-08-17）：`qwen*`→`{enable_thinking:false}`（约 48s→7s）；`seed*`/`doubao*`→`{thinking:{type:'disabled'}}`（约 168s→7.4s）；`deepseek*`→`{thinking:{type:'disabled'}}`（约 12s→1.5s，注意 deepseek 会忽略 `enable_thinking`）。其他模型不附加任何参数、行为不变。这些参数只是模型请求体字段，绝不含 Base URL / API Key / 请求头。默认超时从 20000 提高到 60000，避免推理延迟触发“超时→重试→多次调用”风暴。
 
 复盘 Agent 使用独立 `modelId`、提示模板和完整终局上下文，但复用同一连接。它只能在终局事实持久化后运行，其输出与确定性事实分开保存和展示。本规格暂不固定异步队列表结构。
 

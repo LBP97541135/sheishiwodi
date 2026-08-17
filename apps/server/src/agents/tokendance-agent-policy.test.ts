@@ -66,15 +66,21 @@ function describeInput(): { input: AgentTurnInput; roleId: string } {
   return { input, roleId: agent.agentRoleId ?? agent.playerId };
 }
 
-/** 可编排逐次响应的假客户端，记录收到的 messages 以便断言重试。 */
+/** 可编排逐次响应的假客户端，记录收到的 messages 与 extraBody 以便断言重试与关推理参数。 */
 class ScriptedClient {
   calls: ChatMessage[][] = [];
+  extraBodies: Array<Record<string, unknown> | undefined> = [];
   constructor(private readonly replies: Array<string | Error>) {}
   async listModels(): Promise<string[]> {
     return [];
   }
-  async chatCompletion(params: { modelId: string; messages: ChatMessage[] }): Promise<string> {
+  async chatCompletion(params: {
+    modelId: string;
+    messages: ChatMessage[];
+    extraBody?: Record<string, unknown>;
+  }): Promise<string> {
     this.calls.push(params.messages);
+    this.extraBodies.push(params.extraBody);
     const reply = this.replies[this.calls.length - 1];
     if (reply === undefined) throw new Error('脚本用尽');
     if (reply instanceof Error) throw reply;
@@ -131,6 +137,29 @@ describe('TokendanceAgentPolicy', () => {
       validateBeliefSnapshot(output.belief, livingIds, input.publicConfig.undercoverCount),
     ).not.toThrow();
     expect(policy.priorBeliefs(input.actor.playerId)).toHaveLength(1);
+  });
+
+  it('按模型家族下发关闭推理参数：千问用 enable_thinking，豆包/ds 用 thinking.disabled', async () => {
+    const cases: Array<{ modelId: string; expected: Record<string, unknown> }> = [
+      { modelId: 'qwen3.7-plus', expected: { enable_thinking: false } },
+      { modelId: 'seed-2.1-turbo', expected: { thinking: { type: 'disabled' } } },
+      { modelId: 'deepseek-v4-flash-0731', expected: { thinking: { type: 'disabled' } } },
+      { modelId: 'gpt-4o-mini', expected: {} },
+    ];
+    for (const { modelId, expected } of cases) {
+      const { input, roleId } = describeInput();
+      const livingIds = input.players
+        .filter((player) => player.alive)
+        .map((player) => player.playerId);
+      const client = new ScriptedClient([speechReply(livingIds, '一句合法描述')]);
+      const policy = new TokendanceAgentPolicy({
+        client: asClient(client),
+        roleModelMap: { [roleId]: modelId },
+        sleep: noWait,
+      });
+      await policy.act(input, { agentRoleId: roleId });
+      expect(client.extraBodies[0]).toEqual(expected);
+    }
   });
 
   it('首个非法响应触发一次格式修复重试后成功', async () => {

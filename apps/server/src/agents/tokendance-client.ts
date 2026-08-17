@@ -56,9 +56,15 @@ export class TokendanceClient {
       .filter((id): id is string => typeof id === 'string' && id.length > 0);
   }
 
-  async chatCompletion(params: { modelId: string; messages: ChatMessage[] }): Promise<string> {
+  async chatCompletion(params: {
+    modelId: string;
+    messages: ChatMessage[];
+    /** 本次调用追加的模型参数（如按厂商关闭推理），优先级高于 defaultBody；不含 Key/URL。 */
+    extraBody?: Record<string, unknown>;
+  }): Promise<string> {
     const body = await this.request('POST', '/chat/completions', {
       ...this.defaultBody,
+      ...(params.extraBody ?? {}),
       model: params.modelId,
       messages: params.messages,
     });

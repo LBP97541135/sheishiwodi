@@ -24,7 +24,7 @@ import femaleSpeaking from './assets/characters/human-female/speaking.png';
 import femaleSuspected from './assets/characters/human-female/suspected.png';
 import femaleEliminated from './assets/characters/human-female/eliminated.png';
 import interrogationRoom from './assets/scenes/interrogation-room.png';
-import gameBgm from '../../../素材/bgm.wav?url';
+import gameBgm from './assets/audio/game-bgm.wav?url';
 
 export type CharacterState = 'idle' | 'thinking' | 'speaking' | 'suspected' | 'eliminated';
 export type CharacterKey = 'deepseek' | 'doubao' | 'qwen' | 'human-male' | 'human-female';

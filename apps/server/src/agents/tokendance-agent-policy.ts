@@ -9,6 +9,7 @@ import {
 } from '@sheishiwodi/shared';
 
 import type { AgentActContext, AgentPolicy } from './agent-policy.js';
+import { reasoningDisableBodyFor } from './model-reasoning.js';
 import type { ChatMessage, TokendanceClient } from './tokendance-client.js';
 
 /** 模型系统级失败（网络耗尽、始终格式错误、未配置模型）。脱敏，不含 Key/URL。 */
@@ -69,6 +70,8 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     }
 
     const baseMessages = buildMessages(input);
+    // 按模型家族附加“关闭推理链”参数，让 ds/豆包/千问尽快直出；未知模型不受影响。
+    const extraBody = reasoningDisableBodyFor(modelId);
     let messages = baseMessages;
     let repairUsed = false;
     let systemAttempts = 0;
@@ -77,7 +80,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
       let content: string;
       const startedAt = Date.now();
       try {
-        content = await this.client.chatCompletion({ modelId, messages });
+        content = await this.client.chatCompletion({ modelId, messages, extraBody });
         this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'ok');
       } catch {
         this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'fail');

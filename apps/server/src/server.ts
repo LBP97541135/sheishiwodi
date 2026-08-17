@@ -148,7 +148,7 @@ function resolveAgentProvider(
   const client = new TokendanceClient({
     baseUrl,
     apiKey,
-    timeoutMs: readPositiveInt('TOKENDANCE_TIMEOUT_MS', 20_000),
+    timeoutMs: readPositiveInt('TOKENDANCE_TIMEOUT_MS', 60_000),
     defaultBody: readJsonObject('TOKENDANCE_EXTRA_BODY'),
   });
   const buildRoleModelMap = (): Record<string, string> => {

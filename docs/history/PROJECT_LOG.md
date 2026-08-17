@@ -1,5 +1,62 @@
 # 开发记录
 
+## 2026-08-17 按模型家族关闭推理链（TASK-056）
+
+### 本轮目标
+
+修复负责人反馈的"千问思考时间过久、前端解析不出且多次调用、无法放弃对局"。要求为 deepseek、豆包(seed)、千问(qwen) 三个游戏模型分别按厂商关闭推理链、让输出尽可能快，其他模型暂不受影响，随后推送。
+
+### 根因（本机真实中转站实测，用户授权）
+
+- 千问 `qwen3.7-plus` 推理开启单回合约 48s，超过客户端默认超时 20s → `AbortError` → 系统重试 → "多次调用"，且回合始终未提交，前端一直停留在"正在思考"。放弃按钮虽在数据库层受 revision 乐观锁保护，但被这波重试风暴的延迟拖住，表现为"无法放弃"。
+- 解析并非瓶颈：抓取真实响应，`extractJson` 结果 `ok:true`，content 是合法 JSON；`reasoning_content` 与 content 分离。
+
+### 完成内容
+
+- **新增 `agents/model-reasoning.ts`**：`reasoningDisableBodyFor(modelId)` 按模型家族（小写、去空白、前缀匹配）返回关推理参数——`qwen*`→`{enable_thinking:false}`；`seed*`/`doubao*`→`{thinking:{type:'disabled'}}`；`deepseek*`→`{thinking:{type:'disabled'}}`；其他→`{}`（行为不变）。仅模型请求体字段，绝不含 Key/URL。
+- **`tokendance-client.ts`**：`chatCompletion` 支持每次调用透传 `extraBody`，合并顺序 `{...defaultBody, ...extraBody, model, messages}`（家族专用参数覆盖通用兜底）。
+- **`tokendance-agent-policy.ts`**：按解析到的 `modelId` 计算 `reasoningDisableBodyFor` 并随每次调用下发。
+- **`server.ts`**：默认 `TOKENDANCE_TIMEOUT_MS` 20000→60000，作为兜底避免推理延迟触发重试风暴。
+- **测试**：新增 `model-reasoning.test.ts`（家族映射、大小写/空白、未知模型不附加）；扩展 `tokendance-agent-policy.test.ts` 的 `ScriptedClient` 捕获 `extraBody`，断言各家族下发正确参数、其他模型为空。
+- **文档**：更新 `.env.example`（默认超时说明、家族关推理已自动、`EXTRA_BODY` 仅通用兜底）、`docs/spec/agent-runtime.md §11`、`TASKS.md` 登记 TASK-056。
+
+### 实测效果（真实付费冒烟，脱敏）
+
+- qwen `enable_thinking:false`：约 48s → 7s。
+- seed `thinking.type=disabled`：约 168s → 7.4s，content 仍合法 JSON、`extractJson ok:true`。
+- deepseek `thinking.type=disabled`：约 12s → 1.5s，无 `reasoning_content`（注：deepseek 忽略 `enable_thinking`）。
+- 三个参数即便被某厂商忽略也返回 HTTP 200，安全。
+
+### 验证结果与边界
+
+- `pnpm typecheck`、`pnpm lint` 通过；`pnpm test` 全绿（shared 46 / server 55 / web 33）；`pnpm build` 通过。web 首跑偶发 1 项失败（`App.test.tsx` 既有 jsdom 计时抖动，与纯服务端改动无关），复跑 33/33。
+- 硬边界保持：Base URL / API Key / 请求头 / 完整模型响应绝不进入浏览器、数据库、日志、仓库或复盘；默认 `dev/test/test:e2e` 永不联网。诊断用临时脚本 `tests/live/diag-qwen.mjs` 已删除，非提交件。
+- 本轮为负责人明确授权的一次性 push。
+
+本次为里程碑之外的运行时优化，不构成产品版本发布，不分配版本号。
+
+## 2026-08-17 收口视觉与媒体（TASK-045）
+
+### 本轮目标
+
+收口 TASK-045 视觉与媒体：确认 BGM 开关与纸面/审讯室背景切换已接入，补齐缺失的组件测试，规范化音频素材路径，并完成桌面/移动验证与文档。
+
+### 完成内容
+
+- **音频素材规范化**：把 `bgm.wav` 从仓库根中文目录 `素材/` 复制到 `apps/web/src/assets/audio/game-bgm.wav`，`character-assets.ts` 改为本地英文路径导入，去掉 `../../../素材/bgm.wav?url` 跨包中文路径，与角色/场景素材的归一化约定一致。
+- **组件测试补齐**：新增 `experience-settings.test.tsx`（8 项）覆盖 `ExperienceControls` 展示与回调、`useExperienceSettings` 默认关闭、localStorage 恢复与持久化、纸面/审讯室背景切换与场景底图 URL，以及"BGM 音源不再指向中文素材目录"的负向断言。
+- **确认既有实现**：BGM 开关（默认关、循环、音量 0.24、自动播放拦截提示、StrictMode 卸载安全）与背景切换（`shell--interrogation` + `--scene-background` 经 `::before` 渲染、选择持久化）此前已实现并接入 `App`。
+- **文档同步**：更新 `docs/notes/ASSETS.md`（背景与 BGM 均已接入并规范化、10.5MB WAV 待发布前压缩）、`TASKS.md` TASK-045 置为已完成。
+
+### 验证结果与边界
+
+- `pnpm typecheck`、`pnpm lint` 通过；`pnpm test` 128 项全绿（shared 46 / server 49 / web 33，含新增 8）；`pnpm build` 通过并把 `game-bgm-*.wav` 打入 `dist/assets`。
+- 桌面与 375×812 移动端用强制假模型服务端 + Web 预览实测：审讯室背景经 `::before` 渲染于 shell 之后，设置控件（对局/模型档案导航、背景音乐开关、纸面/审讯室单选）布局与素材加载正常。
+- `game-bgm.wav` 为 10.5MB 未压缩 WAV，构建提示体积偏大；本机无 ffmpeg，正式发布前应转码压缩。
+- 本轮未提交或推送（沿用负责人夜间指令：单次授权 push 已完成，后续开发-测试循环不再 push）。
+
+本次完成里程碑之外的视觉媒体收口，不构成产品版本发布，不分配版本号。
+
 ## 2026-08-17 优化开始/推进卡顿与修复 E2E 隔离漏洞
 
 ### 本轮目标

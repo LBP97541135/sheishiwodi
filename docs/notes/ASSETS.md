@@ -1,8 +1,8 @@
 # 角色素材索引
 
-- 状态：角色素材已接入；场景与音频待接入
-- 素材目录：`素材/`
-- 检查日期：2026-08-16
+- 状态：角色素材、审讯室背景与背景音乐均已接入
+- 素材目录：`素材/`（原始归档）
+- 检查日期：2026-08-17
 - 当前数量：26 张 PNG、1 个 WAV
 - 覆盖范围：DeepSeek、豆包、千问、男性人类、女性人类各 5 种状态；1 张横版审讯室背景；1 首背景音乐
 
@@ -10,7 +10,9 @@
 
 当前素材已经完整覆盖三个 AI 角色与男、女人类形象的待机、思考、发言、被怀疑和被淘汰状态。三组 AI 角色保持统一的女性拟人漫画方向；人类素材使用匿名深色剪影，不建立具体面部画像，并通过姿势和场景符号表达状态。各角色在同一组内的人物识别特征基本稳定，五种状态具有可辨识的表情、动作或道具差异。构图比例接近一致，能够直接放入统一的角色容器，并通过 `object-fit: contain` 保持完整人物。
 
-当前代码已经把 25 张角色 PNG 复制到 `apps/web/src/assets/characters/`，并通过 `character-assets.ts` 为 DeepSeek、豆包、千问、男性人类和女性人类建立五状态映射；准备页与对局页均使用这些素材，加载失败时回退为文字占位头像。审讯室背景已经复制到 `apps/web/src/assets/scenes/interrogation-room.png` 并导出为 `sceneAssets.interrogationRoom`，但当前 React 组件尚未消费。`bgm.wav` 仍只在原始素材目录，尚未接入播放器。
+当前代码已经把 25 张角色 PNG 复制到 `apps/web/src/assets/characters/`，并通过 `character-assets.ts` 为 DeepSeek、豆包、千问、男性人类和女性人类建立五状态映射；准备页与对局页均使用这些素材，加载失败时回退为文字占位头像。审讯室背景已经复制到 `apps/web/src/assets/scenes/interrogation-room.png` 并导出为 `sceneAssets.interrogationRoom`，由 `experience-settings.tsx` 的背景切换（纸面/审讯室）消费：选择审讯室时 `App` 给根 `.shell` 加 `shell--interrogation` 类并注入 `--scene-background` CSS 变量，经 `::before` 渲染整幅背景，选择持久化到 `localStorage`。背景音乐 `bgm.wav` 已规范化复制到 `apps/web/src/assets/audio/game-bgm.wav` 并导出为 `audioAssets.gameBgm`（组件不再引用仓库根中文 `素材/` 路径）；`useExperienceSettings` 负责其生命周期：默认关闭、循环、音量 0.24、被浏览器自动播放策略拦截时提示点击解锁、StrictMode 卸载时先摘监听再清空 src 避免伪报错。桌面与 375×812 移动端均实测背景切换、设置控件布局与素材加载正常。
+
+发布前仍需完成：`game-bgm.wav` 为 10.5 MB 未压缩 WAV（构建已提示体积偏大），本机无 ffmpeg 暂未转码，正式发布前应压缩为较小音频格式；角色 PNG 的透明通道核验、统一导出尺寸与 WebP 压缩同属无损工程整理，不阻塞当前开发。
 
 素材接入不得改变已确认的信息层级、漫画分镜尺寸或状态机行为；图片和音频只负责表现。
 
