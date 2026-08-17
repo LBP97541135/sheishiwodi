@@ -94,7 +94,11 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('button', { name: '经典模式' })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('你的名字'), { target: { value: '小祎' } });
+    fireEvent.click(screen.getByRole('button', { name: '编辑玩家身份，当前名称为玩家' }));
+    const playerDialog = screen.getByRole('dialog', { name: '编辑玩家身份' });
+    fireEvent.change(within(playerDialog).getByLabelText('玩家名称'), { target: { value: '小祎' } });
+    fireEvent.click(within(playerDialog).getByRole('radio', { name: /女性/ }));
+    fireEvent.click(screen.getByRole('button', { name: '保存身份' }));
     fireEvent.click(screen.getByRole('radio', { name: /困难/ }));
     fireEvent.click(screen.getByRole('button', { name: '经典模式' }));
 
@@ -105,7 +109,7 @@ describe('App', () => {
         method: 'POST',
         body: JSON.stringify({
           commandId: 'command-create',
-          human: { displayName: '小祎', silhouette: 'silhouette_a' },
+          human: { displayName: '小祎', silhouette: 'silhouette_b' },
           difficulty: 'hard',
         }),
       }),

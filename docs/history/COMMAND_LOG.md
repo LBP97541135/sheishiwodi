@@ -98,3 +98,5 @@
 | CMD-092 | 2026-08-17（具体时间不可用） | 配置二期复盘入口；点击后弹出“当前为deta版本，正式上线后即可畅玩”。 | 已完成 | `docs/tasks/TASKS.md` TASK-063、`docs/spec/frontend-ux.md` §3、`apps/web/src/App.tsx` |
 | CMD-093 | 2026-08-17（具体时间不可用） | 将“猜词模式”入口放在新对局配置页的开始操作旁，并将原开始操作改名为“经典模式”；猜词模式点击后显示同一 deta 提示。 | 已完成 | `docs/tasks/TASKS.md` TASK-064、`docs/spec/frontend-ux.md` §4.1、`apps/web/src/components/NewGameForm.tsx` |
 | CMD-094 | 2026-08-17（具体时间不可用） | 当前同时存在“复盘”和“历史复盘”两块，移除“历史复盘”，保留正常终局后的“复盘”。 | 已完成 | `docs/tasks/TASKS.md` TASK-065、`docs/spec/frontend-ux.md` §3、`apps/web/src/App.tsx` |
+| CMD-095 | 2026-08-17（具体时间不可用） | 优化新对局首页：经典模式放大居中、猜词模式缩小置于下方；标题“谁”作为玩家身份入口，名称和人物形象统一放入弹层，难度独立下置。 | 已完成 | `docs/tasks/TASKS.md` TASK-066、`docs/notes/DECISIONS.md` DEC-088、`apps/web/src/components/NewGameForm.tsx` |
+| CMD-096 | 2026-08-17（具体时间不可用） | 更新项目文档，并将本轮改动提交、推送到 `master` 分支。 | 已完成 | `README.md`、`docs/`、Git `master` |

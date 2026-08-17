@@ -127,6 +127,63 @@ h1 {
   gap: 24px;
 }
 
+.storyboard:has(.new-game) {
+  padding: clamp(24px, 4vw, 44px);
+}
+
+.new-game {
+  gap: 18px;
+}
+
+.new-game__header h1 {
+  display: flex;
+  align-items: baseline;
+  font-size: clamp(3rem, 7vw, 5rem);
+  letter-spacing: 0;
+}
+
+.title-name-trigger {
+  border: 0;
+  margin: 0 0.02em 0 0;
+  background: transparent;
+  color: #26231f;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 1.2em;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 0.84;
+  padding: 0 0.03em 0.08em;
+  text-shadow: 4px 4px 0 #d6a93a, 7px 7px 0 rgba(62, 111, 142, 0.28);
+  transition: color 140ms ease, text-shadow 140ms ease, transform 140ms ease;
+}
+
+.title-name-trigger:hover {
+  color: #b74335;
+  text-shadow: 5px 5px 0 #d6a93a, 9px 9px 0 rgba(62, 111, 142, 0.3);
+  transform: translate(-2px, -2px);
+}
+
+.title-name-trigger:active {
+  text-shadow: 2px 2px 0 #d6a93a, 4px 4px 0 rgba(62, 111, 142, 0.25);
+  transform: translate(2px, 2px);
+}
+
+.new-game__header .lede {
+  margin: 14px 0 4px;
+}
+
+.new-game__setup {
+  display: grid;
+  width: min(100%, 560px);
+  justify-self: center;
+  gap: 14px;
+}
+
+.difficulty-field legend {
+  margin-bottom: 8px;
+}
+
 .field {
   display: grid;
   gap: 8px;
@@ -178,14 +235,28 @@ legend {
 }
 
 .choice-card--portrait {
-  min-height: 210px;
+  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-rows: repeat(2, auto);
+  min-height: 84px;
+  justify-items: start;
   overflow: hidden;
+  padding: 8px 14px;
+  text-align: left;
 }
 
 .choice-portrait {
-  width: min(100%, 150px);
-  height: 140px;
+  width: 56px;
+  height: 64px;
+  grid-row: 1 / span 2;
   object-fit: contain;
+}
+
+.choice-card--portrait strong {
+  align-self: end;
+}
+
+.choice-card--portrait .choice-state {
+  align-self: start;
 }
 
 .choice-state {
@@ -204,8 +275,11 @@ legend {
 }
 
 .choice-card--text {
-  min-height: 100px;
+  min-height: 64px;
+  align-content: center;
   place-items: start;
+  gap: 4px;
+  padding: 8px 12px;
   text-align: left;
 }
 
@@ -251,12 +325,66 @@ legend {
 
 .game-mode-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  justify-items: center;
+  gap: 10px;
 }
 
 .game-mode-actions > button {
   width: 100%;
+}
+
+.game-mode-actions > .game-mode-actions__classic {
+  display: grid;
+  width: min(100%, 560px);
+  min-height: 70px;
+  place-content: center;
+  gap: 3px;
+  font-size: 1.3rem;
+}
+
+.game-mode-actions__classic span {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.game-mode-actions > .game-mode-actions__guess {
+  width: min(100%, 260px);
+  min-height: 40px;
+  padding: 8px 16px;
+}
+
+.choice-grid--silhouette {
+  width: min(100%, 480px);
+  margin-inline: auto;
+}
+
+.coming-soon-dialog.player-name-dialog {
+  width: min(100%, 520px);
+}
+
+.player-name-dialog .field {
+  margin-top: 2px;
+}
+
+.player-name-dialog__appearance {
+  border-top: 2px dashed #aaa398;
+  padding-top: 14px;
+}
+
+.player-name-dialog__appearance legend {
+  color: #555047;
+  font-size: 0.9rem;
+}
+
+.player-name-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.player-name-dialog__actions .primary-action {
+  justify-self: auto;
 }
 
 .form-error {
@@ -442,12 +570,12 @@ legend {
 }
 
 @media (max-width: 420px) {
-  .game-mode-actions {
+  .choice-grid {
     grid-template-columns: 1fr;
   }
 
-  .choice-grid {
-    grid-template-columns: 1fr;
+  .choice-grid--difficulty {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .prepare-header {
