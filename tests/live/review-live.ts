@@ -14,7 +14,7 @@ import {
 import { TokendanceReviewPolicy } from '../../apps/server/src/agents/review-agent-policy.js';
 import type { ReviewInput } from '../../apps/server/src/agents/review-policy.js';
 import { TokendanceClient } from '../../apps/server/src/agents/tokendance-client.js';
-import { resolveLiveConfig, LiveGateError } from './lib/env.js';
+import { liveExtraBodyForModel, resolveLiveConfig, LiveGateError } from './lib/env.js';
 import {
   scan,
   credentialSentinels,
@@ -155,6 +155,7 @@ async function main(): Promise<void> {
     maxSystemRetries: config.maxRetries,
     retryDelayMs: config.retryDelayMs,
     reasoningHints: config.reasoningHints,
+    extraBodyForModel: (modelId) => liveExtraBodyForModel(config, modelId),
   });
 
   const startedAt = Date.now();

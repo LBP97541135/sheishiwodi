@@ -216,7 +216,7 @@ describe('TokendanceAgentPolicy', () => {
     }
   });
 
-  it('通用兼容 provider 可关闭厂商推理参数推断', async () => {
+  it('通用兼容 provider 只按精确 model ID 注入专属参数', async () => {
     const { input, roleId } = describeInput();
     const livingIds = input.players.filter((player) => player.alive).map((player) => player.playerId);
     const client = new ScriptedClient([speechReply(livingIds, '一句合法描述')]);
@@ -225,10 +225,14 @@ describe('TokendanceAgentPolicy', () => {
       roleModelMap: { [roleId]: 'qwen-compatible-alias' },
       sleep: noWait,
       reasoningHints: false,
+      extraBodyForModel: (modelId) =>
+        modelId === 'qwen-compatible-alias'
+          ? { enable_thinking: false, temperature: 0 }
+          : { unexpected: true },
     });
 
     await policy.act(input, { agentRoleId: roleId });
-    expect(client.extraBodies[0]).toEqual({});
+    expect(client.extraBodies[0]).toEqual({ enable_thinking: false, temperature: 0 });
   });
 
   it('超时、限流、服务异常和空响应按预算重试并保留最终分类', async () => {

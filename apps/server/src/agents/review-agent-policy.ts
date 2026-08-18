@@ -27,6 +27,8 @@ export interface TokendanceReviewPolicyOptions {
   sleep?: (ms: number) => Promise<void>;
   /** 是否按已知模型家族附加关闭推理链参数；通用兼容站默认关闭。 */
   reasoningHints?: boolean;
+  /** 按评测模型的精确 model ID 返回专属请求参数。 */
+  extraBodyForModel?: (modelId: string) => Record<string, unknown>;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -42,6 +44,7 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
   private readonly retryDelayMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly reasoningHints: boolean;
+  private readonly extraBodyForModel: (modelId: string) => Record<string, unknown>;
 
   constructor(options: TokendanceReviewPolicyOptions) {
     this.client = options.client;
@@ -50,13 +53,17 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
     this.retryDelayMs = options.retryDelayMs ?? 800;
     this.sleep = options.sleep ?? defaultSleep;
     this.reasoningHints = options.reasoningHints ?? true;
+    this.extraBodyForModel = options.extraBodyForModel ?? (() => ({}));
   }
 
   async generate(input: ReviewInput): Promise<ReviewGeneration> {
     if (!this.modelId) throw new ReviewSystemError('MODEL_NOT_CONFIGURED');
 
     const baseMessages = buildReviewMessages(input);
-    const extraBody = this.reasoningHints ? reasoningDisableBodyFor(this.modelId) : {};
+    const extraBody = {
+      ...(this.reasoningHints ? reasoningDisableBodyFor(this.modelId) : {}),
+      ...this.extraBodyForModel(this.modelId),
+    };
     const agentIds = input.players
       .filter((player) => player.kind === 'agent')
       .map((player) => player.playerId);

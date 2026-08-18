@@ -34,7 +34,12 @@ import {
 } from '../../apps/server/src/agents/tokendance-agent-policy.js';
 import type { ServerDependencies } from '../../apps/server/src/server.js';
 
-import { LiveGateError, resolveLiveConfig, type LiveConfig } from './lib/env.js';
+import {
+  LiveGateError,
+  liveExtraBodyForModel,
+  resolveLiveConfig,
+  type LiveConfig,
+} from './lib/env.js';
 import {
   BELIEF_INTERNAL_SENTINELS,
   CAMP_SENTINELS,
@@ -200,6 +205,7 @@ async function runPolicyLevel(config: LiveConfig, client: TokendanceClient): Pro
       retryDelayMs: config.retryDelayMs,
       debug: true,
       reasoningHints: config.reasoningHints,
+      extraBodyForModel: (modelId) => liveExtraBodyForModel(config, modelId),
     });
     const actor = pickAgentForRole(snapshot, roleId);
     const otherWords = otherWordCards(snapshot, actor.playerId);
@@ -386,6 +392,7 @@ async function runFullGameServer(
         retryDelayMs: config.retryDelayMs,
         debug: true,
         reasoningHints: config.reasoningHints,
+        extraBodyForModel: (modelId) => liveExtraBodyForModel(config, modelId),
       }),
     backgroundAdvance: false,
   }) as unknown as TestServer;
@@ -571,6 +578,7 @@ async function runFullGamePure(config: LiveConfig, client: TokendanceClient): Pr
     retryDelayMs: config.retryDelayMs,
     debug: true,
     reasoningHints: config.reasoningHints,
+    extraBodyForModel: (modelId) => liveExtraBodyForModel(config, modelId),
   });
 
   const humanId = snapshot.humanPlayerId;

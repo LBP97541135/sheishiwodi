@@ -48,6 +48,7 @@ export interface LiveConfig {
   reasoningHints: boolean;
   timeoutMs: number;
   extraBody: Record<string, unknown>;
+  modelExtraBodies: Readonly<Record<string, Record<string, unknown>>>;
   maxRetries: number;
   retryDelayMs: number;
   samples: number;
@@ -72,6 +73,17 @@ function readJsonObject(name: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function readModelExtraBodies(name: string): Record<string, Record<string, unknown>> {
+  const parsed = readJsonObject(name);
+  return Object.fromEntries(
+    Object.entries(parsed).flatMap(([rawModelId, body]) => {
+      const modelId = rawModelId.trim();
+      if (!modelId || !body || typeof body !== 'object' || Array.isArray(body)) return [];
+      return [[modelId, body as Record<string, unknown>]];
+    }),
+  );
 }
 
 /**
@@ -135,9 +147,22 @@ export function resolveLiveConfig(overrides?: {
     reasoningHints: provider === 'tokendance',
     timeoutMs: readPositiveInt(`${prefix}_TIMEOUT_MS`, 60_000),
     extraBody: readJsonObject(`${prefix}_EXTRA_BODY`),
+    modelExtraBodies:
+      provider === 'openai-compatible'
+        ? readModelExtraBodies('OPENAI_COMPATIBLE_MODEL_EXTRA_BODY')
+        : {},
     maxRetries: readPositiveInt(`${prefix}_MAX_RETRIES`, 2),
     retryDelayMs: readPositiveInt(`${prefix}_RETRY_DELAY_MS`, 800),
     samples: readPositiveInt('LIVE_SAMPLES', 1),
     fullGame: overrides?.fullGame ?? envFull,
   };
+}
+
+export function liveExtraBodyForModel(
+  config: LiveConfig,
+  modelId: string,
+): Record<string, unknown> {
+  return Object.prototype.hasOwnProperty.call(config.modelExtraBodies, modelId)
+    ? { ...config.modelExtraBodies[modelId] }
+    : {};
 }

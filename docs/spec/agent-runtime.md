@@ -263,6 +263,7 @@ OPENAI_COMPATIBLE_TIMEOUT_MS=    # 默认 60000
 OPENAI_COMPATIBLE_MAX_RETRIES=   # 默认 2
 OPENAI_COMPATIBLE_RETRY_DELAY_MS=# 默认 800
 OPENAI_COMPATIBLE_EXTRA_BODY=    # 中转站自定义请求参数 JSON
+OPENAI_COMPATIBLE_MODEL_EXTRA_BODY= # 精确 model ID → 单次请求参数对象
 ```
 
 - Provider 开关默认 `fake`；`dev`、`test`、`test:e2e` 恒为假模型，绝不联网、不读 Key。仅 `pnpm test:live` 显式触发真实调用。
@@ -270,7 +271,7 @@ OPENAI_COMPATIBLE_EXTRA_BODY=    # 中转站自定义请求参数 JSON
 - 角色 `modelId` 持久化于 server-only 表 `agent_role_models`；存在活动局（`in_progress` / `awaiting_spectator`）时拒绝改配置。
 - Tokendance 保持共享角色默认 ID、`TOKENDANCE_DEFAULT_MODEL` 与复盘默认的向后兼容。
 - `openai-compatible` 不读取任何内置或统一默认 model：三角色必须在模型档案手填或从 `/models` 建议中选择，复盘必须设置 `OPENAI_COMPATIBLE_REVIEW_MODEL`。三角色或复盘任一未配齐时，`StartGame` 返回 `MODEL_CONFIGURATION_REQUIRED`，不发起模型调用。
-- 通用模式不自动注入按模型名推断的厂商推理参数；如中转站需要额外字段，由负责人通过 `OPENAI_COMPATIBLE_EXTRA_BODY` 显式提供。
+- 通用模式不自动注入按模型名推断的厂商推理参数。`OPENAI_COMPATIBLE_EXTRA_BODY` 提供全局基础参数；`OPENAI_COMPATIBLE_MODEL_EXTRA_BODY` 以精确 model ID 为键，为三个参赛模型和评测模型分别提供单次请求参数。model 专属对象覆盖全局同名顶层字段；未命中时为空。最终 `model/messages` 在两层 env 合并后由客户端强制写入，不能被配置替换。
 - 错误兜底：一次格式修复（DEC-034）→ 有限系统重试 → `system_terminated`（DEC-072），见第 9 节。
 - **关闭推理链（加速直出）**：`agents/model-reasoning.ts` 的 `reasoningDisableBodyFor(modelId)` 按模型家族计算关推理参数，`TokendanceAgentPolicy` 每次调用作为 `extraBody` 透传，优先级高于 `TOKENDANCE_EXTRA_BODY`。经真实中转站实测（2026-08-17）：`qwen*`→`{enable_thinking:false}`（约 48s→7s）；`seed*`/`doubao*`→`{thinking:{type:'disabled'}}`（约 168s→7.4s）；`deepseek*`→`{thinking:{type:'disabled'}}`（约 12s→1.5s，注意 deepseek 会忽略 `enable_thinking`）。其他模型不附加任何参数、行为不变。这些参数只是模型请求体字段，绝不含 Base URL / API Key / 请求头。默认超时从 20000 提高到 60000，避免推理延迟触发“超时→重试→多次调用”风暴。
 

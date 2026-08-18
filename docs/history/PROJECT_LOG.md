@@ -1,5 +1,28 @@
 # 开发记录
 
+## 2026-08-18 通用中转站按精确 model 配置请求参数（TASK-070）
+
+### 本轮目标
+
+解决通用中转站不能安全依赖模型名称自动关闭思考、而全局附加参数又无法同时适配千问、DeepSeek、豆包和评测模型的问题。
+
+### 完成内容
+
+- 新增 `OPENAI_COMPATIBLE_MODEL_EXTRA_BODY`：单行 JSON 的键为中转站精确 model ID，值为该模型的 Chat Completions 附加参数对象；非法 JSON、非法根节点和非对象条目安全忽略且不回显。
+- 参赛策略和评测策略均按本次实际 model ID 查询映射。通用 Provider 继续关闭名称/家族猜测；未命中时不注入专属参数。
+- 请求体按“全局 `OPENAI_COMPATIBLE_EXTRA_BODY` → model 专属参数 → 程序权威 `model/messages`”合并，既支持逐模型关闭思考，也防止 env 替换调用目标或提示消息。
+- `test:live:smoke/policy/review/full` 同步使用该映射，保证真实验收与应用运行时的请求参数一致。
+- `.env.example` 增加单行格式、精确匹配、覆盖顺序、安全边界和三类示例；README、需求、Agent 规格、测试、证据、任务与决策同步更新。
+
+### 验证结果与边界
+
+- Server 定向测试 17/17 通过，覆盖映射解析、参赛 Agent、评测 Agent 和底层请求体合并优先级。
+- Server typecheck/build、live 脚本独立严格 TypeScript 检查、`run.mjs` 语法检查、全仓 lint 与 `git diff --check` 通过。
+- 未读取或调用真实模型 Key、未联网付费；关闭思考字段是否生效仍由具体中转站和模型决定，本实现不宣称存在跨厂商统一参数。
+- 本轮尚未执行 Git 提交或推送。
+
+本次属于运行时配置能力补强，不构成产品版本发布，不分配版本号。
+
 ## 2026-08-18 通用 OpenAI 兼容中转站与显式模型配置（TASK-069）
 
 ### 本轮目标

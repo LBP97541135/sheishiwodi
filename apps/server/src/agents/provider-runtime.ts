@@ -22,6 +22,7 @@ export interface ResolvedAgentProvider {
 }
 
 type ProviderEnvironment = Readonly<Record<string, string | undefined>>;
+type ModelExtraBodyMap = Readonly<Record<string, Record<string, unknown>>>;
 
 /**
  * Provider 解析只依赖 env 与 model 选择源，不读取数据库实体或游戏状态。
@@ -83,6 +84,7 @@ function resolveTokendance(
     maxRetries: readPositiveInt(env, 'TOKENDANCE_MAX_RETRIES', 2),
     retryDelayMs: readPositiveInt(env, 'TOKENDANCE_RETRY_DELAY_MS', 800),
     debug: valueOf(env, 'AGENT_DEBUG_TIMING') === '1',
+    modelExtraBodies: {},
     areRequiredModelsConfigured: () => true,
   });
 }
@@ -122,6 +124,7 @@ function resolveOpenAiCompatible(
     maxRetries: readPositiveInt(env, 'OPENAI_COMPATIBLE_MAX_RETRIES', 2),
     retryDelayMs: readPositiveInt(env, 'OPENAI_COMPATIBLE_RETRY_DELAY_MS', 800),
     debug: valueOf(env, 'AGENT_DEBUG_TIMING') === '1',
+    modelExtraBodies: parseModelExtraBodyMap(env['OPENAI_COMPATIBLE_MODEL_EXTRA_BODY']),
     areRequiredModelsConfigured,
   });
 }
@@ -136,6 +139,7 @@ function realProvider(options: {
   maxRetries: number;
   retryDelayMs: number;
   debug: boolean;
+  modelExtraBodies: ModelExtraBodyMap;
   areRequiredModelsConfigured: () => boolean;
 }): ResolvedAgentProvider {
   return {
@@ -147,6 +151,7 @@ function realProvider(options: {
         retryDelayMs: options.retryDelayMs,
         debug: options.debug,
         reasoningHints: options.reasoningHints,
+        extraBodyForModel: (modelId) => extraBodyForModel(options.modelExtraBodies, modelId),
       }),
     reviewPolicyFactory: () =>
       new TokendanceReviewPolicy({
@@ -155,6 +160,7 @@ function realProvider(options: {
         maxSystemRetries: options.maxRetries,
         retryDelayMs: options.retryDelayMs,
         reasoningHints: options.reasoningHints,
+        extraBodyForModel: (modelId) => extraBodyForModel(options.modelExtraBodies, modelId),
       }),
     modelProvider: {
       mode: options.mode,
@@ -212,4 +218,32 @@ function readJsonObject(
   } catch {
     return {};
   }
+}
+
+/**
+ * 解析“精确 model ID → 单次请求参数”映射。非法根节点或非法条目静默忽略，
+ * 不回显原始 env，避免配置内容进入日志或错误响应。
+ */
+export function parseModelExtraBodyMap(raw: string | undefined): ModelExtraBodyMap {
+  if (!raw?.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([rawModelId, body]) => {
+        const modelId = rawModelId.trim();
+        if (!modelId || !body || typeof body !== 'object' || Array.isArray(body)) return [];
+        return [[modelId, body as Record<string, unknown>]];
+      }),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function extraBodyForModel(
+  mapping: ModelExtraBodyMap,
+  modelId: string,
+): Record<string, unknown> {
+  return Object.prototype.hasOwnProperty.call(mapping, modelId) ? { ...mapping[modelId] } : {};
 }

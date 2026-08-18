@@ -242,3 +242,12 @@
 - [x] 三个参赛模型或复盘模型未配齐时禁止开始游戏，并返回不含敏感配置的明确错误。
 - [x] Tokendance 旧配置和默认假模型行为保持兼容。
 - [x] Shared、Server、Web 定向测试、typecheck/build/lint、文档与差异检查通过，完成记录已更新；SQLite 路由测试的本机 Node ABI 边界如实保留。
+
+## 通用中转站按 model 配置请求参数（TASK-070）
+
+- [x] 任务、需求和决策先于代码登记。
+- [x] 新增 `OPENAI_COMPATIBLE_MODEL_EXTRA_BODY`，只接受“精确 model ID → JSON 对象”的映射。
+- [x] 参赛模型和评测模型调用都按自身 model ID 读取配置，未命中时不附加参数。
+- [x] model 专属参数覆盖 `OPENAI_COMPATIBLE_EXTRA_BODY` 的同名顶层字段，不影响其他 model。
+- [x] `.env.example` 提供千问、DeepSeek/豆包及评测模型示例，并明确不存在通用自动识别。
+- [x] Server 定向测试 17/17、typecheck/build、live TS/语法检查、全仓 lint、文档和差异检查通过，完成记录已更新。

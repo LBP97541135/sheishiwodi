@@ -51,9 +51,12 @@ AGENT_PROVIDER=openai-compatible
 OPENAI_COMPATIBLE_BASE_URL=https://your-gateway.example/v1
 OPENAI_COMPATIBLE_API_KEY=your-local-secret
 OPENAI_COMPATIBLE_REVIEW_MODEL=your-review-model-id
+OPENAI_COMPATIBLE_MODEL_EXTRA_BODY={"your-qwen-model-id":{"enable_thinking":false},"your-review-model-id":{"thinking":{"type":"disabled"}}}
 ```
 
 通用模式**没有默认 model**：启动后进入“模型档案”，分别为 DeepSeek、豆包、千问手动填写并保存 model ID。中转站支持 `GET /models` 时输入框会提供候选；不支持时仍可直接填写。三个参赛 model 或 `OPENAI_COMPATIBLE_REVIEW_MODEL` 任一缺失，服务端都会在开始游戏前返回 `MODEL_CONFIGURATION_REQUIRED`，不会等到付费调用中途才失败。
+
+通用协议没有统一的“关闭思考”字段，因此项目不会根据 model 名称自动猜测。需要加速时，用 `OPENAI_COMPATIBLE_MODEL_EXTRA_BODY` 按中转站的**精确 model ID**分别配置；三个参赛模型和评测模型共用该映射，未命中的模型不注入参数。`OPENAI_COMPATIBLE_EXTRA_BODY` 仍可设置所有模型共享的参数，model 专属映射覆盖同名顶层字段。完整注释和更多示例见 [`.env.example`](.env.example)。
 
 如果 `AGENT_PROVIDER`、Base URL 或 API Key 任一缺失，运行时会明确保持假模型模式，不会半配置地调用外网。付费真实模型验收也必须通过下文的显式命令触发。
 

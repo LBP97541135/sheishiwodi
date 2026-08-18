@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveAgentProvider, type RoleModelSelectionSource } from './provider-runtime.js';
+import {
+  parseModelExtraBodyMap,
+  resolveAgentProvider,
+  type RoleModelSelectionSource,
+} from './provider-runtime.js';
 
 const source = (selections: Record<string, string>): RoleModelSelectionSource => ({
   listSelections: () => ({ ...selections }),
@@ -75,5 +79,25 @@ describe('resolveAgentProvider', () => {
       client: null,
       useBuiltInRoleDefaults: false,
     });
+  });
+
+  it('只保留精确 model ID 对应的对象参数，忽略非法映射条目', () => {
+    expect(
+      parseModelExtraBodyMap(
+        JSON.stringify({
+          ' qwen-custom ': { enable_thinking: false },
+          'deepseek-custom': { thinking: { type: 'disabled' } },
+          arrayValue: ['invalid'],
+          nullValue: null,
+          stringValue: 'invalid',
+          '': { temperature: 0 },
+        }),
+      ),
+    ).toEqual({
+      'qwen-custom': { enable_thinking: false },
+      'deepseek-custom': { thinking: { type: 'disabled' } },
+    });
+    expect(parseModelExtraBodyMap('not-json')).toEqual({});
+    expect(parseModelExtraBodyMap('[]')).toEqual({});
   });
 });

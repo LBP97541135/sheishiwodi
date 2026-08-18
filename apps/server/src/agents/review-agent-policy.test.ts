@@ -72,15 +72,17 @@ describe('TokendanceReviewPolicy prompt', () => {
     expect(system).not.toContain('2000字内');
   });
 
-  it('通用兼容 provider 可关闭评测模型的厂商推理参数推断', async () => {
+  it('通用兼容 provider 按评测 model ID 注入独立参数', async () => {
     const client = new CapturingClient();
     const policy = new TokendanceReviewPolicy({
       client: client as unknown as TokendanceClient,
       modelId: 'qwen-compatible-review',
       reasoningHints: false,
+      extraBodyForModel: (modelId) =>
+        modelId === 'qwen-compatible-review' ? { enable_thinking: false } : {},
     });
 
     await policy.generate(input);
-    expect(client.extraBodies[0]).toEqual({});
+    expect(client.extraBodies[0]).toEqual({ enable_thinking: false });
   });
 });

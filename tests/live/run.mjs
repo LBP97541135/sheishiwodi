@@ -42,6 +42,17 @@ const provider = (process.env.AGENT_PROVIDER ?? 'fake').trim();
 if (provider !== 'tokendance' && provider !== 'openai-compatible') {
   fail(`AGENT_PROVIDER 需为 "tokendance" 或 "openai-compatible"（当前 "${provider}"）。真实验收绝不静默走假模型。`);
 }
+
+function readJsonObject(name) {
+  const raw = (process.env[name] ?? '').trim();
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 const prefix = provider === 'tokendance' ? 'TOKENDANCE' : 'OPENAI_COMPATIBLE';
 const baseUrl = (process.env[`${prefix}_BASE_URL`] ?? '').trim();
 const apiKey = (process.env[`${prefix}_API_KEY`] ?? '').trim();
@@ -50,6 +61,18 @@ const smokeModel = (
   (provider === 'tokendance' ? process.env.TOKENDANCE_DEFAULT_MODEL : '') ??
   ''
 ).trim();
+const defaultBody = readJsonObject(`${prefix}_EXTRA_BODY`);
+const modelExtraBodies =
+  provider === 'openai-compatible'
+    ? readJsonObject('OPENAI_COMPATIBLE_MODEL_EXTRA_BODY')
+    : {};
+const modelExtraBody =
+  Object.prototype.hasOwnProperty.call(modelExtraBodies, smokeModel) &&
+  modelExtraBodies[smokeModel] &&
+  typeof modelExtraBodies[smokeModel] === 'object' &&
+  !Array.isArray(modelExtraBodies[smokeModel])
+    ? modelExtraBodies[smokeModel]
+    : {};
 
 if (!baseUrl) fail(`缺少 ${prefix}_BASE_URL。`);
 if (!apiKey) fail(`缺少 ${prefix}_API_KEY（请在 gitignored 的 .env 中自行填写）。`);
@@ -108,6 +131,8 @@ const content = await withTimeout(
       method: 'POST',
       headers: authHeaders,
       body: JSON.stringify({
+        ...defaultBody,
+        ...modelExtraBody,
         model: chatModel,
         messages: [{ role: 'user', content: '只回复两个字：收到' }],
       }),

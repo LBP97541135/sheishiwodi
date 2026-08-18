@@ -31,6 +31,8 @@
 
 2026-08-18 通用中转站定向验证覆盖 Shared 契约、Provider 解析、模型档案服务、开局门禁、厂商推理参数关闭和 Web 手填交互：纯 Server 18/18、Shared 2/2、Web 5/5 通过，三 workspace typecheck、Server/Web build、live 脚本独立 TS 检查和全仓 lint 通过。SQLite 开局路由门禁测试已加入 `server.test.ts`；本机 Node 24 与现有 Node 22 `better-sqlite3` ABI 不匹配时不把该项冒充为本地通过。
 
+2026-08-18 精确 model 请求参数映射补充验证：Server 17/17 通过，覆盖非法映射过滤、参赛/评测 model 精确匹配、全局与 model 专属参数优先级，以及 env 不能覆盖最终 `model/messages`；Server typecheck/build、live 脚本严格 TS 与语法检查、全仓 lint 和差异检查通过。未调用真实模型，因此只证明 harness 合并契约，不声称任意中转站都支持示例中的关闭思考字段。
+
 ## 3. 真实模型策略级验收
 
 2026-08-17T04:30:32Z 使用 Tokendance OpenAI 兼容中转执行 3 个角色 × 2 种动作，共 6 次真实调用：

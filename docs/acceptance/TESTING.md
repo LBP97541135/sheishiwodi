@@ -165,7 +165,7 @@
 | Server | `game-agent-recovery.test.ts` | 内容重生成、首次/重复泄词、过期结果丢弃、提交重试不重复调用模型 |
 | Server | `tokendance-agent-policy.test.ts` | strict 结构修复、瞬时/永久错误分类、重试耗尽与安全错误码 |
 | Server | `review-agent-policy.test.ts` | 复盘评价短输出预算、证据优先、反结果论、统一评分锚点与 JSON 输出契约 |
-| Server | `provider-runtime.test.ts`、`model-profile-service.test.ts` | 通用 Provider 无默认 model、三角色/评测配置门禁、Tokendance 回退兼容 |
+| Server | `provider-runtime.test.ts`、`model-profile-service.test.ts`、`tokendance-client.test.ts` | 通用 Provider 无默认 model、三角色/评测配置门禁、精确 model 参数映射与请求体优先级、Tokendance 回退兼容 |
 | Server | `no-live-in-default.test.ts` | 默认假模型完整对局零 fetch 调用、零真实模型实例化 |
 | Server | `agent-runtime.test.ts` | Agent 输入白名单、投票/重投目标边界和 `FakeAgentPolicy` 合法输出 |
 | Server | `game-stream.test.ts` | SSE/补取游标、`Last-Event-ID`、严格递增、去重和公开帧私有字段缺失 |
