@@ -24,6 +24,8 @@ export interface ModelProviderContext {
   mode: ProviderMode;
   configured: boolean;
   client: TokendanceClient | null;
+  useBuiltInRoleDefaults: boolean;
+  reviewModelConfigured: boolean;
 }
 
 /** 判定当前是否存在锁定配置修改的活动局（进行中 / 待观战确认）。 */
@@ -48,14 +50,16 @@ export class ModelProfileService {
     return {
       providerMode: this.provider.mode,
       providerConfigured: this.provider.configured,
+      reviewModelConfigured: this.provider.reviewModelConfigured,
       editable: !this.lock.isGameLockedForConfig(),
       profiles: agentRoles.map((role) => ({
         roleId: role.roleId,
         displayName: role.displayName,
         personalityTags: [...role.personalityTags],
         personalityPrompt: role.personalityPrompt,
-        // 未显式保存时回退角色默认 model ID，界面不再显示“未配置”。
-        selectedModelId: selections[role.roleId] ?? role.defaultModelId ?? null,
+        selectedModelId:
+          selections[role.roleId] ??
+          (this.provider.useBuiltInRoleDefaults ? role.defaultModelId : null),
       })),
     };
   }

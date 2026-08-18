@@ -232,3 +232,13 @@
 - [x] 建立可提交的脱敏验收证据索引，关联默认测试、E2E、真实模型与可见浏览器验证。
 - [x] 修正 AI 复盘前端闭环、Markdown 导出和真实复盘验收的过期说明。
 - [x] 本地链接、敏感字段、`git diff --check` 与文档一致性检索通过，完成记录已更新。
+
+## 通用 OpenAI 兼容中转站（TASK-069）
+
+- [x] 任务、需求和决策先于代码登记。
+- [x] 新增 `AGENT_PROVIDER=openai-compatible` 与通用 Base URL、API Key、超时、重试和附加请求参数 env。
+- [x] 通用模式不回退角色内置 model ID；三个角色可手填 model ID，即使中转站没有 `/models` 目录也能配置。
+- [x] 复盘评价 model ID 必须通过通用 env 显式配置，不设置默认值。
+- [x] 三个参赛模型或复盘模型未配齐时禁止开始游戏，并返回不含敏感配置的明确错误。
+- [x] Tokendance 旧配置和默认假模型行为保持兼容。
+- [x] Shared、Server、Web 定向测试、typecheck/build/lint、文档与差异检查通过，完成记录已更新；SQLite 路由测试的本机 Node ABI 边界如实保留。

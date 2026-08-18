@@ -1,4 +1,4 @@
-// 联机验收环境门禁：复用 tests/live/run.mjs 的语义（provider=tokendance + Base URL/Key 非空）。
+// 联机验收环境门禁：支持 Tokendance 与通用 OpenAI 兼容 provider。
 // 缺任一必填项抛 LiveGateError，由编排器据此以退出码 1 显式失败，绝不静默改用假模型。
 // 本模块只把 Key/URL 读入内存供真实客户端使用，绝不写入日志、报告、数据库或对外投影。
 
@@ -39,10 +39,13 @@ export class LiveGateError extends Error {
 }
 
 export interface LiveConfig {
-  provider: string;
+  provider: 'tokendance' | 'openai-compatible';
   baseUrl: string;
   apiKey: string;
   defaultModel: string;
+  roleModels: Record<string, string>;
+  reviewModel: string;
+  reasoningHints: boolean;
   timeoutMs: number;
   extraBody: Record<string, unknown>;
   maxRetries: number;
@@ -73,21 +76,51 @@ function readJsonObject(name: string): Record<string, unknown> {
 
 /**
  * 解析并强校验联机配置。缺任一必填项抛 LiveGateError。
- * 复用 run.mjs:41-54 的门禁语义：provider 必须为 tokendance，Base URL/Key 非空。
+ * 通用 provider 没有任何 model 回退：策略验收要求三角色 model，复盘验收要求 review model。
  */
-export function resolveLiveConfig(overrides?: { fullGame?: boolean }): LiveConfig {
+export function resolveLiveConfig(overrides?: {
+  fullGame?: boolean;
+  scope?: 'policy' | 'review';
+}): LiveConfig {
   loadDotEnv();
   const provider = (process.env['AGENT_PROVIDER'] ?? 'fake').trim();
-  const baseUrl = (process.env['TOKENDANCE_BASE_URL'] ?? '').trim();
-  const apiKey = (process.env['TOKENDANCE_API_KEY'] ?? '').trim();
-  if (provider !== 'tokendance') {
+  if (provider !== 'tokendance' && provider !== 'openai-compatible') {
     throw new LiveGateError(
-      `AGENT_PROVIDER 需为 "tokendance"（当前 "${provider}"）。真实验收绝不静默走假模型。`,
+      `AGENT_PROVIDER 需为 "tokendance" 或 "openai-compatible"（当前 "${provider}"）。真实验收绝不静默走假模型。`,
     );
   }
-  if (!baseUrl) throw new LiveGateError('缺少 TOKENDANCE_BASE_URL。');
+  const prefix = provider === 'tokendance' ? 'TOKENDANCE' : 'OPENAI_COMPATIBLE';
+  const baseUrl = (process.env[`${prefix}_BASE_URL`] ?? '').trim();
+  const apiKey = (process.env[`${prefix}_API_KEY`] ?? '').trim();
+  if (!baseUrl) throw new LiveGateError(`缺少 ${prefix}_BASE_URL。`);
   if (!apiKey) {
-    throw new LiveGateError('缺少 TOKENDANCE_API_KEY（请在 gitignored 的 .env 中自行填写）。');
+    throw new LiveGateError(`缺少 ${prefix}_API_KEY（请在 gitignored 的 .env 中自行填写）。`);
+  }
+
+  const roleModels: Record<string, string> =
+    provider === 'openai-compatible'
+      ? {
+          deepseek: (process.env['OPENAI_COMPATIBLE_DEEPSEEK_MODEL'] ?? '').trim(),
+          doubao: (process.env['OPENAI_COMPATIBLE_DOUBAO_MODEL'] ?? '').trim(),
+          qwen: (process.env['OPENAI_COMPATIBLE_QWEN_MODEL'] ?? '').trim(),
+        }
+      : {};
+  const reviewModel =
+    provider === 'openai-compatible'
+      ? (process.env['OPENAI_COMPATIBLE_REVIEW_MODEL'] ?? '').trim()
+      : (process.env['TOKENDANCE_REVIEW_MODEL'] ?? '').trim() ||
+        (process.env['TOKENDANCE_DEFAULT_MODEL'] ?? '').trim() ||
+        'deepseek-v4-flash';
+  if (provider === 'openai-compatible' && (overrides?.scope ?? 'policy') === 'policy') {
+    const missingRoles = Object.entries(roleModels)
+      .filter(([, modelId]) => !modelId)
+      .map(([roleId]) => roleId);
+    if (missingRoles.length > 0) {
+      throw new LiveGateError(`通用中转站缺少角色 model：${missingRoles.join('、')}。`);
+    }
+  }
+  if (provider === 'openai-compatible' && overrides?.scope === 'review' && !reviewModel) {
+    throw new LiveGateError('缺少 OPENAI_COMPATIBLE_REVIEW_MODEL。');
   }
 
   const envFull = (process.env['LIVE_FULL_GAME'] ?? '').trim() === '1';
@@ -95,11 +128,15 @@ export function resolveLiveConfig(overrides?: { fullGame?: boolean }): LiveConfi
     provider,
     baseUrl,
     apiKey,
-    defaultModel: (process.env['TOKENDANCE_DEFAULT_MODEL'] ?? '').trim(),
-    timeoutMs: readPositiveInt('TOKENDANCE_TIMEOUT_MS', 60_000),
-    extraBody: readJsonObject('TOKENDANCE_EXTRA_BODY'),
-    maxRetries: readPositiveInt('TOKENDANCE_MAX_RETRIES', 2),
-    retryDelayMs: readPositiveInt('TOKENDANCE_RETRY_DELAY_MS', 800),
+    defaultModel:
+      provider === 'tokendance' ? (process.env['TOKENDANCE_DEFAULT_MODEL'] ?? '').trim() : '',
+    roleModels,
+    reviewModel,
+    reasoningHints: provider === 'tokendance',
+    timeoutMs: readPositiveInt(`${prefix}_TIMEOUT_MS`, 60_000),
+    extraBody: readJsonObject(`${prefix}_EXTRA_BODY`),
+    maxRetries: readPositiveInt(`${prefix}_MAX_RETRIES`, 2),
+    retryDelayMs: readPositiveInt(`${prefix}_RETRY_DELAY_MS`, 800),
     samples: readPositiveInt('LIVE_SAMPLES', 1),
     fullGame: overrides?.fullGame ?? envFull,
   };

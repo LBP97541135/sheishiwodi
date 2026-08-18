@@ -14,6 +14,7 @@ const profile = (roleId: string, displayName: string, selectedModelId: string | 
 const profileList = (overrides: Record<string, unknown> = {}) => ({
   providerMode: 'tokendance',
   providerConfigured: true,
+  reviewModelConfigured: true,
   editable: true,
   profiles: [
     profile('deepseek', 'DeepSeek', 'gpt-existing'),
@@ -78,8 +79,8 @@ describe('ModelProfiles', () => {
     const { container } = render(<ModelProfiles onBack={() => {}} />);
     await screen.findByTestId('model-card-doubao');
 
-    const select = screen.getByTestId('model-card-doubao').querySelector('select')!;
-    fireEvent.change(select, { target: { value: 'gpt-b' } });
+    const input = screen.getByTestId('model-card-doubao').querySelector('input')!;
+    fireEvent.change(input, { target: { value: 'gpt-b' } });
     const saveButton = screen.getByTestId('model-card-doubao').querySelector('button')!;
     fireEvent.click(saveButton);
 
@@ -113,8 +114,8 @@ describe('ModelProfiles', () => {
     await screen.findByTestId('model-card-deepseek');
 
     expect(screen.getByTestId('provider-mode')).toHaveTextContent('内置假模型');
-    const select = screen.getByTestId('model-card-deepseek').querySelector('select')!;
-    expect(select).toBeDisabled();
+    const input = screen.getByTestId('model-card-deepseek').querySelector('input')!;
+    expect(input).toBeDisabled();
   });
 
   it('对局进行中锁定配置：禁用选择并给出提示', async () => {
@@ -130,7 +131,45 @@ describe('ModelProfiles', () => {
     await screen.findByTestId('model-card-deepseek');
 
     expect(screen.getByText(/对局进行中，暂不能修改模型配置/)).toBeInTheDocument();
-    const select = screen.getByTestId('model-card-deepseek').querySelector('select')!;
-    expect(select).toBeDisabled();
+    const input = screen.getByTestId('model-card-deepseek').querySelector('input')!;
+    expect(input).toBeDisabled();
+  });
+
+  it('通用中转站允许手填 model ID，并提示必须配置评测模型', async () => {
+    const fetchMock = routeFetch({
+      profiles: profileList({
+        providerMode: 'openai-compatible',
+        reviewModelConfigured: false,
+        profiles: [
+          profile('deepseek', 'DeepSeek', null),
+          profile('doubao', '豆包', null),
+          profile('qwen', '千问', null),
+        ],
+      }),
+      // 某些兼容中转站没有 /models；候选列表为空仍必须允许手填。
+      models: { providerMode: 'openai-compatible', models: [] },
+      put: () => profile('deepseek', 'DeepSeek', 'vendor/custom-model'),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ModelProfiles onBack={() => {}} />);
+    const card = await screen.findByTestId('model-card-deepseek');
+
+    expect(screen.getByTestId('provider-mode')).toHaveTextContent('通用 OpenAI 兼容中转站');
+    expect(screen.getByText(/OPENAI_COMPATIBLE_REVIEW_MODEL/)).toBeInTheDocument();
+
+    const input = card.querySelector('input')!;
+    fireEvent.change(input, { target: { value: 'vendor/custom-model' } });
+    fireEvent.click(card.querySelector('button')!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/model-profiles/deepseek',
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({ modelId: 'vendor/custom-model' }),
+        }),
+      ),
+    );
   });
 });

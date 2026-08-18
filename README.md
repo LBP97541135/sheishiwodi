@@ -33,6 +33,8 @@ pnpm exec playwright install chromium
 
 复制 [`.env.example`](.env.example) 为 `.env`，只在本机填写：
 
+Tokendance 保持现有兼容配置和角色默认 model ID：
+
 ```dotenv
 AGENT_PROVIDER=tokendance
 TOKENDANCE_BASE_URL=https://your-openai-compatible-endpoint/v1
@@ -41,6 +43,17 @@ TOKENDANCE_REVIEW_MODEL=deepseek-v4-flash
 ```
 
 重新运行 `pnpm dev`。三个参赛角色的 model ID 可以在“模型档案”中选择并持久化；复盘模型使用独立的 `TOKENDANCE_REVIEW_MODEL`。Base URL、API Key 和请求头只存在于服务端进程内，不进入浏览器、SQLite、日志、复盘或 Git。
+
+接入其他 OpenAI Chat Completions 兼容中转站时使用独立配置：
+
+```dotenv
+AGENT_PROVIDER=openai-compatible
+OPENAI_COMPATIBLE_BASE_URL=https://your-gateway.example/v1
+OPENAI_COMPATIBLE_API_KEY=your-local-secret
+OPENAI_COMPATIBLE_REVIEW_MODEL=your-review-model-id
+```
+
+通用模式**没有默认 model**：启动后进入“模型档案”，分别为 DeepSeek、豆包、千问手动填写并保存 model ID。中转站支持 `GET /models` 时输入框会提供候选；不支持时仍可直接填写。三个参赛 model 或 `OPENAI_COMPATIBLE_REVIEW_MODEL` 任一缺失，服务端都会在开始游戏前返回 `MODEL_CONFIGURATION_REQUIRED`，不会等到付费调用中途才失败。
 
 如果 `AGENT_PROVIDER`、Base URL 或 API Key 任一缺失，运行时会明确保持假模型模式，不会半配置地调用外网。付费真实模型验收也必须通过下文的显式命令触发。
 
@@ -98,7 +111,9 @@ flowchart LR
 | 自动恢复 | 降低真实模型的不稳定性 | 一次格式修复；内容错误重新生成；超时、网络、429、5xx 有限重试；永久配置错误不盲目重试 |
 | 并发防护 | 防止慢请求覆盖新状态 | 每次调用绑定 `baseRevision`；返回后重新核对状态、行动者和动作类型，过期结果直接丢弃 |
 | 幂等与恢复 | 防止刷新/重启产生重复行动 | 稳定 `commandId`、事务写入、活动局恢复、SSE 游标补发与客户端去重 |
-| 可替换策略 | 兼顾可测性和真实体验 | 默认 `FakeAgentPolicy` 提供确定性测试；显式 provider 开关才实例化真实 Tokendance 策略 |
+| 可替换策略 | 兼顾可测性和真实体验 | 默认 `FakeAgentPolicy` 提供确定性测试；显式 provider 开关才实例化真实兼容协议策略 |
+
+真实 Provider 解析集中在 `provider-runtime.ts`：Tokendance 保持旧默认兼容，`openai-compatible` 只复用协议客户端和 harness，不注入厂商专用推理参数，也不继承任何模型 ID。
 
 完整运行时契约见 [Agent 运行时规格](docs/spec/agent-runtime.md)。
 
@@ -155,6 +170,8 @@ pnpm test:live:policy  # 三个角色各执行真实 describe + vote
 pnpm test:live:review  # 独立复盘模型的结构与隔离
 pnpm test:live:full    # 可选，真实模型整局，调用和费用更多
 ```
+
+通用中转站运行 `test:live:smoke` 时需显式设置 `OPENAI_COMPATIBLE_SMOKE_MODEL`；运行 `test:live:policy/full` 时还需设置 `OPENAI_COMPATIBLE_DEEPSEEK_MODEL`、`OPENAI_COMPATIBLE_DOUBAO_MODEL`、`OPENAI_COMPATIBLE_QWEN_MODEL`。这些仅用于独立验收，不会成为应用运行时默认 model。通用 smoke 不要求中转站实现 `GET /models`。
 
 缺少真实模型配置时，上述命令会以非零退出码明确失败，不会静默回退假模型。可提交的脱敏结果、测试层级和当前环境边界见 [验收证据](docs/acceptance/EVIDENCE.md)。
 

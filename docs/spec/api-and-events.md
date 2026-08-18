@@ -173,14 +173,17 @@ confirmed: true
 
 | 端点 | 用途 | 返回体 |
 | --- | --- | --- |
-| `GET /api/model-profiles` | 读取三角色档案与当前所选 model ID | `{ providerMode, providerConfigured, editable, profiles[] }` |
+| `GET /api/model-profiles` | 读取三角色档案与当前所选 model ID | `{ providerMode, providerConfigured, reviewModelConfigured, editable, profiles[] }` |
 | `GET /api/models` | 服务端代理中转站可选 model 目录 | `{ providerMode, models[] }`；`fake` 或未配置时 `models` 为空 |
 | `PUT /api/model-profiles/:roleId` | 写入角色所选 model ID | 更新后的档案列表 |
 
 - `profiles[]` 每项含 `roleId`、`displayName`、`personalityTags[3]`、`personalityPrompt`、`selectedModelId`（可空）。
 - 响应绝不包含 Base URL、API Key、请求头或完整模型响应；只暴露 model ID（继承 DEC-082/DEC-052）。
-- `providerMode` 为 `fake` 或 `tokendance`；`providerConfigured` 表示 Base URL 与 API Key 是否均已在服务端 env 就绪。`editable=false`（假模型、未配置或存在活动局）时前端禁用选择。
+- `providerMode` 为 `fake`、`tokendance` 或 `openai-compatible`；`providerConfigured` 表示 Base URL 与 API Key 是否均已在服务端 env 就绪，`reviewModelConfigured` 只公开评测 model 是否已配置的布尔值。
+- 通用模式的 `selectedModelId` 不回退共享默认值；中转站没有 `/models` 时 `GET /api/models` 可以失败或返回空目录，前端仍允许手填 model ID。
+- `editable=false` 表示存在锁定修改的活动局；前端还会结合 `providerConfigured`，在假模型或真实 Provider 未配置时禁用输入。
 - 存在活动局（`in_progress` / `awaiting_spectator`）时 `PUT` 返回 409 拒绝改配置；未知 `roleId` 返回 404。
+- `POST /api/games/:gameId/start` 在通用模式三角色或评测 model 未配齐时返回 409 `MODEL_CONFIGURATION_REQUIRED`；消息不包含 Base URL、Key 或具体环境变量值。
 
 
 

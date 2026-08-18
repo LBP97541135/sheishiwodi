@@ -23,6 +23,7 @@ const errorStatus = {
   GAME_NOT_FOUND: 404,
   IDEMPOTENCY_CONFLICT: 409,
   INVALID_TRANSITION: 409,
+  MODEL_CONFIGURATION_REQUIRED: 409,
   REVISION_CONFLICT: 409,
 } as const;
 
@@ -33,6 +34,8 @@ const errorMessage = {
   GAME_NOT_FOUND: '未找到该对局',
   IDEMPOTENCY_CONFLICT: '命令编号已被其他请求使用',
   INVALID_TRANSITION: '当前阶段不能执行该操作',
+  MODEL_CONFIGURATION_REQUIRED:
+    '请先在模型档案配置三位 AI 的 model ID，并在服务端配置复盘评价 model ID',
   REVISION_CONFLICT: '对局状态已更新，请刷新后重试',
 } as const;
 

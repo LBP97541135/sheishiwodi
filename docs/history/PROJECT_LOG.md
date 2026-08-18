@@ -1,5 +1,29 @@
 # 开发记录
 
+## 2026-08-18 通用 OpenAI 兼容中转站与显式模型配置（TASK-069）
+
+### 本轮目标
+
+在不破坏 Tokendance 现有配置的前提下接入其他 OpenAI Chat Completions 兼容中转站；通用模式不提供任何默认 model，三个参赛角色和复盘评价模型必须由负责人显式配置，并在付费调用前发现缺项。
+
+### 完成内容
+
+- 将 Provider 解析从 `server.ts` 提取到 `provider-runtime.ts`，支持 `fake`、`tokendance`、`openai-compatible`。通用模式使用独立 `OPENAI_COMPATIBLE_*` env，不继承角色默认 ID、Tokendance 默认值或复盘常量。
+- 模型档案从封闭下拉改为带 `datalist` 建议的文本输入；中转站没有 `/models` 时仍可手填。公开契约增加 `reviewModelConfigured` 布尔值，页面能提示评测模型缺失但拿不到 env 值。
+- `GameService` 增加动态配置门禁：读取持久化的三角色 model 与服务端评测 model，缺任一项则开局返回 409 `MODEL_CONFIGURATION_REQUIRED`，不创建真实策略、不发起模型调用。
+- 通用模式关闭 Tokendance 特定的按模型名推断推理参数；需要额外字段时只接受显式 `OPENAI_COMPATIBLE_EXTRA_BODY`。
+- `test:live:smoke/policy/review/full` 支持通用 Provider。通用 smoke 不要求 `/models`，但 smoke、三角色和评测 model 均需在对应验收命令中显式配置；这些验收变量不会成为应用默认值。
+- 更新 `.env.example`、README、需求、架构、Agent、API、前端、持久化、测试、证据、任务和决策文档。
+
+### 验证结果与边界
+
+- 定向测试：Server 18/18、Web 5/5、Shared 2/2 通过；覆盖无默认 model、Tokendance 回退、三角色/评测门禁、手填交互和通用模式不注入厂商推理参数。
+- Shared/Server/Web typecheck、Shared/Server/Web build、`tests/live` 独立严格 TypeScript 检查、`tests/live/run.mjs` 语法检查、全仓 lint 与 `git diff --check` 通过。
+- `server.test.ts` 已增加 409 路由断言，但当前 Node 24（ABI 137）无法加载按 Node 22（ABI 127）编译的 `better-sqlite3`，7 条该文件测试均在创建数据库前失败；关键门禁另有不依赖 SQLite 的 `GameService` 单测实际通过。
+- 本轮没有读取或调用真实模型 Key，没有联网付费，也没有执行 Git 提交或推送。
+
+本次属于 Provider 扩展与配置安全收口，不构成产品版本发布，不分配版本号。
+
 ## 2026-08-17 补强 GitHub 面试交付说明（TASK-068）
 
 ### 本轮目标

@@ -216,6 +216,21 @@ describe('TokendanceAgentPolicy', () => {
     }
   });
 
+  it('通用兼容 provider 可关闭厂商推理参数推断', async () => {
+    const { input, roleId } = describeInput();
+    const livingIds = input.players.filter((player) => player.alive).map((player) => player.playerId);
+    const client = new ScriptedClient([speechReply(livingIds, '一句合法描述')]);
+    const policy = new TokendanceAgentPolicy({
+      client: asClient(client),
+      roleModelMap: { [roleId]: 'qwen-compatible-alias' },
+      sleep: noWait,
+      reasoningHints: false,
+    });
+
+    await policy.act(input, { agentRoleId: roleId });
+    expect(client.extraBodies[0]).toEqual({});
+  });
+
   it('超时、限流、服务异常和空响应按预算重试并保留最终分类', async () => {
     const cases = [
       { error: new TokendanceError('timeout'), code: 'CALL_TIMEOUT' },

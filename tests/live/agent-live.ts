@@ -183,7 +183,10 @@ async function runPolicyLevel(config: LiveConfig, client: TokendanceClient): Pro
   const credentials = credentialSentinels(config.baseUrl, config.apiKey);
 
   for (const roleId of agentRoleIds) {
-    const modelId = findAgentRole(roleId)?.defaultModelId ?? config.defaultModel;
+    const modelId =
+      config.roleModels[roleId] ??
+      (config.provider === 'tokendance' ? findAgentRole(roleId)?.defaultModelId : undefined) ??
+      config.defaultModel;
     if (!modelId) {
       errorRecords.push({ role: roleId, action: '*', code: 'AGENT_SYSTEM_MODEL_NOT_CONFIGURED' });
       continue;
@@ -196,6 +199,7 @@ async function runPolicyLevel(config: LiveConfig, client: TokendanceClient): Pro
       maxSystemRetries: config.maxRetries,
       retryDelayMs: config.retryDelayMs,
       debug: true,
+      reasoningHints: config.reasoningHints,
     });
     const actor = pickAgentForRole(snapshot, roleId);
     const otherWords = otherWordCards(snapshot, actor.playerId);
@@ -381,6 +385,7 @@ async function runFullGameServer(
         maxSystemRetries: config.maxRetries,
         retryDelayMs: config.retryDelayMs,
         debug: true,
+        reasoningHints: config.reasoningHints,
       }),
     backgroundAdvance: false,
   }) as unknown as TestServer;
@@ -565,6 +570,7 @@ async function runFullGamePure(config: LiveConfig, client: TokendanceClient): Pr
     maxSystemRetries: config.maxRetries,
     retryDelayMs: config.retryDelayMs,
     debug: true,
+    reasoningHints: config.reasoningHints,
   });
 
   const humanId = snapshot.humanPlayerId;

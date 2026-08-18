@@ -165,6 +165,7 @@
 | Server | `game-agent-recovery.test.ts` | 内容重生成、首次/重复泄词、过期结果丢弃、提交重试不重复调用模型 |
 | Server | `tokendance-agent-policy.test.ts` | strict 结构修复、瞬时/永久错误分类、重试耗尽与安全错误码 |
 | Server | `review-agent-policy.test.ts` | 复盘评价短输出预算、证据优先、反结果论、统一评分锚点与 JSON 输出契约 |
+| Server | `provider-runtime.test.ts`、`model-profile-service.test.ts` | 通用 Provider 无默认 model、三角色/评测配置门禁、Tokendance 回退兼容 |
 | Server | `no-live-in-default.test.ts` | 默认假模型完整对局零 fetch 调用、零真实模型实例化 |
 | Server | `agent-runtime.test.ts` | Agent 输入白名单、投票/重投目标边界和 `FakeAgentPolicy` 合法输出 |
 | Server | `game-stream.test.ts` | SSE/补取游标、`Last-Event-ID`、严格递增、去重和公开帧私有字段缺失 |
@@ -228,11 +229,13 @@ Playwright 每个模式使用独立临时 SQLite、确定性随机序列和真�
 
 ### 7.1 连通冒烟（`test:live:smoke` / `tests/live/run.mjs`）
 
-从根 `.env` 载入 `AGENT_PROVIDER`、`TOKENDANCE_BASE_URL`、`TOKENDANCE_API_KEY` 与 smoke 用 model，校验 provider 为 `tokendance` 且 Base URL、API Key 均非空。通过后代理 `GET /models` 与一次最小 `POST /chat/completions`，仅打印 model 数量与回复字符数。
+从根 `.env` 载入所选真实 Provider 的 Base URL、API Key 与 smoke model，缺项明确失败。Tokendance 保持 `GET /models` + 最小 `POST /chat/completions`；`openai-compatible` 要求显式 `OPENAI_COMPATIBLE_SMOKE_MODEL` 并直接验证 Chat Completions，不强制中转站实现 `/models`。仅打印 model 数量、model ID 与回复字符数。
 
 ### 7.2 策略级实测（`test:live` 默认 / `test:live:policy`，约 6 次调用）
 
 用 shared 纯函数造快照 + `projectAgentTurnInput` 白名单投影（无 DB/服务端/网络成本），对 DeepSeek/豆包/千问三角色各做一次真实 `TokendanceAgentPolicy.act` 的 describe 与 vote：
+
+Tokendance 沿用项目角色默认 ID；通用 Provider 必须显式配置 `OPENAI_COMPATIBLE_DEEPSEEK_MODEL`、`OPENAI_COMPATIBLE_DOUBAO_MODEL`、`OPENAI_COMPATIBLE_QWEN_MODEL`。这些只服务独立付费验收，不会成为应用运行时默认值。复盘验收同样要求显式 `OPENAI_COMPATIBLE_REVIEW_MODEL`。
 
 - 结构校验：`speechActionOutputSchema`/`voteActionOutputSchema`（strict）解析成功；`beliefSnapshotSchema` + `validateBeliefSnapshot`（覆盖全部存活玩家、概率和≈卧底人数）；vote 的 `targetPlayerId` 必属输入 `legalTargets`。
 - 五通道信息隔离负向断言：agent 输入 / 策略公开文本 / 抛出错误消息 / （整局时）公开帧 / 报告文本，均以哨兵集合（动态词牌 + 固定字段 + baseUrl/apiKey/`Bearer`）搜索禁止字段。公开文本命中自己词牌记 WARN（服务端 content validator 为硬闸），配置泄漏记硬失败。

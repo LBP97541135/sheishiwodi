@@ -1,4 +1,4 @@
-// 真实模型验收冒烟：仅在显式配置 tokendance + Key 时运行。
+// 真实模型验收冒烟：仅在显式配置真实 provider + Key 时运行。
 // 硬边界：缺 env 一律显式失败退出，绝不静默改用假模型；
 // 输出脱敏——不打印 Base URL、API Key、请求头或完整模型响应。
 // 该脚本只被 `pnpm test:live` 调用，绝不进入 dev/build/test/test:e2e。
@@ -39,19 +39,23 @@ function fail(message) {
 loadDotEnv();
 
 const provider = (process.env.AGENT_PROVIDER ?? 'fake').trim();
-const baseUrl = (process.env.TOKENDANCE_BASE_URL ?? '').trim();
-const apiKey = (process.env.TOKENDANCE_API_KEY ?? '').trim();
+if (provider !== 'tokendance' && provider !== 'openai-compatible') {
+  fail(`AGENT_PROVIDER 需为 "tokendance" 或 "openai-compatible"（当前 "${provider}"）。真实验收绝不静默走假模型。`);
+}
+const prefix = provider === 'tokendance' ? 'TOKENDANCE' : 'OPENAI_COMPATIBLE';
+const baseUrl = (process.env[`${prefix}_BASE_URL`] ?? '').trim();
+const apiKey = (process.env[`${prefix}_API_KEY`] ?? '').trim();
 const smokeModel = (
-  process.env.TOKENDANCE_SMOKE_MODEL ??
-  process.env.TOKENDANCE_DEFAULT_MODEL ??
+  process.env[`${prefix}_SMOKE_MODEL`] ??
+  (provider === 'tokendance' ? process.env.TOKENDANCE_DEFAULT_MODEL : '') ??
   ''
 ).trim();
 
-if (provider !== 'tokendance') {
-  fail(`AGENT_PROVIDER 需为 "tokendance"（当前 "${provider}"）。真实验收绝不静默走假模型。`);
+if (!baseUrl) fail(`缺少 ${prefix}_BASE_URL。`);
+if (!apiKey) fail(`缺少 ${prefix}_API_KEY（请在 gitignored 的 .env 中自行填写）。`);
+if (provider === 'openai-compatible' && !smokeModel) {
+  fail('缺少 OPENAI_COMPATIBLE_SMOKE_MODEL；通用中转站不设置默认 model。');
 }
-if (!baseUrl) fail('缺少 TOKENDANCE_BASE_URL。');
-if (!apiKey) fail('缺少 TOKENDANCE_API_KEY（请在 gitignored 的 .env 中自行填写）。');
 
 const authHeaders = {
   Authorization: `Bearer ${apiKey}`,
@@ -72,21 +76,27 @@ async function withTimeout(run, ms, label) {
   }
 }
 
-console.log('[test:live] 已配置 tokendance provider，开始真实冒烟（输出已脱敏）。');
+console.log(`[test:live] 已配置 ${provider} provider，开始真实冒烟（输出已脱敏）。`);
 
-// 1. 模型目录
-const models = await withTimeout(
-  async (signal) => {
-    const response = await fetch(`${baseUrl}/models`, { headers: authHeaders, signal });
-    if (!response.ok) fail(`GET /models 返回状态 ${response.status}。`);
-    const body = await response.json();
-    return Array.isArray(body?.data) ? body.data.map((item) => item?.id).filter(Boolean) : [];
-  },
-  20_000,
-  'GET /models',
-);
-if (models.length === 0) fail('/models 目录为空，无法选择 model。');
-console.log(`[test:live] 模型目录可用：${models.length} 个 model。`);
+// Tokendance 保持原有目录验收；通用中转站允许没有 /models，直接使用显式 smoke model。
+const models = provider === 'tokendance'
+  ? await withTimeout(
+      async (signal) => {
+        const response = await fetch(`${baseUrl}/models`, { headers: authHeaders, signal });
+        if (!response.ok) fail(`GET /models 返回状态 ${response.status}。`);
+        const body = await response.json();
+        return Array.isArray(body?.data) ? body.data.map((item) => item?.id).filter(Boolean) : [];
+      },
+      20_000,
+      'GET /models',
+    )
+  : [];
+if (provider === 'tokendance') {
+  if (models.length === 0) fail('/models 目录为空，无法选择 model。');
+  console.log(`[test:live] 模型目录可用：${models.length} 个 model。`);
+} else {
+  console.log('[test:live] 通用 provider 使用显式 smoke model，不要求 /models。');
+}
 
 const chatModel = smokeModel || models[0];
 console.log(`[test:live] 冒烟使用 model：${chatModel}`);

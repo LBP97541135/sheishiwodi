@@ -6,8 +6,6 @@ import { randomInt, randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 
 import {
-  agentRoleIds,
-  findAgentRole,
   type Clock,
   type IdSource,
   type RandomSource,
@@ -17,17 +15,15 @@ import { createDatabase, type AppDatabase } from './db/client.js';
 import { migrateDatabase } from './db/migrate.js';
 import { WordPairRepository } from './db/word-pair-repository.js';
 import { AgentRoleModelRepository } from './db/agent-role-model-repository.js';
-import { FakeAgentPolicy, type FakeAgentScenario } from './agents/fake-agent-policy.js';
-import { TokendanceClient } from './agents/tokendance-client.js';
-import { TokendanceAgentPolicy } from './agents/tokendance-agent-policy.js';
+import type { FakeAgentScenario } from './agents/fake-agent-policy.js';
 import {
   ModelProfileService,
   type ModelProviderContext,
 } from './agents/model-profile-service.js';
+import { resolveAgentProvider } from './agents/provider-runtime.js';
 import type { AgentPolicy } from './agents/agent-policy.js';
 import type { ReviewPolicy } from './agents/review-policy.js';
 import { FakeReviewPolicy } from './agents/fake-review-policy.js';
-import { TokendanceReviewPolicy } from './agents/review-agent-policy.js';
 import { registerGameRoutes } from './games/game-routes.js';
 import { registerModelRoutes } from './games/model-routes.js';
 import { registerReviewRoutes } from './games/review-routes.js';
@@ -45,6 +41,7 @@ export interface ServerDependencies {
   reviewPolicyFactory?: () => ReviewPolicy;
   modelProvider?: ModelProviderContext;
   roleModelRepository?: AgentRoleModelRepository;
+  areRequiredModelsConfigured?: () => boolean;
   /**
    * 是否后台推进 AI 回合：运行时置 true，命令提交后立即返回、AI 回合异步推进，
    * 前端靠 SSE 实时接收，避免开始/操作请求被真实模型串行往返长时间阻塞。
@@ -83,7 +80,13 @@ export function buildServer(dependencies?: ServerDependencies) {
   const roleModelRepository =
     runtime.roleModelRepository ?? new AgentRoleModelRepository(runtime.database);
   const modelProvider: ModelProviderContext =
-    runtime.modelProvider ?? { mode: 'fake', configured: false, client: null };
+    runtime.modelProvider ?? {
+      mode: 'fake',
+      configured: false,
+      client: null,
+      useBuiltInRoleDefaults: true,
+      reviewModelConfigured: true,
+    };
   const modelProfileService = new ModelProfileService(
     roleModelRepository,
     modelProvider,
@@ -118,7 +121,12 @@ export function createRuntimeDependencies(): ServerDependencies {
 
   const clock: Clock = { now: () => new Date().toISOString() };
   const roleModelRepository = new AgentRoleModelRepository(database);
-  const { agentPolicyFactory, reviewPolicyFactory, modelProvider } = resolveAgentProvider(
+  const {
+    agentPolicyFactory,
+    reviewPolicyFactory,
+    modelProvider,
+    areRequiredModelsConfigured,
+  } = resolveAgentProvider(
     roleModelRepository,
     fakeScenario,
   );
@@ -136,109 +144,10 @@ export function createRuntimeDependencies(): ServerDependencies {
     reviewPolicyFactory,
     modelProvider,
     roleModelRepository,
+    areRequiredModelsConfigured,
     // 运行时后台推进：开始与人类操作立即返回，AI 回合异步推进并经 SSE 实时下发。
     backgroundAdvance: true,
   };
-}
-
-/**
- * 按 env 决定 Agent 提供方：仅当 AGENT_PROVIDER=tokendance 且 Base URL 与 API Key 均非空时
- * 才实例化真实策略；其余一律 FakeAgentPolicy。Key/URL 只在此处进入内存，绝不外泄。
- */
-function resolveAgentProvider(
-  roleModelRepository: AgentRoleModelRepository,
-  fakeScenario: FakeAgentScenario,
-): {
-  agentPolicyFactory: () => AgentPolicy;
-  reviewPolicyFactory: () => ReviewPolicy;
-  modelProvider: ModelProviderContext;
-} {
-  const provider = (process.env['AGENT_PROVIDER'] ?? 'fake').trim();
-  const baseUrl = (process.env['TOKENDANCE_BASE_URL'] ?? '').trim();
-  const apiKey = (process.env['TOKENDANCE_API_KEY'] ?? '').trim();
-  const defaultModel = (process.env['TOKENDANCE_DEFAULT_MODEL'] ?? '').trim();
-  // 专用复盘模型（DEC-030）：独立 model ID，复用同一中转连接/认证；
-  // 最终缺省 deepseek-v4-flash（负责人所称 “ds-v4flash” 在中转目录的真实 id）。
-  const reviewModel =
-    (process.env['TOKENDANCE_REVIEW_MODEL'] ?? '').trim() || defaultModel || 'deepseek-v4-flash';
-  const useTokendance = provider === 'tokendance' && baseUrl.length > 0 && apiKey.length > 0;
-
-  if (!useTokendance) {
-    return {
-      agentPolicyFactory: () => new FakeAgentPolicy(fakeScenario),
-      reviewPolicyFactory: () => new FakeReviewPolicy(),
-      modelProvider: {
-        mode: provider === 'tokendance' ? 'tokendance' : 'fake',
-        configured: false,
-        client: null,
-      },
-    };
-  }
-
-  const client = new TokendanceClient({
-    baseUrl,
-    apiKey,
-    timeoutMs: readPositiveInt('TOKENDANCE_TIMEOUT_MS', 60_000),
-    defaultBody: readJsonObject('TOKENDANCE_EXTRA_BODY'),
-  });
-  const buildRoleModelMap = (): Record<string, string> => {
-    const selections = roleModelRepository.listSelections();
-    const map: Record<string, string> = {};
-    for (const roleId of agentRoleIds) {
-      const modelId =
-        selections[roleId] ??
-        findAgentRole(roleId)?.defaultModelId ??
-        (defaultModel.length > 0 ? defaultModel : undefined);
-      if (modelId) map[roleId] = modelId;
-    }
-    return map;
-  };
-
-  const debugTiming = (process.env['AGENT_DEBUG_TIMING'] ?? '').trim() === '1';
-
-  return {
-    agentPolicyFactory: () =>
-      new TokendanceAgentPolicy({
-        client,
-        roleModelMap: buildRoleModelMap(),
-        maxSystemRetries: readPositiveInt('TOKENDANCE_MAX_RETRIES', 2),
-        retryDelayMs: readPositiveInt('TOKENDANCE_RETRY_DELAY_MS', 800),
-        debug: debugTiming,
-      }),
-    reviewPolicyFactory: () =>
-      new TokendanceReviewPolicy({
-        client,
-        modelId: reviewModel,
-        maxSystemRetries: readPositiveInt('TOKENDANCE_MAX_RETRIES', 2),
-        retryDelayMs: readPositiveInt('TOKENDANCE_RETRY_DELAY_MS', 800),
-      }),
-    modelProvider: { mode: 'tokendance', configured: true, client },
-  };
-}
-
-/** 读取正整数 env，非法或缺省时回退到给定默认值。仅用于超时/重试等运行时调参。 */
-function readPositiveInt(name: string, fallback: number): number {
-  const raw = (process.env[name] ?? '').trim();
-  if (raw.length === 0) return fallback;
-  const value = Number(raw);
-  return Number.isInteger(value) && value > 0 ? value : fallback;
-}
-
-/**
- * 读取一个 JSON 对象 env（如关闭推理链的附加请求参数）。非法或缺省时返回空对象。
- * 仅解析为模型请求参数透传，绝不含 Key/URL —— 后者始终独立走专用 env。
- */
-function readJsonObject(name: string): Record<string, unknown> {
-  const raw = (process.env[name] ?? '').trim();
-  if (raw.length === 0) return {};
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
 }
 
 function parseFakeRandomSequence(value: string | undefined): number[] | undefined {

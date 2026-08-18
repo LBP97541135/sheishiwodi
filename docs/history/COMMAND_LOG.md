@@ -103,3 +103,4 @@
 | CMD-097 | 2026-08-17（具体时间不可用） | 优化评价 LLM 的提示词，使评价更加精炼并突出重点。 | 已完成 | `docs/tasks/TASKS.md` TASK-067、`docs/spec/agent-runtime.md`、`apps/server/src/agents/review-agent-policy.ts` |
 | CMD-098 | 2026-08-17（具体时间不可用） | 按最终 GitHub 交付要求补充 README、测试或验证证据，并突出产品完整性、Multi-Agent、信息边界、系统稳健性和 Agent 代码验证。 | 已完成 | `README.md`、`docs/acceptance/EVIDENCE.md`、`docs/tasks/TASKS.md` TASK-068 |
 | CMD-099 | 2026-08-17（具体时间不可用） | 将复盘评价提示词优化与最终面试交付文档提交并推送到 `master`。 | 已完成 | Git `master`、TASK-067、TASK-068 |
+| CMD-100 | 2026-08-18（具体时间不可用） | 优化真实模型接入以方便使用其他中转站；通用中转站不设置默认 model，三个参赛模型和评测模型都必须手动配置。 | 已完成 | TASK-069、DEC-089、`provider-runtime.ts`、`.env.example`、README |

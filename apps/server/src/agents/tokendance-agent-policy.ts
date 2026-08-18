@@ -46,6 +46,8 @@ export interface TokendanceAgentPolicyOptions {
   maxSystemRetries?: number;
   retryDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  /** 是否按已知模型家族附加关闭推理链参数；通用兼容站默认关闭以减少未知字段。 */
+  reasoningHints?: boolean;
   /** 开启后打印脱敏计时日志（角色/model/耗时/是否修复重试），绝不含 Key/URL/响应正文。 */
   debug?: boolean;
 }
@@ -59,6 +61,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
   private readonly retryDelayMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly debug: boolean;
+  private readonly reasoningHints: boolean;
   private readonly beliefHistory = new Map<string, BeliefSnapshot[]>();
 
   constructor(options: TokendanceAgentPolicyOptions) {
@@ -68,6 +71,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     this.retryDelayMs = options.retryDelayMs ?? 2_000;
     this.sleep = options.sleep ?? defaultSleep;
     this.debug = options.debug ?? false;
+    this.reasoningHints = options.reasoningHints ?? true;
   }
 
   priorBeliefs(playerId: string): readonly BeliefSnapshot[] {
@@ -86,7 +90,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
 
     const baseMessages = buildMessages(input, context?.contentRetry);
     // 按模型家族附加“关闭推理链”参数，让 ds/豆包/千问尽快直出；未知模型不受影响。
-    const extraBody = reasoningDisableBodyFor(modelId);
+    const extraBody = this.reasoningHints ? reasoningDisableBodyFor(modelId) : {};
     let messages = baseMessages;
     let repairUsed = false;
     let systemAttempts = 0;

@@ -134,17 +134,14 @@ const input: ReviewInput = {
 async function main(): Promise<void> {
   let config;
   try {
-    config = resolveLiveConfig();
+    config = resolveLiveConfig({ scope: 'review' });
   } catch (error) {
     if (error instanceof LiveGateError) fail(error.message);
     throw error;
   }
 
-  const reviewModel =
-    (process.env['TOKENDANCE_REVIEW_MODEL'] ?? '').trim() ||
-    config.defaultModel ||
-    'deepseek-v4-flash';
-  console.log(`[test:live:review] 已配置 tokendance，开始真实复盘冒烟。复盘模型 = ${reviewModel}`);
+  const reviewModel = config.reviewModel;
+  console.log(`[test:live:review] 已配置 ${config.provider}，开始真实复盘冒烟。复盘模型 = ${reviewModel}`);
 
   const client = new TokendanceClient({
     baseUrl: config.baseUrl,
@@ -157,6 +154,7 @@ async function main(): Promise<void> {
     modelId: reviewModel,
     maxSystemRetries: config.maxRetries,
     retryDelayMs: config.retryDelayMs,
+    reasoningHints: config.reasoningHints,
   });
 
   const startedAt = Date.now();

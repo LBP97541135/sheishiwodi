@@ -1388,11 +1388,16 @@ legend {
   width: 100%;
 }
 
-.model-card__field select {
+.model-card__field input {
   border: 2px solid #26231f;
   background: #fffdf6;
   padding: 8px 10px;
   width: 100%;
+}
+
+.model-card__field input:disabled {
+  color: #706b62;
+  background: #eeeae0;
 }
 
 .model-card__current {

@@ -156,9 +156,9 @@
 - 三个简短性格标签。
 - 完整人格提示词。
 - 与其他角色相同的规则与信息边界说明。
-- 当前所选 model ID 与可选 model 下拉（数据来自 `GET /api/models`，DEC-085）。
+- 当前所选 model ID 与可输入的建议控件（候选数据来自 `GET /api/models`，也允许直接手填）。
 
-允许展示并选择 model ID；`providerMode=fake`、未配置或存在活动局时禁用选择并给出提示。仍绝不展示系统控制提示、接口地址（Base URL）、密钥或请求头（继承 DEC-082/DEC-052）。三个模型角色使用 [`../notes/ASSETS.md`](../notes/ASSETS.md) 中已索引的待机素材作为身份卡默认图；加载失败时使用统一几何占位头像。
+允许展示、填写并选择 model ID；`providerMode=fake`、未配置或存在活动局时禁用输入并给出提示。`openai-compatible` 模式没有角色默认值，三张卡初始显示“未配置”；即使中转站不支持 `/models`，仍可手填并保存。页面只根据 `reviewModelConfigured` 布尔值提示评测 model 缺失，不接收或展示 env 值。仍绝不展示系统控制提示、接口地址（Base URL）、密钥或请求头（继承 DEC-082/DEC-052）。三个模型角色使用 [`../notes/ASSETS.md`](../notes/ASSETS.md) 中已索引的待机素材作为身份卡默认图；加载失败时使用统一几何占位头像。
 
 ## 6. 响应式布局
 

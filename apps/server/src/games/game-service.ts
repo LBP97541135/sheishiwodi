@@ -45,6 +45,7 @@ export type GameServiceErrorCode =
   | 'GAME_NOT_FOUND'
   | 'IDEMPOTENCY_CONFLICT'
   | 'INVALID_TRANSITION'
+  | 'MODEL_CONFIGURATION_REQUIRED'
   | 'REVISION_CONFLICT';
 
 export class GameServiceError extends Error {
@@ -57,6 +58,7 @@ export class GameService {
   private readonly agentPolicyFactory: () => AgentPolicy;
   private readonly advancingGames = new Set<string>();
   private readonly backgroundAdvance: boolean;
+  private readonly areRequiredModelsConfigured: () => boolean;
 
   constructor(
     private readonly games: GameRepository,
@@ -67,12 +69,15 @@ export class GameService {
       clock: Clock;
       agentPolicyFactory?: () => AgentPolicy;
       backgroundAdvance?: boolean;
+      /** 通用真实 provider 的角色与复盘模型配置门禁；假模型与 Tokendance 默认放行。 */
+      areRequiredModelsConfigured?: () => boolean;
       /** 正常终局后回调（用于触发赛后复盘异步生成）。幂等，失败不得影响主流程。 */
       onGameFinished?: (gameId: string) => void;
     },
   ) {
     this.agentPolicyFactory = dependencies.agentPolicyFactory ?? (() => new FakeAgentPolicy());
     this.backgroundAdvance = dependencies.backgroundAdvance ?? false;
+    this.areRequiredModelsConfigured = dependencies.areRequiredModelsConfigured ?? (() => true);
   }
 
   createGame(command: CreateGameCommand): HumanGameView {
@@ -126,6 +131,9 @@ export class GameService {
     const current = this.games.findSnapshot(command.gameId);
     if (!current) {
       throw new GameServiceError('GAME_NOT_FOUND');
+    }
+    if (!this.areRequiredModelsConfigured()) {
+      throw new GameServiceError('MODEL_CONFIGURATION_REQUIRED');
     }
 
     try {

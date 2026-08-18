@@ -9,7 +9,7 @@
 | 产品完整性 | 创建、准备、描述、秘密投票、统一揭票、平票辩解、重投、淘汰、观战、终局、复盘和 Markdown 导出 | `tests/e2e/`、`ReviewScreen.test.tsx`、`review-markdown.test.ts` |
 | Multi-Agent 设计 | 独立 Agent 输入投影、策略接口、投票并行预取、顺序提交、独立复盘 Agent | `agent-input-projector.ts`、`game-service.ts`、`review-agent-policy.ts` |
 | 信息边界 | Agent/REST/SSE/DOM 五通道字段不存在断言，终局前无阵营、他人词牌、私有信念或未揭票目标 | `agent-runtime.test.ts`、`game-stream.test.ts`、`views.test.ts`、E2E |
-| 系统稳健性 | strict Schema、格式修复、内容重生成、重试分类、revision 防旧写、事务回滚、恢复、幂等 | `tokendance-agent-policy.test.ts`、`game-agent-recovery.test.ts`、`game-repository.test.ts`、`game-recovery.test.ts` |
+| 系统稳健性 | strict Schema、格式修复、内容重生成、重试分类、revision 防旧写、事务回滚、恢复、幂等、开局前配置门禁 | `tokendance-agent-policy.test.ts`、`provider-runtime.test.ts`、`game-agent-recovery.test.ts`、`game-repository.test.ts`、`game-recovery.test.ts` |
 | Agent 代码理解与验证 | TASK → 规格 → 实现 → 单元/集成/E2E/浏览器 → 完成记录；默认假模型与付费真实模型验收分离 | `docs/tasks/`、`docs/spec/`、`PROJECT_LOG.md`、`tests/live/` |
 
 以上路径均相对于仓库根目录；详细测试矩阵见 [TESTING.md](TESTING.md)。
@@ -28,6 +28,8 @@
 这些门禁强制 `AGENT_PROVIDER=fake`，使用临时 SQLite 和确定性随机序列；不读取真实 Key、不联网、不产生模型费用。原始完成记录见 [PROJECT_LOG.md](../history/PROJECT_LOG.md) 中“统一 Agent 校验与自动恢复”。
 
 2026-08-17 首页调整后的 Web 回归为 52/52，并通过生产构建、1280×720 可见浏览器交互与控制台检查。2026-08-17 复盘提示词调整后的纯测试为 7/7，并通过 Server typecheck/build、全仓 lint 和差异检查。
+
+2026-08-18 通用中转站定向验证覆盖 Shared 契约、Provider 解析、模型档案服务、开局门禁、厂商推理参数关闭和 Web 手填交互：纯 Server 18/18、Shared 2/2、Web 5/5 通过，三 workspace typecheck、Server/Web build、live 脚本独立 TS 检查和全仓 lint 通过。SQLite 开局路由门禁测试已加入 `server.test.ts`；本机 Node 24 与现有 Node 22 `better-sqlite3` ABI 不匹配时不把该项冒充为本地通过。
 
 ## 3. 真实模型策略级验收
 

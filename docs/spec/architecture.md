@@ -1,7 +1,7 @@
 # 系统架构规格
 
 - 状态：首个里程碑已实现基线
-- 适用范围：当前基础玩法、Fake/Tokendance Agent、模型档案，以及异步复盘服务端基础设施；异步总结 Web 闭环与历史管理待完成
+- 适用范围：当前基础玩法、Fake/Tokendance/通用 OpenAI 兼容 Agent、模型档案，以及异步复盘闭环；跨局历史管理待完成
 
 ## 1. 目标
 
@@ -113,7 +113,7 @@ Application 取得当前行动锁
 - 首版不提供账户、登录、局域网访问或多用户并发控制。
 - 浏览器可访问的配置只能包含非敏感显示信息（含可选的 model ID，DEC-085）。
 - 中转站基础地址、认证密钥只能由服务端环境变量读取，绝不下发浏览器或落库。角色/复盘 model ID 由服务端权威持有，其中参赛角色 model ID 可通过模型档案界面选择并持久化到 `agent_role_models`。
-- Provider 由 `AGENT_PROVIDER=fake|tokendance` 切换（默认 `fake`）；仅当为 `tokendance` 且 `TOKENDANCE_BASE_URL`、`TOKENDANCE_API_KEY` 均非空时才实例化真实策略，否则一律假模型。真实变量清单见 `agent-runtime.md` 第 11 节。
+- Provider 由 `AGENT_PROVIDER=fake|tokendance|openai-compatible` 切换（默认 `fake`）；所选真实 Provider 的 Base URL 与 API Key 均非空时才实例化真实策略，否则一律假模型。Tokendance 保持内置 model 回退兼容；通用模式不设默认 model，三角色 model 由模型档案显式保存，评测 model 由服务端 env 显式配置，缺任一项时开局前拒绝。真实变量清单见 `agent-runtime.md` 第 11 节。
 - 仓库提供不含真实值的根 `.env.example`；真实 `.env`（gitignored）由负责人自填，真实配置不得进入 Git、SQLite、日志、SSE、复盘或截图。
 
 ## 7. 根脚本契约

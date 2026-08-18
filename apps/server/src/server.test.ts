@@ -206,4 +206,45 @@ describe('对局准备 API', () => {
     await server.close();
     environment.cleanup();
   });
+
+  it('通用中转站模型未配齐时拒绝开始游戏并返回明确错误', async () => {
+    const environment = createTestEnvironment();
+    const server = buildServer({
+      ...environment.dependencies,
+      areRequiredModelsConfigured: () => false,
+    });
+    const createResponse = await server.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: {
+        commandId: 'create-model-guard',
+        human: { displayName: '玩家', silhouette: 'silhouette_a' },
+        difficulty: 'easy',
+      },
+    });
+    const view = (createResponse.json() as {
+      data: { gameId: string; revision: number; human: { playerId: string } };
+    }).data;
+
+    const response = await server.inject({
+      method: 'POST',
+      url: `/api/games/${view.gameId}/start`,
+      payload: {
+        commandId: 'start-model-guard',
+        actorId: view.human.playerId,
+        expectedRevision: view.revision,
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: 'MODEL_CONFIGURATION_REQUIRED',
+        message: expect.stringContaining('复盘评价 model ID'),
+      },
+    });
+
+    await server.close();
+    environment.cleanup();
+  });
 });

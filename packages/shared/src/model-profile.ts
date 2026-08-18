@@ -8,7 +8,7 @@ import { agentRoleIdSchema } from './agent-roles.js';
  * Base URL、API Key、请求头与完整模型响应绝不进入此投影。
  */
 
-export const providerModeSchema = z.enum(['fake', 'tokendance']);
+export const providerModeSchema = z.enum(['fake', 'tokendance', 'openai-compatible']);
 
 export const modelProfileSchema = z
   .object({
@@ -24,6 +24,7 @@ export const modelProfileListSchema = z
   .object({
     providerMode: providerModeSchema,
     providerConfigured: z.boolean(),
+    reviewModelConfigured: z.boolean(),
     editable: z.boolean(),
     profiles: z.array(modelProfileSchema),
   })

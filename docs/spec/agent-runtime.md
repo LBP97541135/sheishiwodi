@@ -1,7 +1,7 @@
 # Agent 运行时规格
 
-- 状态：假模型运行时已实现；真实模型（Tokendance 中转）与错误兜底已实现
-- 适用范围：`FakeAgentPolicy` 与统一中转 `TokendanceAgentPolicy`（由 `AGENT_PROVIDER` 切换）
+- 状态：假模型、Tokendance 与通用 OpenAI 兼容中转运行时及错误兜底已实现
+- 适用范围：`FakeAgentPolicy` 与 OpenAI Chat Completions 兼容策略（由 `AGENT_PROVIDER` 切换）
 
 ## 1. 目标
 
@@ -42,7 +42,7 @@ GameService.advanceUntilHumanOrStop（已实现）
 
 同一进程内 `advancingGames` 去重保证同一对局的推进循环不会并发重入；后台与同步两条路径共用同一 `runAdvanceLoop`，行为一致，仅返回时机不同。
 
-E2E 通过 `playwright.config.ts` 的服务端 `webServer.env` 预置 `AGENT_PROVIDER=fake` 与空 `TOKENDANCE_*`，强制走 `FakeAgentPolicy`：`main.ts` 的 `loadDotEnv()` 对"已存在的环境变量"不覆盖，故即便本机 `.env` 配了 `tokendance`+真实 Key，E2E 仍绝不联网、绝不读 Key、绝不消耗付费额度。`helpers.ts` 的轮询循环改用挂钟截止时间兜底，避免把后台推进期间"当前是 AI 行动者"的自旋等待计入固定步数预算而误判超时。
+E2E 通过 `playwright.config.ts` 的服务端 `webServer.env` 预置 `AGENT_PROVIDER=fake` 与空 `TOKENDANCE_*`，强制走 `FakeAgentPolicy`：`main.ts` 的 `loadDotEnv()` 对"已存在的环境变量"不覆盖，故即便本机 `.env` 配了任一真实 Provider 与 Key，E2E 仍绝不联网、绝不读 Key、绝不消耗付费额度。`helpers.ts` 的轮询循环改用挂钟截止时间兜底，避免把后台推进期间"当前是 AI 行动者"的自旋等待计入固定步数预算而误判超时。
 
 ## 3. 角色配置
 
@@ -239,30 +239,42 @@ VoteActionOutput
 
 默认开发、单元、集成和端到端测试只使用假模型。
 
-## 11. 真实模型接入与配置（Tokendance 中转）
+## 11. 真实模型接入与配置
 
-真实模型通过统一 OpenAI 兼容中转站接入，所有参赛角色与复盘 Agent 共用同一基础地址、认证密钥、客户端、超时和错误映射，仅通过角色 `modelId` 区分。参见 DEC-085。
+真实模型通过 OpenAI Chat Completions 兼容中转站接入。所有参赛角色与复盘 Agent 共用所选 Provider 的基础地址、认证密钥、客户端、超时和错误映射，仅通过 `modelId` 区分。`provider-runtime.ts` 集中解析运行环境，避免 Server 装配层散落厂商分支。参见 DEC-085、DEC-089。
 
 服务端环境变量（只在服务端 env，绝不进入浏览器、数据库、日志、仓库或复盘）：
 
 ```text
-AGENT_PROVIDER=fake|tokendance   # 默认 fake；仅当为 tokendance 且 Base URL、API Key 均非空时才实例化真实策略
+AGENT_PROVIDER=fake|tokendance|openai-compatible
 TOKENDANCE_BASE_URL=https://tokendance.space/gateway/v1
 TOKENDANCE_API_KEY=              # 由负责人自填于 gitignored .env，禁止写入仓库
 TOKENDANCE_DEFAULT_MODEL=        # 角色缺持久化 modelId 时的回退默认
+TOKENDANCE_REVIEW_MODEL=         # 可回退 DEFAULT_MODEL / 兼容常量
 TOKENDANCE_TIMEOUT_MS=           # 单次模型请求超时（毫秒），默认 60000
 TOKENDANCE_MAX_RETRIES=          # 系统级失败最大重试次数，默认 2
 TOKENDANCE_RETRY_DELAY_MS=       # 每次重试前等待毫秒，默认 800
 TOKENDANCE_EXTRA_BODY=           # 通用兜底：其他模型的附加请求参数（JSON），会被家族专用关推理参数覆盖
+
+OPENAI_COMPATIBLE_BASE_URL=      # 通用中转站，必填
+OPENAI_COMPATIBLE_API_KEY=       # 通用中转站，必填
+OPENAI_COMPATIBLE_REVIEW_MODEL=  # 通用模式评测 model，必填且无回退
+OPENAI_COMPATIBLE_TIMEOUT_MS=    # 默认 60000
+OPENAI_COMPATIBLE_MAX_RETRIES=   # 默认 2
+OPENAI_COMPATIBLE_RETRY_DELAY_MS=# 默认 800
+OPENAI_COMPATIBLE_EXTRA_BODY=    # 中转站自定义请求参数 JSON
 ```
 
 - Provider 开关默认 `fake`；`dev`、`test`、`test:e2e` 恒为假模型，绝不联网、不读 Key。仅 `pnpm test:live` 显式触发真实调用。
 - 可下发到浏览器并持久化的只有 model ID；Base URL、API Key、请求头、完整模型响应绝不下发或落库（继承 DEC-082/DEC-052）。
 - 角色 `modelId` 持久化于 server-only 表 `agent_role_models`；存在活动局（`in_progress` / `awaiting_spectator`）时拒绝改配置。
+- Tokendance 保持共享角色默认 ID、`TOKENDANCE_DEFAULT_MODEL` 与复盘默认的向后兼容。
+- `openai-compatible` 不读取任何内置或统一默认 model：三角色必须在模型档案手填或从 `/models` 建议中选择，复盘必须设置 `OPENAI_COMPATIBLE_REVIEW_MODEL`。三角色或复盘任一未配齐时，`StartGame` 返回 `MODEL_CONFIGURATION_REQUIRED`，不发起模型调用。
+- 通用模式不自动注入按模型名推断的厂商推理参数；如中转站需要额外字段，由负责人通过 `OPENAI_COMPATIBLE_EXTRA_BODY` 显式提供。
 - 错误兜底：一次格式修复（DEC-034）→ 有限系统重试 → `system_terminated`（DEC-072），见第 9 节。
 - **关闭推理链（加速直出）**：`agents/model-reasoning.ts` 的 `reasoningDisableBodyFor(modelId)` 按模型家族计算关推理参数，`TokendanceAgentPolicy` 每次调用作为 `extraBody` 透传，优先级高于 `TOKENDANCE_EXTRA_BODY`。经真实中转站实测（2026-08-17）：`qwen*`→`{enable_thinking:false}`（约 48s→7s）；`seed*`/`doubao*`→`{thinking:{type:'disabled'}}`（约 168s→7.4s）；`deepseek*`→`{thinking:{type:'disabled'}}`（约 12s→1.5s，注意 deepseek 会忽略 `enable_thinking`）。其他模型不附加任何参数、行为不变。这些参数只是模型请求体字段，绝不含 Base URL / API Key / 请求头。默认超时从 20000 提高到 60000，避免推理延迟触发“超时→重试→多次调用”风暴。
 
-复盘 Agent 使用独立 `modelId`、提示模板和完整终局上下文，但复用同一连接。它只能在终局事实持久化后运行，其输出与确定性事实分开保存和展示。本规格暂不固定异步队列表结构。
+复盘 Agent 使用独立 `modelId`、提示模板和完整终局上下文，但复用所选 Provider 的连接。它只能在终局事实持久化后运行，其输出与确定性事实分开保存和展示。
 
 复盘评价必须结论先行，并按“判断更新、行动一致性、实际影响”的优先级分析。评价只能使用行动当时可见的信息，不能根据最终胜负倒推表现；单个 AI 的简评控制在 60～100 个中文字符，包含最强事实依据和一条具体改进，关键节点最多 2 条；总体点评控制在 100～160 个中文字符，只提炼胜负手、关键转折和最大反事实。1～5 分使用统一行为锚点，不按所属阵营最终输赢直接评分。禁止复述规则、身份词牌或完整流程，禁止空泛表扬、编造事实和长段照抄私有信念。
 

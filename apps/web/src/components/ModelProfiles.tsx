@@ -57,7 +57,7 @@ export function ModelProfiles({ onBack }: ModelProfilesProps) {
   const handleSave = async (profile: ModelProfile) => {
     const modelId = (drafts[profile.roleId] ?? '').trim();
     if (!modelId) {
-      setError('请选择一个 model 后再保存');
+      setError('请填写一个 model ID 后再保存');
       return;
     }
     setSavingRole(profile.roleId);
@@ -119,11 +119,20 @@ export function ModelProfiles({ onBack }: ModelProfilesProps) {
 
       <p className="lede" data-testid="provider-mode">
         {providerConfigured
-          ? '真实模型已接入（tokendance）。可为每位 AI 选择并保存 model ID。'
+          ? providerMode === 'openai-compatible'
+            ? '通用 OpenAI 兼容中转站已接入。请为三位 AI 手动填写或选择 model ID。'
+            : '真实模型已接入（tokendance）。可为每位 AI 填写或选择 model ID。'
           : providerMode === 'tokendance'
             ? '已选择 tokendance，但服务端尚未配置 Base URL 或 API Key，暂用内置假模型。'
-            : '当前使用内置假模型（fake），无需联网。可切换服务端配置以接入真实模型。'}
+            : providerMode === 'openai-compatible'
+              ? '已选择通用 OpenAI 兼容中转站，但服务端尚未配置 Base URL 或 API Key，暂用内置假模型。'
+              : '当前使用内置假模型（fake），无需联网。可切换服务端配置以接入真实模型。'}
       </p>
+      {providerMode === 'openai-compatible' && providerConfigured && !list.reviewModelConfigured && (
+        <p className="form-hint" role="status">
+          评测模型未配置。请在服务端设置 OPENAI_COMPATIBLE_REVIEW_MODEL，配齐前不能开始游戏。
+        </p>
+      )}
       {!editable && providerConfigured && (
         <p className="form-hint" role="status">
           对局进行中，暂不能修改模型配置；请在对局结束后再来调整。
@@ -144,6 +153,7 @@ export function ModelProfiles({ onBack }: ModelProfilesProps) {
         {list.profiles.map((profile) => {
           const draft = drafts[profile.roleId] ?? '';
           const options = modelOptions(models, profile.selectedModelId, draft);
+          const suggestionsId = `model-options-${profile.roleId}`;
           return (
             <article
               key={profile.roleId}
@@ -166,21 +176,26 @@ export function ModelProfiles({ onBack }: ModelProfilesProps) {
               <p className="model-card__prompt">{profile.personalityPrompt}</p>
 
               <label className="model-card__field">
-                <span>模型</span>
-                <select
+                <span>模型 ID</span>
+                <input
+                  type="text"
                   value={draft}
                   disabled={!editable}
+                  list={suggestionsId}
+                  maxLength={128}
+                  autoComplete="off"
+                  placeholder="手动填写或选择 model ID"
                   onChange={(event) =>
                     setDrafts((current) => ({ ...current, [profile.roleId]: event.target.value }))
                   }
-                >
-                  <option value="">未选择</option>
+                />
+                <datalist id={suggestionsId}>
                   {options.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
                   ))}
-                </select>
+                </datalist>
               </label>
 
               <p className="model-card__current">

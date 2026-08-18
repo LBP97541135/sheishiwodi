@@ -17,6 +17,7 @@
 - `TASK-066`：已完成；新对局首页收口为“身份配置在标题、玩法入口居中、难度独立下置”的信息层级。
 - `TASK-067`：已完成；AI 复盘评价提示词已精炼为证据优先的短评价，并建立统一评分口径。
 - `TASK-068`：已完成；README、Multi-Agent harness 说明与可提交的脱敏验收证据已按面试交付标准补强。
+- `TASK-069`：已完成；通用 OpenAI 兼容中转站不设默认 model，三角色与评测 model 显式配置、开局门禁和独立联机验收已收口。
 - 首个里程碑 7 个切片全部通过默认测试、E2E、构建、类型、静态检查和文档门禁。
 
 ## 验收依据缩写
@@ -176,3 +177,4 @@
 | TASK-066 收口新对局首页信息层级 | 已完成 | 标题“谁”作为玩家身份入口并在弹层中原子编辑名称与形象；中央突出经典模式、弱化猜词模式，难度独立下置；补齐键盘和焦点行为 | SPEC frontend §4.1、TEST §2.5 | `NewGameForm` 与 `App.test.tsx` 已覆盖身份保存/取消、模式入口和创建参数；Web 源码测试 52/52、生产构建、1280×720 可见浏览器交互、控制台检查和 `git diff --check` 通过；完成记录见 `PROJECT_LOG` 2026-08-17 条目 |
 | TASK-067 精炼 AI 复盘评价提示词 | 已完成 | 评价结论先行，以当时可见证据判断推理、发言与投票；每名 AI 只保留核心依据、关键节点和一条具体改进；总体点评只提炼胜负手、关键转折与最大反事实；建立 1～5 分统一锚点，避免按最终输赢倒推表现 | REQUIREMENTS 110～115、SPEC agent-runtime、TEST | `review-agent-policy.ts` 已压缩输出预算并加入证据、反结果论和评分锚点；新增提示词契约测试。复盘相关纯测试 7/7、Server typecheck/build、全仓 lint 与 `git diff --check` 通过；完整 Server SQLite 回归受本机 Node 24 / better-sqlite3 Node 22 ABI 不匹配阻塞 |
 | TASK-068 补强 GitHub 面试交付说明 | 已完成 | README 提供从克隆到运行、真实模型显式启用、核心架构、Multi-Agent harness、信息隔离、AI 辅助开发治理、验收路径与已知问题；生成可提交的脱敏真实模型证据索引；修正文档对 AI 复盘闭环的过期描述 | 负责人本轮交付要求、REQUIREMENTS 交付内容与评价重点 | README 已重构；新增 `docs/acceptance/EVIDENCE.md` 和复盘模型 env 示例；验收/规格/CLAUDE 当前状态已同步。本地链接、敏感值模式、过期描述、Git 跟踪和 `git diff --check` 均通过 |
+| TASK-069 接入通用 OpenAI 兼容中转站 | 已完成 | 新增 `openai-compatible` provider 与通用服务端 env；Tokendance 旧配置保持兼容；通用模式不使用内置/默认 model ID，三个角色必须在模型档案手填或选择，复盘评价模型必须由 env 显式配置；未配齐时禁止开始游戏并返回清晰提示 | DEC-089、REQUIREMENTS 模型接入、SPEC architecture/agent-runtime/frontend/API | `provider-runtime` 集中解析双真实 Provider；模型档案支持手填和 `/models` 建议；开局门禁、通用 live smoke/policy/review 配置已实现。定向 Server 18/18、Web 5/5、Shared 2/2，三 workspace typecheck、Server/Web build、live TS 检查与 lint 通过；SQLite 路由回归受本机 Node ABI 不匹配阻塞，完成记录见 PROJECT_LOG |

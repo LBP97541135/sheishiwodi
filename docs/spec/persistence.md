@@ -121,7 +121,7 @@ SQLite 文件是本地运行状态，不是词库或需求的 Git 事实源。
 - `modelId`。
 - `updatedAt`。
 
-该表不保存 Base URL 或 API Key（继承 DEC-082/DEC-052）。仅保存可下发的 model ID。假模型流程不依赖该表；真实模型（Tokendance 中转，`AGENT_PROVIDER=tokendance`）接入时使用同一个中转站，仅按角色读取 model ID。存在活动局（`in_progress` / `awaiting_spectator`）时拒绝改写该表（见 DEC-085 与 `api-and-events.md`）。
+该表不保存 Base URL 或 API Key（继承 DEC-082/DEC-052），仅保存可下发的角色 model ID。假模型流程不依赖该表；Tokendance 可在记录缺失时使用兼容默认值，`openai-compatible` 必须存在三个角色的显式记录且不得回退内置 ID。评测 model 不进入本表，只存在服务端 env；存在活动局（`in_progress` / `awaiting_spectator`）时拒绝改写角色配置（见 DEC-085、DEC-089 与 `api-and-events.md`）。
 
 ### 2.10 `review_summaries`
 

@@ -6,9 +6,14 @@ import type { ChatMessage, TokendanceClient } from './tokendance-client.js';
 
 class CapturingClient {
   calls: ChatMessage[][] = [];
+  extraBodies: Array<Record<string, unknown> | undefined> = [];
 
-  async chatCompletion(params: { messages: ChatMessage[] }): Promise<string> {
+  async chatCompletion(params: {
+    messages: ChatMessage[];
+    extraBody?: Record<string, unknown>;
+  }): Promise<string> {
     this.calls.push(params.messages);
+    this.extraBodies.push(params.extraBody);
     return JSON.stringify({
       perAgent: ['agent-1', 'agent-2', 'agent-3'].map((playerId) => ({
         playerId,
@@ -65,5 +70,17 @@ describe('TokendanceReviewPolicy prompt', () => {
     expect(system).toContain('5=持续准确且行动决定胜负');
     expect(system).not.toContain('600字内');
     expect(system).not.toContain('2000字内');
+  });
+
+  it('通用兼容 provider 可关闭评测模型的厂商推理参数推断', async () => {
+    const client = new CapturingClient();
+    const policy = new TokendanceReviewPolicy({
+      client: client as unknown as TokendanceClient,
+      modelId: 'qwen-compatible-review',
+      reasoningHints: false,
+    });
+
+    await policy.generate(input);
+    expect(client.extraBodies[0]).toEqual({});
   });
 });
