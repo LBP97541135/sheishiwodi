@@ -1088,6 +1088,17 @@ legend {
     height: 140px;
   }
 
+  .seats--game .seat {
+    padding: 8px 3px;
+  }
+
+  .seats--game .seat > strong {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 0.82rem;
+    line-height: 1.15;
+  }
+
   .finale-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

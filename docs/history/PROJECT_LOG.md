@@ -1368,3 +1368,24 @@
 - 淘汰玩家不参与后续发言。
 
 本次属于规则确认，不分配产品版本号。
+## 2026-08-19 完成一次性全栈真实模型验收（TASK-057/071/072）
+
+- 目标：在不修改系统 Node 24 或工作区依赖的前提下，先完成零付费门禁，再使用真实 API Key 从可见浏览器验证 Web、HTTP、SSE、三 Agent、SQLite、真实复盘和导出全链路。
+- 日期澄清：2026-08-18 仅完成准备并在执行中阻塞，没有形成验收结论；以下门禁、付费对局、复盘、恢复与导出结果均于 2026-08-19 完成。
+- 环境：建立临时 Node `v22.23.2`、独立 pnpm 依赖和临时 SQLite；Node 压缩包 SHA-256 与官方清单一致。真实凭据只从 gitignored `.env` 注入临时 Server 进程，未复制或输出。
+- 门禁修正：全量测试发现 `MODEL_CONFIGURATION_REQUIRED` 未进入共享错误 Schema，补齐后恢复结构化 409（TASK-071）；Playwright 助手仍定位 TASK-066 已移除的首页姓名输入框，改为通过身份弹窗填写并保存（TASK-072）。
+- 非付费验证：默认测试 186/186（Shared 50、Server 83、Web 53）、Playwright 10/10（normal 4、spectator 4、tie 2）、typecheck、lint、build 全部通过。
+- 真实验证：smoke 通过后，在模型档案显式保存 `deepseek-v4-flash-0731`、`seed-2.1-turbo`、`qwen3.7-plus`，复盘显式使用 `deepseek-v4-flash`。唯一一局在 440 秒到达 `finished/ended`，没有放弃或系统终止。
+- Harness 表现：26 个最终 AI 行动入库；9 次额外请求在预算内自动恢复（4 次格式修复、5 次内容重生成）。加上 smoke 与真实复盘共 37 次真实请求，未触发 40 次/20 分钟停止线。
+- 持久化与 UI：SQLite 记录 4 名玩家、110 条事件、91 帧公开流、38 个幂等命令和 26 条私有 Agent 行动；复盘为 `done` 且错误码为空。浏览器刷新及完整 Server 重启后终局和复盘均恢复；Markdown 导出 200，浏览器控制台零 warning/error。
+- 证据：新增 `docs/acceptance/FULLSTACK_LIVE_2026-08-19.md` 与两张人工复核截图；不保存 Key、Base URL、请求头、完整响应、词牌、私有信念、临时数据库或一次性运行时。
+- 清理：关闭临时 Web/Server 与浏览器验收页，停止本次启动的 Docker Desktop；只删除两个经绝对路径校验的 `sheishiwodi-acceptance-*` 临时目录，未修改既有容器或工作区依赖。
+
+## 2026-08-19 完成面试交付前最终零付费回归（TASK-073）
+
+- 使用工作区 Node 22 精确复跑 Shared 50、Server 83、Web 53，共 186/186 项默认测试；typecheck、ESLint 和三 workspace 生产构建通过。
+- normal 4、spectator 4、tie 2，共 10/10 项 Desktop Chrome 与 Pixel 5 E2E 在最终工作区状态下通过；fake provider 强制隔离，不读取真实 Key、不产生费用。
+- 测试 harness 修正：Playwright WebServer 直接调用 `apps/web/node_modules/vite/bin/vite.js` 并显式使用 `apps/web` root，避免嵌套 pnpm 的依赖状态检查阻止验收启动。
+- 可视回归发现窄屏四席位下 `DeepSeek` 名称换行；调整 720px 以下席位水平内边距和名字号，并在 normal E2E 中增加名称边界断言。
+- Chromium 复查 1440px 首页/首轮对局与 393px 移动对局：页面宽度 393/393、四张图片解码完成、名称全部单行且位于卡片内、控制台 0 warning/error。
+- 可见浏览器插件受本机受信任代码路径策略拦截，按测试规范回退到仓库 Chromium 截图 smoke；项目服务健康、自动化结果与截图检查均独立通过。临时 fake SQLite 和服务日志已删除，QA 截图保留在系统临时目录，不进入仓库。

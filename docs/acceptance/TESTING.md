@@ -186,6 +186,8 @@ Playwright 每个模式使用独立临时 SQLite、确定性随机序列和真�
 
 2026-08-17 首页信息层级收口回归：Web 源码测试 52/52、生产构建和 `git diff --check` 通过；在 1280×720 可见浏览器中验证身份弹层保存/取消、焦点返回、经典/猜词模式层级和难度下置，控制台无 warning/error，页面无 Vite 错误遮罩。
 
+2026-08-19 最终零付费回归：默认测试 186/186、三 workspace typecheck、全仓 lint/build 与 Playwright 10/10 通过。E2E 的 Web 服务直接调用仓库 Vite CLI，避免嵌套包管理器在启动前重验依赖；normal 流程新增角色名必须位于席位卡片边界内的断言。另以 1440px 与 393px Chromium 截图检查首页、猜词模式提示和首轮对局；移动端 `scrollWidth === innerWidth === 393`、4 张角色图加载完成、控制台无 warning/error。全程强制 fake provider，不调用真实 API。
+
 ## 6. 首个里程碑验收清单
 
 ### 功能
@@ -249,9 +251,17 @@ Tokendance 沿用项目角色默认 ID；通用 Provider 必须显式配置 `OPE
 
 成功后生成脱敏 Markdown 报告 `docs/acceptance/reports/live-<时间>.md`，记录时间、模型标识、结构校验、信息隔离断言、耗时、重试次数（及整局终局状态）。报告落盘前自检渲染串，命中 baseUrl/apiKey/`Bearer`/任一词牌哨兵即中止不写并非零退出。报告不得包含密钥、敏感中转地址、请求头、违规原文或无必要的完整响应。
 
-复盘模型已具备独立真实调用入口 `pnpm test:live:review`：使用终局事实夹具调用 `TokendanceReviewPolicy`，校验 `reviewGenerationSchema`、全部 AI 的 `playerId` 覆盖和输出敏感哨兵。Web 已轮询并展示 `ReviewSummary`，支持失败后重新生成；评价与确定性事实分区。当前尚无经人工确认可提交的真实复盘模型运行结果，因此交付证据只声明入口和默认自动化已覆盖，不声明付费复盘调用已经通过。
+复盘模型已具备独立真实调用入口 `pnpm test:live:review`：使用终局事实夹具调用 `TokendanceReviewPolicy`，校验 `reviewGenerationSchema`、全部 AI 的 `playerId` 覆盖和输出敏感哨兵。Web 已轮询并展示 `ReviewSummary`，支持失败后重新生成；评价与确定性事实分区。2026-08-19 一次性全栈验收已额外确认真实复盘生成、持久化、Web 展示、浏览器刷新、Server 重启恢复与 Markdown 导出。
 
 `test:live` 及其子命令不得进入默认 CI、普通开发启动、`pnpm test` 或 `pnpm test:e2e`。默认路径由 `apps/server/src/agents/no-live-in-default.test.ts` 断言零出网、绝不实例化真实策略。负责人自填真实 Key 于 gitignored `.env` 后方可执行付费联网验收。
+
+### 7.5 一次性全栈真实验收
+
+为关闭 TASK-057，允许在负责人明确授权后执行一次不进入长期自动化的全栈真实验收。验收先在完全临时的 Node 22、独立依赖和 SQLite 中通过默认零出网门禁，再从可见浏览器经 Web、HTTP、SSE、服务端编排、真实参赛 Agent 和 SQLite 完成一局正常终局，并验证真实复盘 Agent 的异步持久化、Web 展示、刷新恢复和 Markdown 导出。
+
+本次只使用一个已配置 Tokendance 中转站；真实 API Key 仅从 gitignored `.env` 注入临时服务端进程，报告只注明使用真实凭据，不保存 Key、Base URL、请求头、完整响应、词牌或私有信念。三个参赛 model ID 通过模型档案显式保存，复盘 model ID 由临时进程显式设置。单次授权最多启动一局，设置 20 分钟和 40 次真实请求停止线；失败如实记录且不自动重开。正式仓库只保留人工复核后的脱敏报告、进行中与终局截图、结构化验证摘要，不保留临时驱动器、数据库或隔离运行环境。
+
+2026-08-18 的执行在准备后阻塞，未形成验收结论。2026-08-19 重新完成全部验证：默认测试 186/186、E2E 10/10、typecheck/lint/build 通过；唯一一局在 440 秒到达 `finished/ended`，总计 37 次真实生成请求。真实复盘为 `done`，刷新与 Server 重启恢复、Markdown 导出和浏览器控制台检查均通过。脱敏证据见 [FULLSTACK_LIVE_2026-08-19.md](FULLSTACK_LIVE_2026-08-19.md)。
 
 ## 8. 来源
 

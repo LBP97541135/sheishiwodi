@@ -105,3 +105,5 @@
 | CMD-099 | 2026-08-17（具体时间不可用） | 将复盘评价提示词优化与最终面试交付文档提交并推送到 `master`。 | 已完成 | Git `master`、TASK-067、TASK-068 |
 | CMD-100 | 2026-08-18（具体时间不可用） | 优化真实模型接入以方便使用其他中转站；通用中转站不设置默认 model，三个参赛模型和评测模型都必须手动配置。 | 已完成 | TASK-069、DEC-089、`provider-runtime.ts`、`.env.example`、README |
 | CMD-101 | 2026-08-18（具体时间不可用） | 不采用不可靠的模型家族 auto；为通用中转站补充按精确 model ID 配置请求参数的能力，并完善 `.env.example` 注释。 | 已完成 | TASK-070、DEC-090、`OPENAI_COMPATIBLE_MODEL_EXTRA_BODY`、`.env.example` |
+| CMD-102 | 2026-08-18 20:24:14 +08:00 | 先进行非付费验证，再使用真实 API Key 执行一次性全栈付费验收；采用临时 Node 22 隔离环境，由助手控制浏览器完成一局，不建设长期真实模型自动化脚本，并保留脱敏报告、两张截图和结构化摘要。 | 2026-08-19 已完成；2026-08-18 执行阻塞，未形成验收结论 | TASK-057、DEC-091、`docs/acceptance/FULLSTACK_LIVE_2026-08-19.md` |
+| CMD-103 | 2026-08-19（具体时间不可用） | 继续执行测试，尽可能在次日验收前完成项目回归与收口。 | 已完成 | TASK-073、`docs/acceptance/EVIDENCE.md`、`docs/history/PROJECT_LOG.md` |

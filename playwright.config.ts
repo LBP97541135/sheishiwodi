@@ -13,6 +13,7 @@ const randomSequence = Array.from({ length: 40 }, () => [0, undercoverRandom, 0,
 const runId = process.env['E2E_RUN_ID'] ?? `${process.pid}`;
 const databasePath = `apps/server/.local/e2e-${mode}-${runId}.db`;
 const tsxCli = 'node_modules/.pnpm/tsx@4.19.2/node_modules/tsx/dist/cli.mjs';
+const viteCli = 'apps/web/node_modules/vite/bin/vite.js';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -40,7 +41,7 @@ export default defineConfig({
       },
     },
     {
-      command: 'corepack pnpm --filter @sheishiwodi/web dev --host 127.0.0.1',
+      command: `"${process.execPath}" ${viteCli} apps/web --host 127.0.0.1`,
       url: 'http://127.0.0.1:9001',
       reuseExistingServer: false,
       timeout: 60_000,

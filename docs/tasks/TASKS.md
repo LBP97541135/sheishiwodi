@@ -5,7 +5,7 @@
 ## 状态总览
 
 - `TASK-000`～`TASK-056`：已完成。
-- `TASK-057`：进行中；策略级与纯状态机整局真实模型报告已产出，HTTP/SQLite 整局验证和最终收口尚未完成。
+- `TASK-057`：已完成；策略级、纯状态机整局及一次性 Web/HTTP/SSE/SQLite 真实对局与真实复盘验收均已产出脱敏证据。
 - `TASK-058`：已完成；规格索引、测试文档和 README 的实现状态已同步。
 - `TASK-059`：已完成；统一 Agent 校验、自动恢复与错误处理已实现并通过门禁。
 - `TASK-060`：已完成；人类回合操作区可达性与提交前反馈已收口。
@@ -19,6 +19,9 @@
 - `TASK-068`：已完成；README、Multi-Agent harness 说明与可提交的脱敏验收证据已按面试交付标准补强。
 - `TASK-069`：已完成；通用 OpenAI 兼容中转站不设默认 model，三角色与评测 model 显式配置、开局门禁和独立联机验收已收口。
 - `TASK-070`：已完成；通用中转站可按精确 model ID 为参赛与评测模型配置独立请求参数，不进行跨厂商 auto 猜测。
+- `TASK-071`：已完成；模型配置错误码已纳入共享 API Schema，结构化 409 与回归验证通过。
+- `TASK-072`：已完成；首页身份配置迁移后的 Playwright 助手已同步，10 项 E2E 全部通过。
+- `TASK-073`：已完成；面试交付前最终零付费回归通过，并修复 E2E 前端启动耦合与移动端席位名称溢出。
 - 首个里程碑 7 个切片全部通过默认测试、E2E、构建、类型、静态检查和文档门禁。
 
 ## 验收依据缩写
@@ -149,7 +152,7 @@
 
 | 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
 | --- | --- | --- | --- | --- |
-| TASK-057 分层真实模型验收与脱敏报告 | 进行中 | 在既有 `test:live` 冒烟之上增加①真实 `TokendanceAgentPolicy.act` × 3 角色 × describe/vote；②可选真实整局；③写前自检的脱敏 Markdown 报告；④默认/E2E 零出网守卫 | DEC-085、TEST §7、REQUIREMENTS 189–193 | 已产出编排器、隔离/报告工具、默认守卫与两份脱敏报告；第二份报告通过 6 次策略调用，并以纯 shared 状态机驱动一局到 `finished`。仍待在可用 `better-sqlite3` 环境完成 HTTP/SQLite 整局链、复核默认全门禁并最终关闭任务 |
+| TASK-057 分层真实模型验收与脱敏报告 | 已完成 | 在既有分层验证上补充一次性全栈真实验收：隔离 Node 22 先跑零出网门禁，再由可见浏览器通过 Web/HTTP/SSE/SQLite 完成一局真实参赛模型对局与真实复盘；只保留脱敏报告、两张截图和结构化摘要，不建设长期真实 E2E 脚本 | DEC-085、DEC-091、TEST §7、REQUIREMENTS 189–193 | 2026-08-19 临时 Node 22 门禁 186/186 默认测试、10/10 E2E、typecheck/lint/build 全绿；唯一一局 440 秒到 `finished/ended`，37/40 次真实请求。SQLite 为 110 事件、91 公开帧、26 AI 私有行动；真实复盘 `done`，Web 展示、刷新、Server 重启恢复和 Markdown 导出通过。2026-08-18 阻塞尝试不计入结果；证据见 `FULLSTACK_LIVE_2026-08-19.md` |
 
 ## 文档状态一致性
 
@@ -180,3 +183,6 @@
 | TASK-068 补强 GitHub 面试交付说明 | 已完成 | README 提供从克隆到运行、真实模型显式启用、核心架构、Multi-Agent harness、信息隔离、AI 辅助开发治理、验收路径与已知问题；生成可提交的脱敏真实模型证据索引；修正文档对 AI 复盘闭环的过期描述 | 负责人本轮交付要求、REQUIREMENTS 交付内容与评价重点 | README 已重构；新增 `docs/acceptance/EVIDENCE.md` 和复盘模型 env 示例；验收/规格/CLAUDE 当前状态已同步。本地链接、敏感值模式、过期描述、Git 跟踪和 `git diff --check` 均通过 |
 | TASK-069 接入通用 OpenAI 兼容中转站 | 已完成 | 新增 `openai-compatible` provider 与通用服务端 env；Tokendance 旧配置保持兼容；通用模式不使用内置/默认 model ID，三个角色必须在模型档案手填或选择，复盘评价模型必须由 env 显式配置；未配齐时禁止开始游戏并返回清晰提示 | DEC-089、REQUIREMENTS 模型接入、SPEC architecture/agent-runtime/frontend/API | `provider-runtime` 集中解析双真实 Provider；模型档案支持手填和 `/models` 建议；开局门禁、通用 live smoke/policy/review 配置已实现。定向 Server 18/18、Web 5/5、Shared 2/2，三 workspace typecheck、Server/Web build、live TS 检查与 lint 通过；SQLite 路由回归受本机 Node ABI 不匹配阻塞，完成记录见 PROJECT_LOG |
 | TASK-070 通用中转站按 model 配置请求参数 | 已完成 | 新增 `OPENAI_COMPATIBLE_MODEL_EXTRA_BODY` JSON 映射；键为精确 model ID，值为该模型单次 Chat Completions 附加参数；参赛与评测策略共用；未命中时不注入；保留全局 EXTRA_BODY | DEC-090、REQUIREMENTS 模型接入、SPEC agent-runtime | 运行时与 live smoke/policy/review/full 已共用精确映射；model 专属参数覆盖全局同名顶层字段，model/messages 最后强制写入。Server 定向测试 17/17、typecheck/build、live TS/语法检查、全仓 lint 与差异检查通过；完成记录见 PROJECT_LOG |
+| TASK-071 修复模型配置门禁错误响应 | 已完成 | 将 `MODEL_CONFIGURATION_REQUIRED` 纳入共享 API 错误码 Schema，确保通用中转站模型未配齐时返回结构化 409，而不是 Fastify 通用 Conflict；补共享 Schema 与既有路由回归 | TASK-057 非付费门禁、TASK-069、SPEC API | `apiErrorCodeSchema` 已补齐错误码与共享回归；Server 路由恢复结构化 409。全仓默认测试 186/186、typecheck、lint、build 通过 |
+| TASK-072 同步首页改版后的 E2E 助手 | 已完成 | 将创建对局助手由已移除的首页姓名输入框改为“谁”身份弹窗的可访问操作路径，并同步新对局返回断言；不改变产品交互 | TASK-057 非付费门禁、TASK-066、TEST E2E | 助手通过身份弹窗填写“玩家名称”并保存；normal 4、spectator 4、tie 2，共 10/10 项桌面/移动 E2E 通过 |
+| TASK-073 面试交付前最终回归 | 已完成 | 在 Node 22 下复跑默认测试、类型、lint、构建和三模式桌面/移动 E2E；以 Chromium 截图检查首页、占位入口、对局态、图片、移动端宽度和控制台；修复测试 harness 对嵌套 pnpm 的依赖与窄屏席位名称换行 | TEST、GitHub 面试交付要求 | 默认测试 186/186、typecheck/lint/build、E2E 10/10 通过；Playwright 改为直接调用仓库 Vite CLI；Pixel 5 等效 393px 视口宽度 393/393、图片 4/4 完整、席位名称边界断言通过、控制台 0 warning/error |

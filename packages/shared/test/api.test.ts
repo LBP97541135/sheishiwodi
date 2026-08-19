@@ -23,4 +23,15 @@ describe('API 信封', () => {
       }).success,
     ).toBe(true);
   });
+
+  it('接受模型配置未完成的结构化错误响应', () => {
+    const response = apiErrorResponseSchema.parse({
+      error: {
+        code: 'MODEL_CONFIGURATION_REQUIRED',
+        message: '请先配置参赛与复盘模型',
+      },
+    });
+
+    expect(response.error.code).toBe('MODEL_CONFIGURATION_REQUIRED');
+  });
 });
