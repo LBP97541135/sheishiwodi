@@ -105,4 +105,12 @@ CREATE TABLE IF NOT EXISTS model_attempts (
 );
 
 CREATE INDEX IF NOT EXISTS model_attempts_game_started
-ON model_attempts (game_id, started_at);
+  ON model_attempts (game_id, started_at);
+
+CREATE TABLE IF NOT EXISTS game_runtime_recovery (
+  game_id TEXT PRIMARY KEY REFERENCES games(game_id) ON DELETE CASCADE,
+  action_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  interrupted_at TEXT NOT NULL,
+  resolved_at TEXT
+);

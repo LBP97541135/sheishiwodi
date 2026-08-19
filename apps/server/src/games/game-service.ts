@@ -4,6 +4,7 @@ import {
   abandonGame as abandonGameMachine,
   continueSpectating as continueSpectatingMachine,
   createPreparingGame,
+  declineInterruptedGame,
   disqualifyPlayerForRuleViolation as disqualifyPlayerForRuleViolationMachine,
   projectHumanGameView,
   startPreparingGame,
@@ -23,6 +24,7 @@ import {
   type MachineTransition,
   type PublicTimelineItem,
   type RandomSource,
+  type ResolveInterruptedGameRequest,
   type SpeechActionOutput,
   type StartGameCommand,
   type SubmitDefenseCommand,
@@ -37,6 +39,7 @@ import { projectAgentTurnInput } from '../agents/agent-input-projector.js';
 import type { AgentPolicy } from '../agents/agent-policy.js';
 import { AgentSystemError } from '../agents/tokendance-agent-policy.js';
 import type { GameRepository, PublicStreamFrame } from './game-repository.js';
+import type { GameRecoveryRepository } from './game-recovery-repository.js';
 
 export type GameServiceErrorCode =
   | 'ACTIVE_GAME_EXISTS'
@@ -73,7 +76,10 @@ export class GameService {
       areRequiredModelsConfigured?: () => boolean;
       /** 正常终局后回调（用于触发赛后复盘异步生成）。幂等，失败不得影响主流程。 */
       onGameFinished?: (gameId: string) => void;
+      /** 对局活动状态变化后唤醒低优先级后台调度。 */
+      onGameActivityChanged?: () => void;
     },
+    private readonly recovery?: GameRecoveryRepository,
   ) {
     this.agentPolicyFactory = dependencies.agentPolicyFactory ?? (() => new FakeAgentPolicy());
     this.backgroundAdvance = dependencies.backgroundAdvance ?? false;
@@ -115,6 +121,7 @@ export class GameService {
       throw error;
     }
 
+    this.dependencies.onGameActivityChanged?.();
     return view;
   }
 
@@ -156,7 +163,7 @@ export class GameService {
     }
 
     await this.settleAdvance(command.gameId, command.commandId);
-    return this.games.getHumanView(command.gameId)!;
+    return this.decorateRecovery(this.games.getHumanView(command.gameId)!);
   }
 
   continueSpectating(command: ContinueSpectatingCommand): Promise<HumanGameView> {
@@ -191,7 +198,7 @@ export class GameService {
 
   async resumeActiveGame() {
     const active = this.games.findActiveSnapshot();
-    if (active?.status === 'in_progress') {
+    if (active?.status === 'in_progress' && !this.recovery?.getAwaiting(active.gameId)) {
       await this.advanceUntilHumanOrStop(
         active.gameId,
         `resume/${active.gameId}/${active.revision}`,
@@ -214,7 +221,8 @@ export class GameService {
 
   getActiveGame() {
     const active = this.games.findActiveSnapshot();
-    return active ? this.games.getHumanView(active.gameId) : null;
+    const view = active ? this.games.getHumanView(active.gameId) : null;
+    return view ? this.decorateRecovery(view) : null;
   }
 
   /** 存在进行中或待观战确认的对局时，禁止修改模型配置。preparing 与无局时允许。 */
@@ -228,6 +236,57 @@ export class GameService {
     if (!view) {
       throw new GameServiceError('GAME_NOT_FOUND');
     }
+    return this.decorateRecovery(view);
+  }
+
+  async resolveInterruptedGame(
+    gameId: string,
+    request: ResolveInterruptedGameRequest,
+  ): Promise<HumanGameView> {
+    const snapshot = this.games.findSnapshot(gameId);
+    if (!snapshot) throw new GameServiceError('GAME_NOT_FOUND');
+    const recovery = this.recovery;
+    const interruption = recovery?.getAwaiting(gameId);
+    if (!recovery || !interruption || snapshot.status !== 'in_progress') {
+      throw new GameServiceError('INVALID_TRANSITION');
+    }
+
+    if (request.resolution === 'continue') {
+      if (!recovery.resolve(gameId, 'continue', this.dependencies.clock.now())) {
+        throw new GameServiceError('INVALID_TRANSITION');
+      }
+      await this.settleAdvance(gameId, request.commandId);
+      this.dependencies.onGameActivityChanged?.();
+      return this.decorateRecovery(this.games.getHumanView(gameId)!);
+    }
+
+    const transition = declineInterruptedGame(
+      snapshot,
+      {
+        type: 'ResolveInterruptedGame',
+        commandId: request.commandId,
+        gameId,
+        actorId: snapshot.humanPlayerId,
+        expectedRevision: snapshot.revision,
+        resolution: 'start_new',
+      },
+      this.machineDeps(),
+    );
+    const timeline = [
+      ...this.games.listPublicTimeline(gameId),
+      ...this.games.publicTimelineWith(transition.events),
+    ];
+    const view = projectHumanGameView(transition.snapshot, timeline);
+    this.games.commitTransition({
+      previous: snapshot,
+      snapshot: transition.snapshot,
+      events: transition.events,
+      commandId: request.commandId,
+      requestHash: hashCommand({ gameId, ...request }),
+      response: view,
+    });
+    recovery.resolve(gameId, 'start_new', this.dependencies.clock.now());
+    this.dependencies.onGameActivityChanged?.();
     return view;
   }
 
@@ -281,7 +340,17 @@ export class GameService {
     }
 
     await this.settleAdvance(command.gameId, command.commandId);
-    return this.games.getHumanView(command.gameId)!;
+    this.dependencies.onGameActivityChanged?.();
+    return this.decorateRecovery(this.games.getHumanView(command.gameId)!);
+  }
+
+  private decorateRecovery(view: HumanGameView): HumanGameView {
+    if (view.status !== 'in_progress' || !this.recovery?.getAwaiting(view.gameId)) return view;
+    return {
+      ...view,
+      allowedCommands: ['ResolveInterruptedGame'],
+      operationalStatus: { state: 'interrupted' },
+    };
   }
 
   /**
@@ -680,6 +749,7 @@ export class GameService {
         return;
       } catch (error) {
         lastError = error;
+        if (isSqliteBusy(error)) throw error;
         if (error instanceof Error && error.message === 'REVISION_CONFLICT') throw error;
       }
     }
@@ -722,6 +792,7 @@ export class GameService {
 
   /** 正常终局（status==='finished' 隐含带 reveal/factReview）时触发复盘回调；异常终局不触发。 */
   private notifyIfFinished(snapshot: GameSnapshot) {
+    this.dependencies.onGameActivityChanged?.();
     if (snapshot.status !== 'finished') return;
     try {
       this.dependencies.onGameFinished?.(snapshot.gameId);
@@ -740,6 +811,10 @@ const hashCommand = (command: object) =>
 
 const isSqliteConstraint = (error: unknown) =>
   error instanceof Error && error.message.includes('UNIQUE constraint failed');
+
+const isSqliteBusy = (error: unknown) =>
+  error instanceof Error &&
+  ('code' in error ? error.code === 'SQLITE_BUSY' : error.message.includes('database is locked'));
 
 const mapMachineError = (error: unknown): unknown => {
   if (error instanceof GameServiceError) {

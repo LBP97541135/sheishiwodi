@@ -212,6 +212,75 @@ describe('服务启动恢复与重复调度', () => {
     await server.close();
     environment.cleanup();
   });
+
+  it('真实调用崩溃遗留 started attempt 时重启等待确认，继续后只恢复当前动作', async () => {
+    const environment = createTestEnvironment([0, 0.76, 0, 0, 0]);
+    const created = await leaveStartedAttempt(environment, 'confirm-continue');
+    const reopened = createDatabase(environment.databasePath);
+    const counting = new CountingPolicy();
+    const server = buildServer({
+      ...environment.dependencies,
+      database: reopened,
+      agentPolicyFactory: () => counting,
+    });
+    await server.ready();
+
+    const interrupted = await readActive(server);
+    expect(interrupted.operationalStatus).toEqual({ state: 'interrupted' });
+    expect(interrupted.allowedCommands).toEqual(['ResolveInterruptedGame']);
+    expect(counting.actions).toEqual([]);
+    const continued = await server.inject({
+      method: 'POST',
+      url: `/api/games/${created.gameId}/recovery`,
+      payload: { commandId: 'continue-after-crash', resolution: 'continue' },
+    });
+    expect(continued.statusCode, continued.body).toBe(200);
+    expect(counting.actions.length).toBeGreaterThan(0);
+    expect((continued.json() as { data: HumanView }).data.operationalStatus.state).not.toBe(
+      'interrupted',
+    );
+    const attempt = reopened.sqlite
+      .prepare('SELECT result_code FROM model_attempts WHERE attempt_id = ?')
+      .get('attempt-confirm-continue') as { result_code: string };
+    expect(attempt.result_code).toBe('runtime_interrupted');
+
+    await server.close();
+    reopened.close();
+    rmSync(environment.directory, { recursive: true, force: true });
+  });
+
+  it('中断后选择开始新局，以独立原因结束旧局并释放活动局门禁', async () => {
+    const environment = createTestEnvironment([0, 0.76, 0, 0, 0]);
+    const created = await leaveStartedAttempt(environment, 'confirm-new');
+    const reopened = createDatabase(environment.databasePath);
+    const server = buildServer({ ...environment.dependencies, database: reopened });
+    await server.ready();
+
+    const declined = await server.inject({
+      method: 'POST',
+      url: `/api/games/${created.gameId}/recovery`,
+      payload: { commandId: 'new-after-crash', resolution: 'start_new' },
+    });
+    expect(declined.statusCode, declined.body).toBe(200);
+    expect((declined.json() as { data: HumanView }).data).toMatchObject({
+      status: 'abandoned',
+      endReason: 'interrupted_not_resumed',
+    });
+    const next = await server.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: {
+        commandId: 'create-after-crash',
+        human: { displayName: '恢复测试', silhouette: 'silhouette_a' },
+        difficulty: 'easy',
+      },
+    });
+    expect(next.statusCode, next.body).toBe(201);
+
+    await server.close();
+    reopened.close();
+    rmSync(environment.directory, { recursive: true, force: true });
+  });
 });
 
 interface HumanView {
@@ -222,6 +291,53 @@ interface HumanView {
   human: { playerId: string };
   round: { currentActorId: string; actionType: string } | null;
   legalVoteTargetIds: string[];
+  allowedCommands: string[];
+  operationalStatus: { state: string };
+  endReason?: string;
+}
+
+async function leaveStartedAttempt(
+  environment: ReturnType<typeof createTestEnvironment>,
+  suffix: string,
+) {
+  const server = buildServer({
+    ...environment.dependencies,
+    agentPolicyFactory: () => new FailOnActionPolicy('describe'),
+  });
+  const created = await createGame(server, suffix);
+  const started = await server.inject({
+    method: 'POST',
+    url: `/api/games/${created.gameId}/start`,
+    payload: {
+      commandId: `start-${suffix}`,
+      actorId: created.human.playerId,
+      expectedRevision: created.revision,
+    },
+  });
+  expect(started.statusCode).toBe(500);
+  const snapshot = new GameRepository(environment.dependencies.database).findSnapshot(created.gameId)!;
+  const actorId = snapshot.round!.currentActorId;
+  const actionId = `auto/${created.gameId}/${snapshot.revision}/${actorId}/describe`;
+  environment.dependencies.database.sqlite
+    .prepare(
+      `INSERT INTO model_attempts (
+        attempt_id, game_id, command_id, action_id, player_id, role_id, model_id,
+        action_type, attempt_number, attempt_kind, result_code, started_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'describe', 1, 'initial', 'started', ?)`,
+    )
+    .run(
+      `attempt-${suffix}`,
+      created.gameId,
+      `start-${suffix}`,
+      actionId,
+      actorId,
+      actorId,
+      'model-test',
+      '2026-08-16T12:00:00.000Z',
+    );
+  await server.close();
+  environment.dependencies.database.close();
+  return created;
 }
 
 async function createGame(server: ReturnType<typeof buildServer>, suffix: string) {

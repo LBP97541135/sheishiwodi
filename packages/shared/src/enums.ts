@@ -24,6 +24,7 @@ export const endReasonSchema = z.enum([
   'player_rule_violation',
   'abandoned_by_human',
   'model_failure_limit',
+  'interrupted_not_resumed',
 ]);
 
 export const campSchema = z.enum(['civilian', 'undercover']);

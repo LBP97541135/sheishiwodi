@@ -1,10 +1,23 @@
 import type Database from 'better-sqlite3';
-import { readFileSync } from 'node:fs';
+import { copyFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const migrationUrl = new URL('../../drizzle/0000_initial.sql', import.meta.url);
+export const latestDatabaseVersion = 2;
 
-export function migrateDatabase(sqlite: Database.Database) {
+export function migrateDatabase(
+  sqlite: Database.Database,
+  options: { databasePath?: string; createBackup?: boolean } = {},
+) {
+  const currentVersion = sqlite.pragma('user_version', { simple: true }) as number;
+  if (currentVersion >= latestDatabaseVersion) return;
+  if (options.createBackup && options.databasePath) {
+    sqlite.pragma('wal_checkpoint(FULL)');
+    copyFileSync(
+      options.databasePath,
+      `${options.databasePath}.pre-v${latestDatabaseVersion}.bak`,
+    );
+  }
   const migration = readFileSync(fileURLToPath(migrationUrl), 'utf8');
   sqlite.exec(migration);
   sqlite.exec(`
@@ -59,4 +72,14 @@ export function migrateDatabase(sqlite: Database.Database) {
     CREATE INDEX IF NOT EXISTS model_attempts_game_started
       ON model_attempts (game_id, started_at);
   `);
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS game_runtime_recovery (
+      game_id TEXT PRIMARY KEY REFERENCES games(game_id) ON DELETE CASCADE,
+      action_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      interrupted_at TEXT NOT NULL,
+      resolved_at TEXT
+    );
+  `);
+  sqlite.pragma(`user_version = ${latestDatabaseVersion}`);
 }

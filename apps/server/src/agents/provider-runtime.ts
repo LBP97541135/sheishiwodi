@@ -8,6 +8,7 @@ import type { ReviewPolicy } from './review-policy.js';
 import { TokendanceReviewPolicy } from './review-agent-policy.js';
 import { TokendanceAgentPolicy } from './tokendance-agent-policy.js';
 import { TokendanceClient } from './tokendance-client.js';
+import { ProviderCircuitBreaker } from './provider-circuit-breaker.js';
 import {
   noOpAgentObservability,
   type AgentObservability,
@@ -93,6 +94,9 @@ function resolveTokendance(
     modelExtraBodies: {},
     areRequiredModelsConfigured: () => true,
     observability,
+    circuitFailureThreshold: readPositiveInt(env, 'AGENT_CIRCUIT_FAILURE_THRESHOLD', 3),
+    circuitFailureWindowMs: readPositiveInt(env, 'AGENT_CIRCUIT_FAILURE_WINDOW_MS', 60_000),
+    circuitCooldownMs: readPositiveInt(env, 'AGENT_CIRCUIT_COOLDOWN_MS', 30_000),
   });
 }
 
@@ -135,6 +139,9 @@ function resolveOpenAiCompatible(
     modelExtraBodies: parseModelExtraBodyMap(env['OPENAI_COMPATIBLE_MODEL_EXTRA_BODY']),
     areRequiredModelsConfigured,
     observability,
+    circuitFailureThreshold: readPositiveInt(env, 'AGENT_CIRCUIT_FAILURE_THRESHOLD', 3),
+    circuitFailureWindowMs: readPositiveInt(env, 'AGENT_CIRCUIT_FAILURE_WINDOW_MS', 60_000),
+    circuitCooldownMs: readPositiveInt(env, 'AGENT_CIRCUIT_COOLDOWN_MS', 30_000),
   });
 }
 
@@ -151,7 +158,15 @@ function realProvider(options: {
   modelExtraBodies: ModelExtraBodyMap;
   areRequiredModelsConfigured: () => boolean;
   observability: AgentObservability;
+  circuitFailureThreshold: number;
+  circuitFailureWindowMs: number;
+  circuitCooldownMs: number;
 }): ResolvedAgentProvider {
+  const circuitBreaker = new ProviderCircuitBreaker({
+    failureThreshold: options.circuitFailureThreshold,
+    failureWindowMs: options.circuitFailureWindowMs,
+    cooldownMs: options.circuitCooldownMs,
+  });
   return {
     agentPolicyFactory: () =>
       new TokendanceAgentPolicy({
@@ -163,6 +178,7 @@ function realProvider(options: {
         reasoningHints: options.reasoningHints,
         extraBodyForModel: (modelId) => extraBodyForModel(options.modelExtraBodies, modelId),
         observability: options.observability,
+        circuitBreaker,
       }),
     reviewPolicyFactory: () =>
       new TokendanceReviewPolicy({
@@ -173,6 +189,7 @@ function realProvider(options: {
         reasoningHints: options.reasoningHints,
         extraBodyForModel: (modelId) => extraBodyForModel(options.modelExtraBodies, modelId),
         observability: options.observability,
+        circuitBreaker,
       }),
     modelProvider: {
       mode: options.mode,

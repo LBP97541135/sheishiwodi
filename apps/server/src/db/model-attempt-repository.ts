@@ -23,6 +23,11 @@ export interface ModelAttemptRow {
   durationMs?: number;
 }
 
+export interface InterruptedModelAction {
+  gameId: string;
+  actionId: string;
+}
+
 export class ModelAttemptRepository {
   constructor(private readonly database: AppDatabase) {}
 
@@ -70,6 +75,45 @@ export class ModelAttemptRepository {
          WHERE attempt_id = ? AND finished_at IS NULL`,
       )
       .run(input.resultCode, input.finishedAt, input.durationMs, attemptId);
+  }
+
+  interruptUnfinished(finishedAt: string): InterruptedModelAction[] {
+    return this.database.sqlite.transaction(() => {
+      const rows = this.database.sqlite
+        .prepare(
+          `SELECT attempt_id, game_id, action_id, started_at
+           FROM model_attempts WHERE finished_at IS NULL
+           ORDER BY started_at, attempt_id`,
+        )
+        .all() as Array<{
+        attempt_id: string;
+        game_id: string;
+        action_id: string;
+        started_at: string;
+      }>;
+      const update = this.database.sqlite.prepare(
+        `UPDATE model_attempts
+         SET result_code = 'runtime_interrupted', finished_at = ?, duration_ms = ?
+         WHERE attempt_id = ? AND finished_at IS NULL`,
+      );
+      const finishedAtMs = Date.parse(finishedAt);
+      for (const row of rows) {
+        const startedAtMs = Date.parse(row.started_at);
+        update.run(
+          finishedAt,
+          Number.isFinite(finishedAtMs) && Number.isFinite(startedAtMs)
+            ? Math.max(0, finishedAtMs - startedAtMs)
+            : 0,
+          row.attempt_id,
+        );
+      }
+      return Array.from(
+        new Map(rows.map((row) => [`${row.game_id}\0${row.action_id}`, {
+          gameId: row.game_id,
+          actionId: row.action_id,
+        }])).values(),
+      );
+    })();
   }
 
   listByAction(actionId: string): ModelAttemptRow[] {

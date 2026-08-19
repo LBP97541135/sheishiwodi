@@ -4,6 +4,7 @@ import {
   abandonGame,
   continueSpectating,
   createPreparingGame,
+  declineInterruptedGame,
   disqualifyPlayerForRuleViolation,
   projectHumanGameView,
   startPreparingGame,
@@ -206,6 +207,36 @@ describe('模型系统错误终止状态机', () => {
         { ids, clock },
       ),
     ).toThrow('INVALID_TRANSITION');
+  });
+});
+
+describe('中断恢复状态机', () => {
+  it('选择开始新局时以独立无胜者原因结束旧局', () => {
+    const { ids, transition } = startedGame();
+    const snapshot = transition.snapshot;
+    const result = declineInterruptedGame(
+      snapshot,
+      {
+        type: 'ResolveInterruptedGame',
+        commandId: 'decline-interrupted',
+        gameId: snapshot.gameId,
+        actorId: snapshot.humanPlayerId,
+        expectedRevision: snapshot.revision,
+        resolution: 'start_new',
+      },
+      { ids, clock },
+    );
+
+    expect(result.snapshot).toMatchObject({
+      status: 'abandoned',
+      phase: 'ended',
+      endReason: 'interrupted_not_resumed',
+      round: null,
+    });
+    expect(result.snapshot).not.toHaveProperty('winnerCamp');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({ type: 'game_interruption_declined', visibility: 'public' }),
+    );
   });
 });
 

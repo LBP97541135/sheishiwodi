@@ -178,6 +178,45 @@ describe('Agent observability', () => {
     expect(store.rows).toMatchObject([{ resultCode: 'context_boundary_violation' }]);
     expect(readManifests(directory)[0]).toMatchObject({ validation: { status: 'failed' } });
   });
+
+  it('关停时中止活动请求并把 attempt 标记为 runtime_interrupted', () => {
+    const { input, roleId } = describeInput();
+    const store = new MemoryAttemptStore();
+    const observer = new PersistentAgentObservability(
+      store,
+      new ContextAuditWriter(temporaryDirectory()),
+      {
+        now: () => new Date('2026-08-19T05:00:00.000Z'),
+        nowMs: () => 25,
+        nextId: () => 'active-attempt',
+      },
+    );
+    const actionId = `auto/${input.gameId}/${input.baseRevision}/${input.actor.playerId}/describe`;
+    const handle = observer.beginPlayerAttempt({
+      agentInput: input,
+      context: {
+        agentRoleId: roleId,
+        trace: {
+          gameId: input.gameId,
+          commandId: 'start-command',
+          actionId,
+          priorBeliefOwnerId: input.actor.playerId,
+          publicEventCursor: 0,
+        },
+      },
+      modelId: 'model-x',
+      messages: [{ role: 'user', content: 'test' }],
+      attemptKind: 'initial',
+    });
+
+    expect(handle.signal?.aborted).toBe(false);
+    expect(observer.interruptActiveAttempts()).toEqual([{ gameId: input.gameId, actionId }]);
+    expect(handle.signal?.aborted).toBe(true);
+    expect(store.rows).toMatchObject([
+      { attemptId: 'active-attempt', resultCode: 'runtime_interrupted', durationMs: 0 },
+    ]);
+    expect(observer.interruptActiveAttempts()).toEqual([]);
+  });
 });
 
 function describeInput() {

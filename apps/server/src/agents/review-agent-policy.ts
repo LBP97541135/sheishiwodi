@@ -13,6 +13,11 @@ import {
   type ModelAttemptKind,
 } from './agent-observability.js';
 import type { ReviewInput, ReviewPolicy } from './review-policy.js';
+import {
+  CircuitOpenError,
+  noOpProviderCircuitBreaker,
+  type ProviderCircuitBreakerPort,
+} from './provider-circuit-breaker.js';
 import { TokendanceError, type ChatMessage, type TokendanceClient } from './tokendance-client.js';
 
 /** 复盘系统级失败（脱敏），不含 Key/URL/上游正文。 */
@@ -20,6 +25,13 @@ export class ReviewSystemError extends Error {
   constructor(readonly code: ReviewErrorCode) {
     super(`REVIEW_SYSTEM_${code}`);
     this.name = 'ReviewSystemError';
+  }
+}
+
+export class ReviewRuntimeInterruptedError extends Error {
+  constructor() {
+    super('REVIEW_RUNTIME_INTERRUPTED');
+    this.name = 'ReviewRuntimeInterruptedError';
   }
 }
 
@@ -36,6 +48,7 @@ export interface TokendanceReviewPolicyOptions {
   /** 按评测模型的精确 model ID 返回专属请求参数。 */
   extraBodyForModel?: (modelId: string) => Record<string, unknown>;
   observability?: AgentObservability;
+  circuitBreaker?: ProviderCircuitBreakerPort;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -53,6 +66,7 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
   private readonly reasoningHints: boolean;
   private readonly extraBodyForModel: (modelId: string) => Record<string, unknown>;
   private readonly observability: AgentObservability;
+  private readonly circuitBreaker: ProviderCircuitBreakerPort;
 
   constructor(options: TokendanceReviewPolicyOptions) {
     this.client = options.client;
@@ -63,6 +77,7 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
     this.reasoningHints = options.reasoningHints ?? true;
     this.extraBodyForModel = options.extraBodyForModel ?? (() => ({}));
     this.observability = options.observability ?? noOpAgentObservability;
+    this.circuitBreaker = options.circuitBreaker ?? noOpProviderCircuitBreaker;
   }
 
   async generate(
@@ -73,6 +88,12 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
     },
   ): Promise<ReviewGeneration> {
     if (!this.modelId) throw new ReviewSystemError('MODEL_NOT_CONFIGURED');
+    try {
+      this.circuitBreaker.beforeLogicalCall();
+    } catch (error) {
+      if (error instanceof CircuitOpenError) throw new ReviewSystemError('PROVIDER_UNAVAILABLE');
+      throw error;
+    }
 
     const baseMessages = buildReviewMessages(input);
     const extraBody = {
@@ -108,14 +129,30 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
         throw new ReviewSystemError('INTERNAL_ERROR');
       }
       try {
-        content = await this.client.chatCompletion({ modelId: this.modelId, messages, extraBody });
+        content = await this.client.chatCompletion({
+          modelId: this.modelId,
+          messages,
+          extraBody,
+          ...(attempt.signal ? { signal: attempt.signal } : {}),
+        });
+        this.circuitBreaker.recordSuccess();
       } catch (error) {
+        if (error instanceof TokendanceError && error.kind === 'interrupted') {
+          this.observability.finishAttempt(attempt, 'runtime_interrupted');
+          throw new ReviewRuntimeInterruptedError();
+        }
         const classified = classifyClientError(error);
         this.observability.finishAttempt(attempt, classified.code.toLowerCase());
         lastSystemCode = classified.code;
-        if (!classified.retryable) throw new ReviewSystemError(classified.code);
+        if (!classified.retryable) {
+          this.circuitBreaker.recordFailure('permanent');
+          throw new ReviewSystemError(classified.code);
+        }
         systemAttempts += 1;
-        if (systemAttempts > this.maxSystemRetries) throw new ReviewSystemError(lastSystemCode);
+        if (systemAttempts > this.maxSystemRetries) {
+          this.circuitBreaker.recordFailure('transient');
+          throw new ReviewSystemError(lastSystemCode);
+        }
         await this.sleep(this.retryDelayMs);
         messages = baseMessages;
         repairUsed = false;

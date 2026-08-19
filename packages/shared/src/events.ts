@@ -38,6 +38,7 @@ export const gameEventTypeSchema = z.enum([
   'terminal_reveal_ready',
   'game_abandoned',
   'game_system_terminated',
+  'game_interruption_declined',
 ]);
 
 export const gameEventSchema = z.object({

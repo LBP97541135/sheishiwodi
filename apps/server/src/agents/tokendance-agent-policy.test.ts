@@ -12,6 +12,7 @@ import {
 } from '@sheishiwodi/shared';
 
 import { projectAgentTurnInput } from './agent-input-projector.js';
+import { ProviderCircuitBreaker } from './provider-circuit-breaker.js';
 import { AgentSystemError, TokendanceAgentPolicy } from './tokendance-agent-policy.js';
 import { TokendanceError, type ChatMessage, type TokendanceClient } from './tokendance-client.js';
 
@@ -214,6 +215,26 @@ describe('TokendanceAgentPolicy', () => {
       });
       expect(client.calls).toHaveLength(1);
     }
+  });
+
+  it('永久错误打开断路器后，下一次逻辑调用在出网前失败', async () => {
+    const { input, roleId } = describeInput();
+    const client = new ScriptedClient([new TokendanceError('http', 401)]);
+    const circuitBreaker = new ProviderCircuitBreaker();
+    const policy = new TokendanceAgentPolicy({
+      client: asClient(client),
+      roleModelMap: { [roleId]: 'model-x' },
+      circuitBreaker,
+      sleep: noWait,
+    });
+
+    await expect(policy.act(input, { agentRoleId: roleId })).rejects.toMatchObject({
+      code: 'AUTH_FAILED',
+    });
+    await expect(policy.act(input, { agentRoleId: roleId })).rejects.toMatchObject({
+      code: 'CIRCUIT_OPEN',
+    });
+    expect(client.calls).toHaveLength(1);
   });
 
   it('通用兼容 provider 只按精确 model ID 注入专属参数', async () => {

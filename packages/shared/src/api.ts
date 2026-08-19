@@ -11,6 +11,7 @@ export const apiErrorCodeSchema = z.enum([
   'CONTENT_REJECTED',
   'MODEL_CONFIGURATION_REQUIRED',
   'MODEL_ACTION_FAILED',
+  'LOCAL_DATA_BUSY',
   'INTERNAL_ERROR',
 ]);
 

@@ -27,6 +27,12 @@ export class ContextBoundaryViolationError extends Error {
 export interface AttemptHandle {
   attemptId: string;
   startedAtMs: number;
+  signal?: AbortSignal;
+}
+
+export interface InterruptedAttempt {
+  gameId: string;
+  actionId: string;
 }
 
 export interface ModelAttemptStore {
@@ -93,6 +99,7 @@ export interface AgentObservability {
     resultCode: string,
     options?: { rawResponse?: string },
   ): void;
+  interruptActiveAttempts?(): InterruptedAttempt[];
 }
 
 export const noOpAgentObservability: AgentObservability = {
@@ -115,6 +122,11 @@ export class ContextAuditWriter {
 }
 
 export class PersistentAgentObservability implements AgentObservability {
+  private readonly activeAttempts = new Map<
+    string,
+    { handle: AttemptHandle; gameId: string; actionId: string; controller: AbortController }
+  >();
+
   constructor(
     private readonly attempts: ModelAttemptStore,
     private readonly audit: ContextAuditWriter,
@@ -133,7 +145,12 @@ export class PersistentAgentObservability implements AgentObservability {
     attemptKind: ModelAttemptKind;
   }): AttemptHandle {
     const now = this.now();
-    const handle = { attemptId: this.nextId(), startedAtMs: this.nowMs() };
+    const controller = new AbortController();
+    const handle = {
+      attemptId: this.nextId(),
+      startedAtMs: this.nowMs(),
+      signal: controller.signal,
+    };
     const trace = input.context.trace ?? fallbackPlayerTrace(input.agentInput);
     const checks: string[] = [];
     let valid = true;
@@ -193,6 +210,12 @@ export class PersistentAgentObservability implements AgentObservability {
       this.finishAttempt(handle, 'context_boundary_violation');
       throw new ContextBoundaryViolationError();
     }
+    this.activeAttempts.set(handle.attemptId, {
+      handle,
+      gameId: trace.gameId,
+      actionId: trace.actionId,
+      controller,
+    });
     return handle;
   }
 
@@ -205,7 +228,12 @@ export class PersistentAgentObservability implements AgentObservability {
     attemptKind: ModelAttemptKind;
   }): AttemptHandle {
     const now = this.now();
-    const handle = { attemptId: this.nextId(), startedAtMs: this.nowMs() };
+    const controller = new AbortController();
+    const handle = {
+      attemptId: this.nextId(),
+      startedAtMs: this.nowMs(),
+      signal: controller.signal,
+    };
     if (!input.reviewInput.gameId || input.reviewInput.reveal.players.length === 0) {
       throw new ContextBoundaryViolationError();
     }
@@ -258,6 +286,12 @@ export class PersistentAgentObservability implements AgentObservability {
       this.finishAttempt(handle, 'audit_write_failed');
       throw error;
     }
+    this.activeAttempts.set(handle.attemptId, {
+      handle,
+      gameId: input.reviewInput.gameId,
+      actionId: input.actionId,
+      controller,
+    });
     return handle;
   }
 
@@ -268,6 +302,17 @@ export class PersistentAgentObservability implements AgentObservability {
       finishedAt: finishedAt.toISOString(),
       durationMs: Math.max(0, this.nowMs() - handle.startedAtMs),
     });
+    this.activeAttempts.delete(handle.attemptId);
+  }
+
+  interruptActiveAttempts(): InterruptedAttempt[] {
+    const interrupted: InterruptedAttempt[] = [];
+    for (const active of this.activeAttempts.values()) {
+      this.finishAttempt(active.handle, 'runtime_interrupted');
+      active.controller.abort();
+      interrupted.push({ gameId: active.gameId, actionId: active.actionId });
+    }
+    return interrupted;
   }
 
   private now() {

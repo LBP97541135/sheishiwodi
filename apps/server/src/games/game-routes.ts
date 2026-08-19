@@ -8,6 +8,7 @@ import {
   createGameRequestSchema,
   continueSpectatingRequestSchema,
   humanGameViewSchema,
+  resolveInterruptedGameRequestSchema,
   startGameRequestSchema,
   submitDefenseRequestSchema,
   submitDescriptionRequestSchema,
@@ -95,6 +96,39 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
       return sendGameError(reply, error);
     }
   });
+
+  server.post<{ Params: { gameId: string } }>(
+    '/api/games/:gameId/recovery',
+    async (request, reply) => {
+      const parsed = resolveInterruptedGameRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: '中断恢复选择不合法',
+              details: { fields: parsed.error.issues.map((issue) => issue.path.join('.')) },
+            },
+          }),
+        );
+      }
+      try {
+        const view = await gameService.resolveInterruptedGame(request.params.gameId, parsed.data);
+        return reply.send(
+          apiSuccessSchema(humanGameViewSchema).parse({
+            data: view,
+            meta: {
+              gameId: view.gameId,
+              revision: view.revision,
+              eventCursor: view.eventCursor,
+            },
+          }),
+        );
+      } catch (error) {
+        return sendGameError(reply, error);
+      }
+    },
+  );
 
   server.post<{ Params: { gameId: string } }>(
     '/api/games/:gameId/start',

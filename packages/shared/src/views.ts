@@ -113,7 +113,7 @@ export const factReviewSchema = z
   .strict();
 
 export const operationalStatusSchema = z.object({
-  state: z.enum(['idle', 'waiting_human', 'agent_working', 'retrying']),
+  state: z.enum(['idle', 'waiting_human', 'agent_working', 'retrying', 'interrupted']),
   actorId: identifierSchema.optional(),
   retry: z
     .object({
@@ -148,6 +148,7 @@ export const humanGameViewSchema = z
         'player_rule_violation',
         'abandoned_by_human',
         'model_failure_limit',
+        'interrupted_not_resumed',
       ])
       .optional(),
     reveal: finaleRevealSchema.optional(),

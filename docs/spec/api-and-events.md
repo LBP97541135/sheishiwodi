@@ -1,6 +1,6 @@
 # API 与事件流规格
 
-- 状态：首个里程碑、模型档案与单局复盘路由已实现；DEC-092～096 的恢复、诊断与 Agent 调试接口待实现
+- 状态：首个里程碑、模型档案、单局复盘与服务端中断恢复路由已实现；浏览器恢复和 Agent 开发者诊断接口待实现
 - 适用范围：本机单用户 REST + SSE
 
 ## 1. 总则
@@ -51,7 +51,7 @@
 | 409 | `IDEMPOTENCY_CONFLICT` | 相同命令 ID 携带不同请求语义 |
 | 422 | `CONTENT_REJECTED` | 原词泄露等内容规则拒绝；不回显违规原文 |
 | 503 | `MODEL_ACTION_FAILED` | 预留给后续真实模型重试；当前假模型链路的未分类策略异常返回安全 `INTERNAL_ERROR` |
-| 503 | `LOCAL_DATA_UNAVAILABLE` | 数据库繁忙等待耗尽或服务处于受限诊断状态；不返回文件路径或 SQL |
+| 503 | `LOCAL_DATA_BUSY` | 数据库繁忙等待耗尽；不返回文件路径或 SQL |
 | 500 | `INTERNAL_ERROR` | 未分类服务错误；不得泄露堆栈或敏感配置 |
 
 错误详情只能包含安全的字段名、允许值、修订号、错误类别和重试进度。
@@ -84,14 +84,14 @@ operationalStatus: 当前安全状态与重试进度
 
 | 方法与路径 | 用途 | 响应 |
 | --- | --- | --- |
-| `GET /api/health` | 本地服务存活检查 | 服务状态；后续增加正常/受限诊断标记，不包含路径、SQL 或配置值 |
+| `GET /api/health` | 本地服务存活检查 | 正常返回 `ok`；完整性异常返回脱敏 `degraded/DATABASE_INTEGRITY_FAILED`，且此时不注册其他业务路由 |
 | `GET /api/games/active` | 查询唯一未完成对局 | `{ game: HumanGameView | null }` |
 | `GET /api/games/:gameId` | 获取当前人类视图 | `HumanGameView` |
 | `GET /api/games/:gameId/events?after=<streamSeq>` | SSE 失败时补取安全公开帧 | `PublicStreamEntry[]` 与当前游标 |
 
 “未完成”包括 `preparing`、`in_progress` 和 `awaiting_spectator`，不包括三个终局状态。
 
-下一阶段中，`GET /api/games/active` 对“中断后等待玩家确认”的进行中对局返回安全恢复状态与允许命令。继续上一局和开始新局均为带稳定 `commandId`、`expectedRevision` 的显式命令；具体路由与共享 Schema 在 TASK-074 实现时固化。开始新局必须先原子地把旧局记为无胜者“中断后未继续”，不能复用主动放弃或模型失败端点。
+`GET /api/games/active` 对“中断后等待玩家确认”的进行中对局返回 `operationalStatus.state=interrupted`，且 `allowedCommands` 只包含 `ResolveInterruptedGame`。`POST /api/games/:gameId/recovery` 接收稳定 `commandId` 与 `resolution=continue|start_new`：继续时解除门禁并重新执行当前动作；开始新局时先把旧局原子记为无胜者“中断后未继续”，不能复用主动放弃或模型失败端点。浏览器端待确认命令的 `sessionStorage` 恢复仍属于 TASK-075 第三阶段。
 
 ### 4.2 创建与开始
 

@@ -53,6 +53,25 @@ describe('ModelAttemptRepository', () => {
         { attemptNumber: 1, attemptKind: 'initial', resultCode: 'invalid_format', durationMs: 100 },
         { attemptNumber: 2, attemptKind: 'format_repair', resultCode: 'success', durationMs: 150 },
       ]);
+
+      expect(
+        repository.begin({
+          ...common,
+          attemptId: 'attempt-3',
+          actionId: 'action-interrupted',
+          attemptKind: 'initial',
+        }),
+      ).toBe(1);
+      expect(
+        repository.interruptUnfinished('2026-08-19T05:00:01.000Z'),
+      ).toEqual([{ gameId: 'game-1', actionId: 'action-interrupted' }]);
+      expect(repository.listByAction('action-interrupted')).toMatchObject([
+        {
+          resultCode: 'runtime_interrupted',
+          finishedAt: '2026-08-19T05:00:01.000Z',
+          durationMs: 1000,
+        },
+      ]);
       const columns = database.sqlite.prepare('PRAGMA table_info(model_attempts)').all() as Array<{
         name: string;
       }>;

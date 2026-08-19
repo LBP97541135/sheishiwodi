@@ -2,7 +2,10 @@ import type { Clock, ReviewErrorCode, ReviewSummary } from '@sheishiwodi/shared'
 
 import { FakeReviewPolicy } from '../agents/fake-review-policy.js';
 import { buildReviewInput, type ReviewPolicy } from '../agents/review-policy.js';
-import { ReviewSystemError } from '../agents/review-agent-policy.js';
+import {
+  ReviewRuntimeInterruptedError,
+  ReviewSystemError,
+} from '../agents/review-agent-policy.js';
 import { buildReviewMarkdown } from './review-markdown.js';
 import type { GameRepository } from './game-repository.js';
 
@@ -20,7 +23,10 @@ export class ReviewServiceError extends Error {
  * 单飞守卫保证同一局至多一个生成在跑；不阻塞玩家交互。失败仅脱敏落库/记日志。
  */
 export class ReviewService {
-  private readonly running = new Set<string>();
+  private runningGameId: string | null = null;
+  private runningPromise: Promise<void> | null = null;
+  private readonly queue: string[] = [];
+  private stopped = false;
 
   constructor(
     private readonly games: GameRepository,
@@ -33,16 +39,17 @@ export class ReviewService {
     const existing = this.games.getReviewSummary(gameId);
     if (!options.force && existing) {
       if (existing.status === 'done') return existing;
-      if (existing.status === 'generating' || this.running.has(gameId)) return existing;
+      if (existing.status === 'generating' || this.runningGameId === gameId) return existing;
       // pending 但没有在跑（如重启后）——继续往下重新触发。
     }
-    if (this.running.has(gameId)) {
+    if (this.runningGameId === gameId) {
       return existing ?? this.pendingSummary(gameId, this.resolveModelId());
     }
 
     const pending = this.pendingSummary(gameId, this.resolveModelId());
     this.games.upsertReviewSummary(pending, this.clock.now());
-    this.spawn(gameId);
+    this.enqueueFirst(gameId);
+    this.kick();
     return pending;
   }
 
@@ -50,7 +57,10 @@ export class ReviewService {
   getReview(gameId: string): ReviewSummary {
     const existing = this.games.getReviewSummary(gameId);
     if (existing) {
-      if (existing.status === 'pending' && !this.running.has(gameId)) this.spawn(gameId);
+      if (existing.status === 'pending' && this.runningGameId !== gameId) {
+        this.enqueueFirst(gameId);
+        this.kick();
+      }
       return existing;
     }
     const view = this.games.getHumanView(gameId);
@@ -81,20 +91,39 @@ export class ReviewService {
 
   /** 重启恢复：把遗留 pending/generating 的复盘重新入队。 */
   recover() {
-    for (const gameId of this.games.listRecoverableReviewGameIds()) {
-      if (!this.running.has(gameId)) this.spawn(gameId);
+    const recoverable = this.games.listRecoverableReviewGameIds();
+    const currentFirst = recoverable.length > 1
+      ? [recoverable.at(-1)!, ...recoverable.slice(0, -1)]
+      : recoverable;
+    for (const gameId of currentFirst) {
+      const existing = this.games.getReviewSummary(gameId);
+      if (existing?.status === 'generating') {
+        this.games.upsertReviewSummary(
+          { ...existing, status: 'pending' },
+          this.clock.now(),
+        );
+      }
+      this.enqueueLast(gameId);
     }
+    this.kick();
   }
 
-  private spawn(gameId: string) {
-    void this.run(gameId).catch((error: unknown) => {
+  kick() {
+    if (this.stopped || this.runningGameId || this.games.findActiveSnapshot()) return;
+    const gameId = this.queue.shift();
+    if (!gameId) return;
+    this.runningGameId = gameId;
+    this.runningPromise = this.run(gameId).catch((error: unknown) => {
       console.error('[review] 后台生成失败：', error instanceof Error ? error.name : 'unknown');
     });
   }
 
+  async shutdown() {
+    this.stopped = true;
+    await this.runningPromise;
+  }
+
   private async run(gameId: string) {
-    if (this.running.has(gameId)) return;
-    this.running.add(gameId);
     let modelId = this.resolveModelId();
     try {
       const policy = this.policyFactory();
@@ -137,6 +166,13 @@ export class ReviewService {
         this.clock.now(),
       );
     } catch (error) {
+      if (error instanceof ReviewRuntimeInterruptedError) {
+        this.games.upsertReviewSummary(
+          { gameId, status: 'pending', modelId, perAgent: [], overall: '' },
+          this.clock.now(),
+        );
+        return;
+      }
       this.games.upsertReviewSummary(
         {
           gameId,
@@ -149,8 +185,25 @@ export class ReviewService {
         this.clock.now(),
       );
     } finally {
-      this.running.delete(gameId);
+      this.runningGameId = null;
+      this.runningPromise = null;
+      this.kick();
     }
+  }
+
+  private enqueueFirst(gameId: string) {
+    this.removeQueued(gameId);
+    this.queue.unshift(gameId);
+  }
+
+  private enqueueLast(gameId: string) {
+    if (this.runningGameId === gameId || this.queue.includes(gameId)) return;
+    this.queue.push(gameId);
+  }
+
+  private removeQueued(gameId: string) {
+    const index = this.queue.indexOf(gameId);
+    if (index >= 0) this.queue.splice(index, 1);
   }
 
   private resolveModelId(): string {

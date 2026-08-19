@@ -119,6 +119,14 @@ export const modelAttempts = sqliteTable(
   ],
 );
 
+export const gameRuntimeRecovery = sqliteTable('game_runtime_recovery', {
+  gameId: text('game_id').primaryKey(),
+  actionId: text('action_id').notNull(),
+  status: text('status').notNull(),
+  interruptedAt: text('interrupted_at').notNull(),
+  resolvedAt: text('resolved_at'),
+});
+
 // 角色模型配置：仅存 role_id → model_id，绝不保存 Base URL 或 API Key。
 export const agentRoleModels = sqliteTable('agent_role_models', {
   roleId: text('role_id').primaryKey(),

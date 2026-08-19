@@ -16,6 +16,11 @@ import {
   type ModelAttemptKind,
 } from './agent-observability.js';
 import { reasoningDisableBodyFor } from './model-reasoning.js';
+import {
+  CircuitOpenError,
+  noOpProviderCircuitBreaker,
+  type ProviderCircuitBreakerPort,
+} from './provider-circuit-breaker.js';
 import { TokendanceError, type ChatMessage, type TokendanceClient } from './tokendance-client.js';
 
 /** 模型系统级失败（网络耗尽、始终格式错误、未配置模型）。脱敏，不含 Key/URL。 */
@@ -33,6 +38,7 @@ export type AgentSystemErrorCode =
   | 'FORMAT_INVALID'
   | 'CONTENT_INVALID'
   | 'CONTEXT_BOUNDARY_VIOLATION'
+  | 'CIRCUIT_OPEN'
   | 'INTERNAL_ERROR';
 
 export class AgentSystemError extends Error {
@@ -60,6 +66,14 @@ export interface TokendanceAgentPolicyOptions {
   /** 开启后打印脱敏计时日志（角色/model/耗时/是否修复重试），绝不含 Key/URL/响应正文。 */
   debug?: boolean;
   observability?: AgentObservability;
+  circuitBreaker?: ProviderCircuitBreakerPort;
+}
+
+export class AgentRuntimeInterruptedError extends Error {
+  constructor() {
+    super('AGENT_RUNTIME_INTERRUPTED');
+    this.name = 'AgentRuntimeInterruptedError';
+  }
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -74,6 +88,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
   private readonly reasoningHints: boolean;
   private readonly extraBodyForModel: (modelId: string) => Record<string, unknown>;
   private readonly observability: AgentObservability;
+  private readonly circuitBreaker: ProviderCircuitBreakerPort;
   private readonly beliefHistory = new Map<string, BeliefSnapshot[]>();
 
   constructor(options: TokendanceAgentPolicyOptions) {
@@ -86,6 +101,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     this.reasoningHints = options.reasoningHints ?? true;
     this.extraBodyForModel = options.extraBodyForModel ?? (() => ({}));
     this.observability = options.observability ?? noOpAgentObservability;
+    this.circuitBreaker = options.circuitBreaker ?? noOpProviderCircuitBreaker;
   }
 
   priorBeliefs(playerId: string): readonly BeliefSnapshot[] {
@@ -100,6 +116,12 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     const modelId = this.roleModelMap[roleId];
     if (!modelId) {
       throw new AgentSystemError('MODEL_NOT_CONFIGURED', roleId);
+    }
+    try {
+      this.circuitBreaker.beforeLogicalCall();
+    } catch (error) {
+      if (error instanceof CircuitOpenError) throw new AgentSystemError('CIRCUIT_OPEN', roleId);
+      throw error;
     }
 
     const baseMessages = buildMessages(input, context?.contentRetry);
@@ -135,18 +157,30 @@ export class TokendanceAgentPolicy implements AgentPolicy {
         throw new AgentSystemError('INTERNAL_ERROR', roleId);
       }
       try {
-        content = await this.client.chatCompletion({ modelId, messages, extraBody });
+        content = await this.client.chatCompletion({
+          modelId,
+          messages,
+          extraBody,
+          ...(attempt.signal ? { signal: attempt.signal } : {}),
+        });
+        this.circuitBreaker.recordSuccess();
         this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'ok');
       } catch (error) {
         this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'fail');
+        if (error instanceof TokendanceError && error.kind === 'interrupted') {
+          this.observability.finishAttempt(attempt, 'runtime_interrupted');
+          throw new AgentRuntimeInterruptedError();
+        }
         const classified = classifyClientError(error);
         this.observability.finishAttempt(attempt, classified.code.toLowerCase());
         lastSystemCode = classified.code;
         if (!classified.retryable) {
+          this.circuitBreaker.recordFailure('permanent');
           throw new AgentSystemError(classified.code, roleId);
         }
         systemAttempts += 1;
         if (systemAttempts > this.maxSystemRetries) {
+          this.circuitBreaker.recordFailure('transient');
           throw new AgentSystemError(lastSystemCode, roleId);
         }
         await this.sleep(this.retryDelayMs);

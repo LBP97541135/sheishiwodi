@@ -1410,3 +1410,13 @@
 - 每次出网前严格校验 `AgentTurnInput` Schema、game/actor 关联、私有信念所有者、公开事件游标和合法目标。失败时记录 `context_boundary_violation` 并阻止客户端调用；审计文件写入失败也结束 attempt 且不出网。
 - 新增 Agent 观测、复盘链路、并行投票 action 关联和 SQLite 仓储测试；Node 22 下 Server 20 文件 87/87、Shared 9 文件 50/50、Web 5 文件 53/53 通过，三个 workspace typecheck、全仓 ESLint 和三个生产构建通过。Web 测试仍有 jsdom 不实现 `HTMLMediaElement.pause` 的既有 stderr，不影响断言和退出码。
 - 本阶段不实现完整 Prompt/响应记录、保留清理器、Provider 熔断、`TelemetrySink` 或开发者面板；这些能力继续按后续三个大点推进。
+
+## 2026-08-19 完成服务端可靠性阶段（TASK-074、TASK-075/076 部分）
+
+- 新增 `game_runtime_recovery` 持久化门禁和 `ResolveInterruptedGame` 共享命令/API。进程崩溃遗留或正常关停中的真实调用统一记为 `runtime_interrupted`，不消耗模型常规重试；运行中对局恢复后只允许玩家选择继续当前动作或以独立的“中断后未继续”无胜者原因结束旧局。
+- 关停路径通过每次 attempt 独立的 `AbortSignal` 取消本进程 HTTP 等待，并先落中断状态；参赛 Agent 与复盘分别抛运行时中断类型，不再误判为模型内容或 Provider 故障。复盘中断回到 `pending`，无需玩家确认。
+- 重构异步复盘为全局单并发持久化队列：活动对局阻止新任务启动，已发出的任务继续完成；空闲后优先最近一局，再处理更早任务；重启把遗留 `generating` 降回 `pending` 并按相同优先级恢复。
+- SQLite 启动执行 `quick_check`；失败或抛错时只注册脱敏 `/api/health`，不装配游戏、模型和复盘能力。迁移前执行 WAL checkpoint 并生成单份版本备份；`busy_timeout` 默认 3 秒且可配置，耗尽返回 `LOCAL_DATA_BUSY`，不会重新调用模型。
+- 参赛 Agent 与复盘共享单 Provider 轻量熔断器。认证/权限/模型不存在立即开路；网络、429、5xx 在原有重试耗尽后才累计；冷却后只允许一个探测请求。没有改动三个既有模型的超时、推理关闭参数、投票并行和单动作重试预算。
+- 新增/扩展中断落库、重启等待确认、继续/新局、优雅关停、复盘调度与重启优先级、迁移备份、健康降级、外部中止和熔断测试。Node 22 下 Shared 9 文件 51 项、Server 24 文件 99 项、Web 5 文件 53 项通过，三个 workspace typecheck、全仓 ESLint 与三个生产构建通过；`git diff --check`、本地 Markdown 链接和凭据式模式扫描通过。
+- 本阶段不包含浏览器 SSE/命令恢复、完整 Prompt/响应记录、清理器、`TelemetrySink` 或开发者面板；它们分别保留给第三、第四阶段。测试全程使用 fake/scripted client，没有读取真实 API Key 或产生模型费用。
