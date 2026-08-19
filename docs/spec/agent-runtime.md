@@ -335,7 +335,16 @@ Harness 组装 `AgentTurnInput` 时同时产生结构化上下文清单，至少
 
 项目定义的调用语义可通过可选 `TelemetrySink` 输出 attempt 开始/结束的脱敏事件；默认使用空实现。当前事实源仍为本地 SQLite 与审计文件；第三方平台只能作为未来适配器，不能成为运行依赖或绕过上下文脱敏边界。
 
+### 12.5 上下文来源证明与尝试阶段（规划中）
+
+- 参赛 Agent 输入只能由服务端唯一上下文组装器产生。组装器直接从权威仓库按 `gameId + actorPlayerId` 读取该 Agent 自有信念，并从 `visibility=public` 查询构造公开时间线。
+- 组装器签发与具体输入内容绑定的来源证明，记录 game、actor、信念所有者、公开可见性、公开游标和输入哈希。出网门禁同时验证证明来源和哈希，调用者手写同形对象不能通过。
+- Prompt 构造后替换公开事件、私有信念、actor 或 game 会使证明失效，并在客户端调用前记录 `context_boundary_violation`。
+- 模型尝试生命周期区分 `provider_succeeded`、`schema_validated`、`content_validated` 与 `action_committed`。Provider 返回不等于领域动作成功；过期丢弃、内容拒绝和事务失败必须保留准确的最终结果。
+- 信念与复盘中按玩家输出的集合必须显式检查 `playerId` 唯一性和完整覆盖；复盘提示词与共享 Schema 使用相同数量、长度和必填约束。
+- 零宽字符词面归一化不属于本轮范围，保留为已知残余风险。
+
 ## 13. 来源
 
 - 需求：[`../acceptance/REQUIREMENTS.md`](../acceptance/REQUIREMENTS.md) 第 20–29、51–85、109–145、187–192 条。
-- 决策：DEC-004、DEC-005、DEC-010 至 DEC-015、DEC-017 至 DEC-021、DEC-029 至 DEC-039、DEC-052 至 DEC-054、DEC-068、DEC-072 至 DEC-074、DEC-082、DEC-086、DEC-092、DEC-093、DEC-095、DEC-096。
+- 决策：DEC-004、DEC-005、DEC-010 至 DEC-015、DEC-017 至 DEC-021、DEC-029 至 DEC-039、DEC-052 至 DEC-054、DEC-068、DEC-072 至 DEC-074、DEC-082、DEC-086、DEC-092、DEC-093、DEC-095、DEC-096、DEC-097。

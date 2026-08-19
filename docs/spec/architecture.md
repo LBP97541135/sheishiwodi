@@ -146,8 +146,10 @@ Application 取得当前行动锁
 - Agent 上下文在模型调用前执行可见性门禁；调试追踪默认只保存脱敏清单，完整 Prompt/响应只能由显式本地调试模式开启。
 - Provider 熔断、观测 sink 和调试面板属于可替换基础设施，不得进入纯状态机或改变正常游戏规则。
 - 数据库异常时允许服务以本机受限诊断模式启动，但不得继续游戏、模型、复盘、导出或写入。
+- 仓库已验证运行时固定为 Node 22 LTS 与 `packageManager` 声明的 pnpm 9.15.9；本地开发、CI 和交付文档使用同一主版本，避免原生 SQLite ABI 漂移。
+- GitHub 默认 CI 只运行 typecheck、lint、默认假模型测试、构建和 Playwright E2E，不读取真实模型环境变量，不执行 `test:live` 或其子命令。
 
 ## 9. 来源
 
 - 需求：[`../acceptance/REQUIREMENTS.md`](../acceptance/REQUIREMENTS.md)“已确认游戏规则”。
-- 决策：DEC-048、DEC-049、DEC-050、DEC-051、DEC-052、DEC-071、DEC-081、DEC-082、DEC-092 至 DEC-096。
+- 决策：DEC-048、DEC-049、DEC-050、DEC-051、DEC-052、DEC-071、DEC-081、DEC-082、DEC-092 至 DEC-097。

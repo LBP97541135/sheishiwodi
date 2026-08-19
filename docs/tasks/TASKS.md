@@ -203,3 +203,16 @@
 | TASK-075 SQLite 与浏览器轻量恢复 | 已完成 | 数据完整性异常进入仅健康检查的本机诊断模式；迁移前备份；SQLite busy 默认约 3 秒且只重试事务；SSE 中断提示/持续重连/立即重试；`sessionStorage` 保存待确认命令并复用稳定 `commandId` | DEC-094、SPEC persistence/API/frontend、TEST §2.7 | `quick_check` 健康门禁、仅健康路由、迁移前备份、可配置 busy timeout 与脱敏 503；SSE 3 秒提示、指数重连、立即重试与权威同步；八类命令发送前保存、响应不确定时权威判定及同 ID 重试。Web 恢复专项 17 项、源码测试 63 项、既有 E2E 10/10 与桌面/移动故障注入可见验收通过 |
 | TASK-076 Agent 调用台账、上下文审计与轻量熔断 | 已完成 | 实现 `model_attempts`；贯通 `gameId -> commandId -> actionId -> attemptId`；生成独立上下文清单并在出网前阻止越权；脱敏记录随对局保留，完整 Prompt/响应仅显式调试、Git 忽略且按 7 天/容量上限清理；实现单 Provider 轻量熔断与可选 `TelemetrySink`，正常模型流程不变 | DEC-095/096、SPEC agent-runtime §12、persistence §2.6、TEST §2.7 | Schema/迁移、真实参赛与复盘 attempt、统一链路、结构化清单、出网前门禁、完整记录脱敏/启动清理/主动清除、共享熔断和 `TelemetrySink` 接口均已实现；定向测试与类型检查通过 |
 | TASK-077 双层门禁的 Agent 开发者面板与验收 | 已完成 | 服务端 env 默认关闭且决定是否注册诊断能力；开启后前端提供当前标签页开发者开关和四类只读观测视图；完整上下文记录使用二次敏感开关、仅当前服务会话生效并逐条确认展开；普通模式 DOM/Network/开发者工具无诊断数据，不触发模型重放 | DEC-095/096、SPEC frontend/API、TEST §2.7 | `AGENT_DEVELOPER_MODE` 路由门禁、安全能力位、四视图面板、会话开关、逐条确认和清除入口已完成；Server 门禁/脱敏测试、Web DOM/Network 负向与交互测试通过 |
+
+## 系统审计补强（DEC-097）
+
+负责人 2026-08-19 指令：零宽字符绕过直接泄词匹配作为已接受残余风险，不在本轮处理；其余已确认工程缺口逐项补充，每完成一个独立问题分别验证并提交一次，不改变现有真实模型超时、并行和重试策略。
+
+| 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
+| --- | --- | --- | --- | --- |
+| TASK-078 强化 Agent 上下文来源证明 | 进行中 | 由唯一组装器从权威仓库读取自有信念和公开事件；来源证明绑定 game/actor/owner/visibility/cursor 与具体输入；伪造或篡改输入在出网前阻断 | DEC-097、SPEC agent-runtime §12.5、TEST §2.8 | 待产出：实现、负向哨兵测试、Server typecheck/test、独立 commit |
+| TASK-079 拒绝重复玩家标识 | 待办 | 信念概率与复盘逐 Agent 评价拒绝重复 `playerId`，同时保持完整覆盖校验 | DEC-097、TEST §2.8 | 待产出：Shared/Server Schema 与负向测试、独立 commit |
+| TASK-080 对齐复盘 Prompt 与 Schema | 待办 | 统一结论、关键片段、总体评价和评分字段的字数、数量与必填约束 | DEC-097、SPEC agent-runtime、TEST §2.8 | 待产出：契约调整、策略测试、独立 commit |
+| TASK-081 恢复后台未分类异常 | 待办 | 后台推进未分类异常立即持久化运行中断状态并由玩家确认恢复；不记模型失败、不消耗模型重试 | DEC-092/097、TEST §2.8 | 待产出：故障注入与恢复测试、独立 commit |
+| TASK-082 细化 Agent 尝试阶段口径 | 待办 | 区分 Provider 返回、结构校验、内容校验和动作提交；内容拒绝或过期结果不得显示最终成功 | DEC-095/097、TEST §2.8 | 待产出：台账/面板契约、迁移兼容、测试、独立 commit |
+| TASK-083 固定 Node 22 与零付费 CI | 待办 | 增加运行时版本文件和 GitHub Actions；默认 CI 只跑零出网门禁；修正文档中过期验收状态 | DEC-097、SPEC architecture §8、TEST §2.8 | 待产出：CI 配置、静态检查、文档一致性、独立 commit |
