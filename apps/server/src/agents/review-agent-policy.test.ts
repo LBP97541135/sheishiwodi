@@ -22,11 +22,11 @@ class CapturingClient {
     return JSON.stringify({
       perAgent: ['agent-1', 'agent-2', 'agent-3'].map((playerId) => ({
         playerId,
-        verdict: '判断能跟随公开证据更新，投票方向与怀疑保持一致；应进一步压缩描述范围，减少暴露自身词牌特征的风险。',
+        verdict: '判断能跟随公开证据更新，投票方向与怀疑保持一致；应进一步压缩描述范围，减少暴露自身词牌特征的风险。'.padEnd(60, '。'),
         keyMoments: ['第1轮｜依据发言调整怀疑 → 投票命中'],
         rating: 4,
       })),
-      overall: '平民通过第一轮描述差异快速形成交叉验证，统一投票成为胜负手；关键转折是卧底没有及时修正过度宽泛的表达，若其第二次发言能贴近公共语义，局势仍有机会延后。',
+      overall: '平民通过第一轮描述差异快速形成交叉验证，统一投票成为胜负手；关键转折是卧底没有及时修正过度宽泛的表达，若其第二次发言能贴近公共语义，局势仍有机会延后。'.padEnd(100, '。'),
     });
   }
 }
@@ -114,6 +114,7 @@ describe('TokendanceReviewPolicy prompt', () => {
     expect(system).toContain('60～100 个中文字符');
     expect(system).toContain('最关键的 1～2 条');
     expect(system).toContain('100～160 个中文字符');
+    expect(system).toContain('每条不超过 50 个中文字符');
     expect(system).toContain('不得因最终胜负倒推表现');
     expect(system).toContain('不得只按所属阵营输赢评分');
     expect(system).toContain('5=持续准确且行动决定胜负');
@@ -138,12 +139,12 @@ describe('TokendanceReviewPolicy prompt', () => {
   it('重复 perAgent.playerId 触发格式修复而不是冒充完整覆盖', async () => {
     const duplicate = JSON.stringify({
       perAgent: [
-        { playerId: 'agent-1', verdict: '重复一', keyMoments: [], rating: 3 },
-        { playerId: 'agent-2', verdict: '正常二', keyMoments: [], rating: 3 },
-        { playerId: 'agent-3', verdict: '正常三', keyMoments: [], rating: 3 },
-        { playerId: 'agent-3', verdict: '重复三', keyMoments: [], rating: 3 },
+        { playerId: 'agent-1', verdict: '重'.repeat(60), keyMoments: ['第一轮'], rating: 3 },
+        { playerId: 'agent-2', verdict: '常'.repeat(60), keyMoments: ['第一轮'], rating: 3 },
+        { playerId: 'agent-3', verdict: '正'.repeat(60), keyMoments: ['第一轮'], rating: 3 },
+        { playerId: 'agent-3', verdict: '复'.repeat(60), keyMoments: ['第二轮'], rating: 3 },
       ],
-      overall: '整体评价',
+      overall: '总'.repeat(100),
     });
     const valid = await new CapturingClient().chatCompletion({ messages: [] });
     const client = new ScriptedReviewClient([duplicate, valid]);

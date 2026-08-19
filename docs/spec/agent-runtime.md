@@ -341,7 +341,8 @@ Harness 组装 `AgentTurnInput` 时同时产生结构化上下文清单，至少
 - 当前已实现：组装器签发与具体输入内容绑定的来源证明，记录 game、actor、信念所有者、公开可见性、公开游标和输入哈希。出网门禁同时验证进程内签发身份和 SHA-256，调用者手写同形对象不能通过。
 - 当前已实现：Prompt 构造前替换公开事件、私有信念、actor 或 game 会使证明失效，并在客户端调用前记录 `context_boundary_violation`。
 - 模型尝试生命周期区分 `provider_succeeded`、`schema_validated`、`content_validated` 与 `action_committed`。Provider 返回不等于领域动作成功；过期丢弃、内容拒绝和事务失败必须保留准确的最终结果。
-- 信念与复盘中按玩家输出的集合必须显式检查 `playerId` 唯一性和完整覆盖；复盘提示词与共享 Schema 使用相同数量、长度和必填约束。
+- 当前已实现：信念与复盘中按玩家输出的集合显式检查 `playerId` 唯一性和完整覆盖。
+- 当前已实现：复盘新生成契约与提示词统一为每名 AI 的 verdict 60～100 个字符、keyMoments 1～2 条且单条最多 50 个字符、rating 必填为 1～5 整数、overall 100～160 个字符。持久化摘要继续兼容既有较短内容以及 pending/failed 空内容。
 - 零宽字符词面归一化不属于本轮范围，保留为已知残余风险。
 
 ## 13. 来源

@@ -318,7 +318,9 @@ function renderTimeline(
 function repairInstruction(agentIds: readonly string[]): string {
   return (
     `上一次回复不是合法 JSON 或不满足要求。请只返回一个 JSON 对象，不要任何解释或代码块标记。` +
-    `perAgent 必须且只能覆盖这些 playerId：${agentIds.join(', ')}，每个恰好一条；rating 为 1~5 的整数。`
+    `perAgent 必须且只能覆盖这些 playerId：${agentIds.join(', ')}，每个恰好一条；` +
+    `verdict 60～100 个字符；keyMoments 1～2 条且每条不超过 50 个字符；` +
+    `rating 必填且为 1～5 的整数；overall 100～160 个字符。`
   );
 }
 

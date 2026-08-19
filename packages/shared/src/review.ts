@@ -45,14 +45,32 @@ const uniquePerAgentReviewsSchema = z.array(reviewPerAgentSchema).superRefine((r
   }
 });
 
+const generatedPerAgentSchema = reviewPerAgentSchema.extend({
+  verdict: z.string().trim().min(60).max(100),
+  keyMoments: z.array(z.string().trim().min(1).max(50)).min(1).max(2),
+  rating: z.number().int().min(1).max(5),
+});
+
+const uniqueGeneratedPerAgentReviewsSchema = z
+  .array(generatedPerAgentSchema)
+  .superRefine((reviews, context) => {
+    const playerIds = reviews.map((review) => review.playerId);
+    if (new Set(playerIds).size !== playerIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'perAgent.playerId 必须唯一',
+      });
+    }
+  });
+
 /**
  * 复盘模型必须产出的原始评价内容（每个 AI 一段简评 + 全局点评）。
  * 独立于持久化壳，便于对模型输出做严格 Zod 校验 + 一次格式修复。
  */
 export const reviewGenerationSchema = z
   .object({
-    perAgent: uniquePerAgentReviewsSchema,
-    overall: z.string().trim().min(1).max(2000),
+    perAgent: uniqueGeneratedPerAgentReviewsSchema,
+    overall: z.string().trim().min(100).max(160),
   })
   .strict();
 

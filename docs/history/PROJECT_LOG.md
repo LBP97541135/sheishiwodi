@@ -1460,3 +1460,11 @@
 - 复用同一唯一性数组 Schema 约束复盘生成结果和持久化摘要的 `perAgent`，避免重复评价进入数据库或 API 投影。
 - 新增信念与复盘共享负向测试，并在真实复盘策略测试中构造重复 `agent-3` 的四条结果，确认第一次输出记录 `invalid_format`、执行一次既有格式修复后接受三名唯一 Agent。
 - Node 22 下 Shared 定向 5/5、Server 参赛/复盘策略 14/14、Shared typecheck 通过；全部使用本地结构数据和 scripted client，不联网、不读取 Key、不产生费用。
+
+## 2026-08-19 对齐复盘 Prompt 与 Schema（TASK-080）
+
+- 将新生成复盘的共享 Schema 对齐既有精炼提示词：每名 AI 的 verdict 60～100 个字符，keyMoments 1～2 条且每条最多 50 个字符，rating 必填为 1～5 整数，overall 100～160 个字符。
+- 格式修复提示同步重复全部硬约束，避免第一次输出失败后只修 playerId 和评分、再次遗漏长度或条目数量。
+- 严格约束只用于 `ReviewGeneration`；持久化/API 的 `ReviewSummary` 保持较宽读取范围，以兼容已有真实验收复盘、旧测试夹具以及 pending/failed 的空内容。
+- 离线 FakeReviewPolicy 收敛为最多两个关键片段，并用确定性裁切/补齐生成符合新契约的占位评价，不改变真实模型 Prompt 或调用策略。
+- 增加 59/60、空关键片段、单条 51、缺失评分、overall 99/100/161 等边界断言。Node 22 下 Shared 定向 6/6、Server 复盘策略/服务/Markdown 12/12、Shared 与 Server typecheck 通过；无网络和付费调用。

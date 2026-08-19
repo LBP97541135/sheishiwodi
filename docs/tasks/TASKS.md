@@ -212,7 +212,7 @@
 | --- | --- | --- | --- | --- |
 | TASK-078 强化 Agent 上下文来源证明 | 已完成 | 由唯一组装器从权威仓库读取自有信念和公开事件；来源证明绑定 game/actor/owner/visibility/cursor 与具体输入；伪造或篡改输入在出网前阻断 | DEC-097、SPEC agent-runtime §12.5、TEST §2.8 | `AgentContextAssembler` 成为 GameService 唯一组装入口；来源证明使用进程内签发身份与输入 SHA-256 双重绑定；缺失证明、伪造证明、篡改公开事件均在出网前记录 `context_boundary_violation`。Node 22 Server 定向 28/28、typecheck 通过 |
 | TASK-079 拒绝重复玩家标识 | 已完成 | 信念概率与复盘逐 Agent 评价拒绝重复 `playerId`，同时保持完整覆盖校验 | DEC-097、TEST §2.8 | 信念、复盘生成和复盘摘要 Schema 均显式校验唯一 ID；策略级重复复盘输出进入格式修复。Node 22 Shared 5/5、Server 策略 14/14、Shared typecheck 通过 |
-| TASK-080 对齐复盘 Prompt 与 Schema | 待办 | 统一结论、关键片段、总体评价和评分字段的字数、数量与必填约束 | DEC-097、SPEC agent-runtime、TEST §2.8 | 待产出：契约调整、策略测试、独立 commit |
+| TASK-080 对齐复盘 Prompt 与 Schema | 已完成 | 统一结论、关键片段、总体评价和评分字段的字数、数量与必填约束 | DEC-097、SPEC agent-runtime、TEST §2.8 | 新生成契约固定 verdict 60～100、keyMoments 1～2 且单条最多 50、rating 必填、overall 100～160；历史摘要保持宽松读取兼容。Node 22 Shared 6/6、Server 12/12、Shared/Server typecheck 通过 |
 | TASK-081 恢复后台未分类异常 | 待办 | 后台推进未分类异常立即持久化运行中断状态并由玩家确认恢复；不记模型失败、不消耗模型重试 | DEC-092/097、TEST §2.8 | 待产出：故障注入与恢复测试、独立 commit |
 | TASK-082 细化 Agent 尝试阶段口径 | 待办 | 区分 Provider 返回、结构校验、内容校验和动作提交；内容拒绝或过期结果不得显示最终成功 | DEC-095/097、TEST §2.8 | 待产出：台账/面板契约、迁移兼容、测试、独立 commit |
 | TASK-083 固定 Node 22 与零付费 CI | 待办 | 增加运行时版本文件和 GitHub Actions；默认 CI 只跑零出网门禁；修正文档中过期验收状态 | DEC-097、SPEC architecture §8、TEST §2.8 | 待产出：CI 配置、静态检查、文档一致性、独立 commit |
