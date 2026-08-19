@@ -1475,3 +1475,13 @@
 - 新增持久化运行帧 `runtime_interrupted`。该帧只含中断状态，不保存异常消息、Provider、Prompt 或私有上下文；写入时同步推进快照与表列的 `streamSeq`，不增加领域 revision 或 `game_events`。
 - Web 事件流监听该帧并重新读取权威视图；待确认期间，无论服务启动恢复还是 SSE 重新连接都不得自动启动 Agent。异常本身不产生 `game_system_terminated`，也不触发模型重试。
 - 故障注入模拟首次 Agent 调用抛出含私有标记的普通异常，断言调用次数为 1、恢复状态持久化、事件流不含异常原文且不存在系统终止事件。Node 22 Server 定向 6/6、Web 定向 1/1、两端 typecheck 通过；全程使用本地 fake 策略，无网络和付费调用。
+
+## 2026-08-19 细化 Agent 尝试阶段口径（TASK-082）
+
+- 数据库升级到版本 3，新增只保存阶段名与时间的 `model_attempt_stages`；v2 增量迁移不改写已有 `model_attempts`，历史 `success` 行继续可读且阶段为空，新记录从 `request_started` 开始。
+- 真实参赛 Agent 和复盘策略在客户端返回后记录 `provider_returned`，严格输出校验后记录 `schema_validated`，但不再提前宣称最终成功。编排层完成内容校验后记录 `content_validated`，只有游戏动作或复盘摘要事务落库后才记录并最终写入 `action_committed`。
+- 启动时会将未完成尝试与 `agent_actions`、已完成复盘对账；业务已提交但观测终态尚未落账时自动补记成功，避免崩溃窗口造成误恢复。
+- 内容拒绝、领域拒绝、旧 revision 丢弃和事务失败分别写为 `content_rejected`、`domain_rejected`、`stale_discarded`、`commit_failed`。并行投票为每名 Agent 保留独立 attempt 关联；批次提前停止时，未消费的已验证结果统一收口为过期丢弃。
+- 结构已验证但尚未提交的 attempt 保持活动态，进程中断时仍由原有 `runtime_interrupted` 恢复机制捕获。完整调试记录在最终收口时保存脱敏原始响应和准确终态。
+- 开发者调用链新增阶段列；旧数据无阶段时显示占位，不影响读取。新增内容拒绝、动作提交、玩家放弃导致过期、连续事务失败、复盘摘要提交、v2 迁移和面板展示测试；全部使用本地 fake/scripted 数据，不联网、不读取真实 Key、不产生费用。
+- Node 22 下 Shared 55/55、Server 112/112、Web 67/67 全部通过，三 workspace typecheck、全仓 lint 与 `git diff --check` 通过；Web 的 jsdom 媒体暂停提示为既有测试环境噪声，测试退出码为 0。

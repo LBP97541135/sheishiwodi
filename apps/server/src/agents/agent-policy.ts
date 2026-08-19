@@ -21,6 +21,8 @@ export interface AgentActContext {
     actionId: string;
     provenance: AgentContextProvenance;
   };
+  /** 仅在进程内回传通过结构校验的 attempt，不进入模型输入或游戏事实。 */
+  lifecycle?: { validatedAttemptId?: string };
 }
 
 export interface AgentPolicy {

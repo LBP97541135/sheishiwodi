@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { HumanGameView, ReviewGeneration, ReviewSummary } from '@sheishiwodi/shared';
 
 import type { ReviewInput, ReviewPolicy } from '../agents/review-policy.js';
+import type { AgentObservability, AttemptHandle } from '../agents/agent-observability.js';
 import type { GameRepository } from './game-repository.js';
 import { ReviewService } from './review-service.js';
 
@@ -53,7 +54,65 @@ class DeferredReviewPolicy implements ReviewPolicy {
   }
 }
 
+class ImmediateLifecycleReviewPolicy implements ReviewPolicy {
+  readonly modelId = 'review-model';
+
+  async generate(
+    _input: ReviewInput,
+    context?: { lifecycle?: { validatedAttemptId?: string } },
+  ): Promise<ReviewGeneration> {
+    if (context?.lifecycle) context.lifecycle.validatedAttemptId = 'review-attempt-1';
+    return {
+      perAgent: [
+        { playerId: 'agent-1', verdict: '证据更新合理', keyMoments: ['第1轮'], rating: 4 },
+      ],
+      overall: '关键投票决定结果',
+    };
+  }
+}
+
+class LifecycleObservability implements AgentObservability {
+  readonly stages: string[] = [];
+  readonly outcomes: string[] = [];
+
+  beginPlayerAttempt(): AttemptHandle {
+    throw new Error('Unexpected player attempt');
+  }
+
+  beginReviewAttempt(): AttemptHandle {
+    throw new Error('Unexpected review attempt');
+  }
+
+  finishAttempt(): void {}
+
+  markAttemptStage(_attemptId: string, stage: string): void {
+    this.stages.push(stage);
+  }
+
+  finalizeAttempt(_attemptId: string, resultCode: string): void {
+    this.outcomes.push(resultCode);
+  }
+}
+
 describe('ReviewService scheduler', () => {
+  it('复盘摘要持久化完成后才把 attempt 标记为动作已提交', async () => {
+    const repository = new ReviewRepositoryStub();
+    const observability = new LifecycleObservability();
+    const service = new ReviewService(
+      repository as unknown as GameRepository,
+      { now: () => '2026-08-19T05:00:00.000Z' },
+      () => new ImmediateLifecycleReviewPolicy(),
+      observability,
+    );
+
+    service.enqueue('game-review-lifecycle');
+    await service.shutdown();
+
+    expect(repository.summaries.get('game-review-lifecycle')?.status).toBe('done');
+    expect(observability.stages).toEqual(['content_validated', 'action_committed']);
+    expect(observability.outcomes).toEqual(['action_committed']);
+  });
+
   it('活动局阻止新复盘，且全局只运行一个；在途完成后仍等待活动局结束', async () => {
     const repository = new ReviewRepositoryStub();
     const policy = new DeferredReviewPolicy();

@@ -40,6 +40,7 @@ import {
 } from '../agents/agent-context-assembler.js';
 import { FakeAgentPolicy } from '../agents/fake-agent-policy.js';
 import type { AgentPolicy } from '../agents/agent-policy.js';
+import type { AgentObservability } from '../agents/agent-observability.js';
 import { AgentSystemError } from '../agents/tokendance-agent-policy.js';
 import type { GameRepository, PublicStreamFrame } from './game-repository.js';
 import type { GameRecoveryRepository } from './game-recovery-repository.js';
@@ -82,6 +83,7 @@ export class GameService {
       onGameFinished?: (gameId: string) => void;
       /** 对局活动状态变化后唤醒低优先级后台调度。 */
       onGameActivityChanged?: () => void;
+      agentObservability?: AgentObservability;
     },
     private readonly recovery?: GameRecoveryRepository,
   ) {
@@ -427,14 +429,17 @@ export class GameService {
     let voteBatch: Map<string, VoteActionOutput> | null = null;
     let batchCovers = new Set<string>();
     let voteFailures = new Map<string, unknown>();
+    let voteAttemptIds = new Map<string, string>();
     for (let guard = 0; guard < 500; guard += 1) {
       const snapshot = this.games.findSnapshot(gameId);
       if (!snapshot || snapshot.status !== 'in_progress' || !snapshot.round) {
+        this.finalizePendingAttempts(voteAttemptIds);
         return;
       }
       const round = snapshot.round;
       const actor = snapshot.players.find((player) => player.playerId === round.currentActorId);
       if (!actor || !actor.alive || actor.kind !== 'agent') {
+        this.finalizePendingAttempts(voteAttemptIds);
         return;
       }
       if (
@@ -443,11 +448,13 @@ export class GameService {
         round.actionType !== 'vote' &&
         round.actionType !== 'revote'
       ) {
+        this.finalizePendingAttempts(voteAttemptIds);
         return;
       }
 
       const commandId = `auto/${gameId}/${snapshot.revision}/${actor.playerId}/${round.actionType}`;
       if (this.games.findProcessedCommand(commandId)) {
+        this.finalizePendingAttempts(voteAttemptIds);
         return;
       }
 
@@ -460,6 +467,7 @@ export class GameService {
         voteBatch = null;
         batchCovers = new Set();
         voteFailures = new Map();
+        voteAttemptIds = new Map();
       }
       if (isVotePhase && !batchCovers.has(actor.playerId)) {
         const prefetched = await this.prefetchVoteBatch(
@@ -472,13 +480,16 @@ export class GameService {
         voteBatch = prefetched.batch;
         batchCovers = prefetched.covers;
         voteFailures = prefetched.failures;
+        voteAttemptIds = prefetched.attemptIds;
       }
 
       let output: SpeechActionOutput | VoteActionOutput | undefined;
+      let validatedAttemptId = isVotePhase ? voteAttemptIds.get(actor.playerId) : undefined;
       // 仅投票/重投阶段消费预取批次；辩解/描述绝不读它，避免把上一阶段的投票输出误当发言。
       const cached = isVotePhase ? voteBatch?.get(actor.playerId) : undefined;
       const cachedFailure = isVotePhase ? voteFailures.get(actor.playerId) : undefined;
       if (cachedFailure) {
+        this.finalizePendingAttempts(voteAttemptIds);
         if (cachedFailure instanceof AgentSystemError) {
           this.terminateForSystemError(gameId, snapshot, commandId, cachedFailure.code, publicEvents);
           return;
@@ -492,10 +503,12 @@ export class GameService {
         let contentFailureCount = 0;
         let wordLeakCount = 0;
         for (;;) {
+          const lifecycle: { validatedAttemptId?: string } = {};
           try {
             output = await policy.act(input, {
               agentRoleId: actor.agentRoleId ?? actor.playerId,
               ...(contentRetry ? { contentRetry } : {}),
+              lifecycle,
               trace: this.agentTrace(
                 gameId,
                 rootCommandId,
@@ -512,6 +525,7 @@ export class GameService {
             // 保留当前 revision，允许既有启动恢复机制在服务重启后继续。
             throw error;
           }
+          validatedAttemptId = lifecycle.validatedAttemptId;
 
           const latest = this.games.findSnapshot(gameId);
           if (
@@ -522,6 +536,7 @@ export class GameService {
             latest.round.actionType !== round.actionType
           ) {
             // 模型调用期间人类可能放弃或状态已由其他执行者推进；旧结果直接作废。
+            this.finalizeAttempt(validatedAttemptId, 'stale_discarded');
             output = undefined;
             break;
           }
@@ -531,6 +546,7 @@ export class GameService {
           const validation = validatePublicSpeech(speech.text, actor.wordCard);
           if (validation.valid) break;
 
+          this.finalizeAttempt(validatedAttemptId, 'content_rejected');
           contentFailureCount += 1;
           if (validation.code === 'WORD_LEAK') {
             wordLeakCount += 1;
@@ -561,56 +577,64 @@ export class GameService {
         latestBeforeCommit.round?.currentActorId !== actor.playerId ||
         latestBeforeCommit.round.actionType !== round.actionType
       ) {
+        this.finalizeAttempt(validatedAttemptId, 'stale_discarded');
         continue;
       }
 
+      this.markAttemptStage(validatedAttemptId, 'content_validated');
+
       let transition: MachineTransition;
       let outputRecord: Record<string, unknown>;
-      if (round.actionType === 'describe' || round.actionType === 'defend') {
-        const speech = output as SpeechActionOutput;
-        if (round.actionType === 'describe') {
-          transition = submitDescriptionMachine(
-            snapshot,
-            {
-              type: 'SubmitDescription',
-              commandId,
-              gameId,
-              actorId: actor.playerId,
-              expectedRevision: snapshot.revision,
-              text: speech.text,
-            },
-            this.machineDeps(),
-          );
+      try {
+        if (round.actionType === 'describe' || round.actionType === 'defend') {
+          const speech = output as SpeechActionOutput;
+          if (round.actionType === 'describe') {
+            transition = submitDescriptionMachine(
+              snapshot,
+              {
+                type: 'SubmitDescription',
+                commandId,
+                gameId,
+                actorId: actor.playerId,
+                expectedRevision: snapshot.revision,
+                text: speech.text,
+              },
+              this.machineDeps(),
+            );
+          } else {
+            transition = submitDefenseMachine(
+              snapshot,
+              {
+                type: 'SubmitDefense',
+                commandId,
+                gameId,
+                actorId: actor.playerId,
+                expectedRevision: snapshot.revision,
+                text: speech.text,
+              },
+              this.machineDeps(),
+            );
+          }
+          outputRecord = { text: speech.text };
         } else {
-          transition = submitDefenseMachine(
+          const vote = output as VoteActionOutput;
+          transition = submitVoteMachine(
             snapshot,
             {
-              type: 'SubmitDefense',
+              type: 'SubmitVote',
               commandId,
               gameId,
               actorId: actor.playerId,
               expectedRevision: snapshot.revision,
-              text: speech.text,
+              targetPlayerId: vote.targetPlayerId,
             },
             this.machineDeps(),
           );
+          outputRecord = { targetPlayerId: vote.targetPlayerId, reason: vote.reason };
         }
-        outputRecord = { text: speech.text };
-      } else {
-        const vote = output as VoteActionOutput;
-        transition = submitVoteMachine(
-          snapshot,
-          {
-            type: 'SubmitVote',
-            commandId,
-            gameId,
-            actorId: actor.playerId,
-            expectedRevision: snapshot.revision,
-            targetPlayerId: vote.targetPlayerId,
-          },
-          this.machineDeps(),
-        );
-        outputRecord = { targetPlayerId: vote.targetPlayerId, reason: vote.reason };
+      } catch (error) {
+        this.finalizeAttempt(validatedAttemptId, 'domain_rejected');
+        throw error;
       }
 
       const timeline = [...publicEvents, ...this.games.publicTimelineWith(transition.events)];
@@ -645,8 +669,14 @@ export class GameService {
           response: view,
           privateAction,
         });
+        this.markAttemptStage(validatedAttemptId, 'action_committed');
+        this.finalizeAttempt(validatedAttemptId, 'action_committed');
       } catch (error) {
-        if (error instanceof Error && error.message === 'REVISION_CONFLICT') continue;
+        if (error instanceof Error && error.message === 'REVISION_CONFLICT') {
+          this.finalizeAttempt(validatedAttemptId, 'stale_discarded');
+          continue;
+        }
+        this.finalizeAttempt(validatedAttemptId, 'commit_failed');
         const latest = this.games.findSnapshot(gameId);
         if (latest?.status === 'in_progress') {
           this.terminateForSystemError(
@@ -677,6 +707,7 @@ export class GameService {
     batch: Map<string, VoteActionOutput>;
     covers: Set<string>;
     failures: Map<string, unknown>;
+    attemptIds: Map<string, string>;
   }> {
     const living = snapshot.players.filter((player) => player.alive);
     const isRevote = round.actionType === 'revote';
@@ -696,14 +727,17 @@ export class GameService {
     const covers = new Set(run.map((player) => player.playerId));
     const batch = new Map<string, VoteActionOutput>();
     const failures = new Map<string, unknown>();
-    if (run.length < 2) return { batch, covers, failures }; // 单个投票者无需并行，走普通串行路径。
+    const attemptIds = new Map<string, string>();
+    if (run.length < 2) return { batch, covers, failures, attemptIds }; // 单个投票者无需并行，走普通串行路径。
 
     const settled = await Promise.allSettled(
       run.map(async (player, index) => {
         const { input, provenance } = this.agentContexts.assemble(snapshot, player.playerId);
         const actionId = `auto/${gameId}/${snapshot.revision + index}/${player.playerId}/${round.actionType}`;
+        const lifecycle: { validatedAttemptId?: string } = {};
         const output = await policy.act(input, {
           agentRoleId: player.agentRoleId ?? player.playerId,
+          lifecycle,
           trace: this.agentTrace(
             gameId,
             rootCommandId,
@@ -711,17 +745,35 @@ export class GameService {
             provenance,
           ),
         });
-        return { playerId: player.playerId, output };
+        return { playerId: player.playerId, output, attemptId: lifecycle.validatedAttemptId };
       }),
     );
     settled.forEach((entry, index) => {
       if (entry.status === 'fulfilled') {
         batch.set(entry.value.playerId, entry.value.output as VoteActionOutput);
+        if (entry.value.attemptId) attemptIds.set(entry.value.playerId, entry.value.attemptId);
       } else {
         failures.set(run[index]!.playerId, entry.reason);
       }
     });
-    return { batch, covers, failures };
+    return { batch, covers, failures, attemptIds };
+  }
+
+  private markAttemptStage(
+    attemptId: string | undefined,
+    stage: 'content_validated' | 'action_committed',
+  ) {
+    if (attemptId) this.dependencies.agentObservability?.markAttemptStage?.(attemptId, stage);
+  }
+
+  private finalizeAttempt(attemptId: string | undefined, resultCode: string) {
+    if (attemptId) this.dependencies.agentObservability?.finalizeAttempt?.(attemptId, resultCode);
+  }
+
+  private finalizePendingAttempts(attemptIds: ReadonlyMap<string, string>) {
+    for (const attemptId of attemptIds.values()) {
+      this.finalizeAttempt(attemptId, 'stale_discarded');
+    }
   }
 
   private agentTrace(

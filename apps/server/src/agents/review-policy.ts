@@ -27,7 +27,11 @@ export interface ReviewPolicy {
   readonly modelId: string;
   generate(
     input: ReviewInput,
-    context?: { commandId: string; actionId: string },
+    context?: {
+      commandId: string;
+      actionId: string;
+      lifecycle?: { validatedAttemptId?: string };
+    },
   ): Promise<ReviewGeneration>;
 }
 

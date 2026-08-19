@@ -82,7 +82,11 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
 
   async generate(
     input: ReviewInput,
-    context: { commandId: string; actionId: string } = {
+    context: {
+      commandId: string;
+      actionId: string;
+      lifecycle?: { validatedAttemptId?: string };
+    } = {
       commandId: `review/${input.gameId}`,
       actionId: `review/${input.gameId}`,
     },
@@ -135,6 +139,9 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
           extraBody,
           ...(attempt.signal ? { signal: attempt.signal } : {}),
         });
+        this.observability.markAttemptStage?.(attempt.attemptId, 'provider_returned', {
+          rawResponse: content,
+        });
         this.circuitBreaker.recordSuccess();
       } catch (error) {
         if (error instanceof TokendanceError && error.kind === 'interrupted') {
@@ -162,7 +169,12 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
 
       try {
         const output = buildReviewOutput(extractJson(content), agentIds);
-        this.observability.finishAttempt(attempt, 'success', { rawResponse: content });
+        this.observability.markAttemptStage?.(attempt.attemptId, 'schema_validated');
+        if (context.lifecycle) {
+          context.lifecycle.validatedAttemptId = attempt.attemptId;
+        } else {
+          this.observability.finishAttempt(attempt, 'schema_validated', { rawResponse: content });
+        }
         return output;
       } catch (error) {
         if (!(error instanceof ReviewFormatError)) {

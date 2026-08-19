@@ -1,6 +1,7 @@
 import type { Clock, ReviewErrorCode, ReviewSummary } from '@sheishiwodi/shared';
 
 import { FakeReviewPolicy } from '../agents/fake-review-policy.js';
+import type { AgentObservability } from '../agents/agent-observability.js';
 import { buildReviewInput, type ReviewPolicy } from '../agents/review-policy.js';
 import {
   ReviewRuntimeInterruptedError,
@@ -32,6 +33,7 @@ export class ReviewService {
     private readonly games: GameRepository,
     private readonly clock: Clock,
     private readonly policyFactory: () => ReviewPolicy = () => new FakeReviewPolicy(),
+    private readonly observability?: AgentObservability,
   ) {}
 
   /** 终局回调：写入 pending 并 fire-and-forget 后台生成。幂等：已有 done/进行中则跳过。 */
@@ -159,21 +161,34 @@ export class ReviewService {
         return;
       }
 
+      const lifecycle: { validatedAttemptId?: string } = {};
       const generation = await policy.generate(input, {
         commandId: `review/${gameId}`,
         actionId: `review/${gameId}`,
+        lifecycle,
       });
-      this.games.upsertReviewSummary(
-        {
-          gameId,
-          status: 'done',
-          modelId,
-          generatedAt: this.clock.now(),
-          perAgent: generation.perAgent,
-          overall: generation.overall,
-        },
-        this.clock.now(),
-      );
+      const attemptId = lifecycle.validatedAttemptId;
+      if (attemptId) this.observability?.markAttemptStage?.(attemptId, 'content_validated');
+      try {
+        this.games.upsertReviewSummary(
+          {
+            gameId,
+            status: 'done',
+            modelId,
+            generatedAt: this.clock.now(),
+            perAgent: generation.perAgent,
+            overall: generation.overall,
+          },
+          this.clock.now(),
+        );
+        if (attemptId) {
+          this.observability?.markAttemptStage?.(attemptId, 'action_committed');
+          this.observability?.finalizeAttempt?.(attemptId, 'action_committed');
+        }
+      } catch (error) {
+        if (attemptId) this.observability?.finalizeAttempt?.(attemptId, 'commit_failed');
+        throw error;
+      }
     } catch (error) {
       if (error instanceof ReviewRuntimeInterruptedError) {
         this.games.upsertReviewSummary(

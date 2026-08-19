@@ -296,7 +296,7 @@ gameId -> commandId -> actionId -> attemptId
 - `commandId` 表示触发本轮推进的人类命令或系统调度命令。
 - `actionId` 表示某名 Agent 在指定修订号上的语义动作；并行投票每名 Agent 独立。
 - `attemptId` 表示一次实际模型请求，格式修复、内容重生成和系统重试均产生新的尝试记录。
-- `model_attempts` 只保存角色、model ID、动作类型、尝试序号、开始/结束时间、耗时、现有错误分类和恢复类型等脱敏元数据。
+- `model_attempts` 只保存角色、model ID、动作类型、尝试序号、开始/结束时间、耗时、最终结果分类和恢复类型等脱敏元数据；关联的 `model_attempt_stages` 保存阶段及发生时间。
 
 ### 12.2 上下文清单与调用前门禁
 
@@ -319,7 +319,7 @@ Harness 组装 `AgentTurnInput` 时同时产生结构化上下文清单，至少
 
 `AGENT_DEVELOPER_MODE=true` 是服务端权威总门禁，默认关闭。关闭时不装配诊断路由、不返回诊断能力标记或数据，前端也不渲染入口；开启后，前端设置区才显示只保存在当前标签页的开发者模式开关。
 
-前端开关打开后显示只读面板，按“调用链、上下文、错误与恢复、复盘调度”组织 Agent、动作、上下文类型、边界校验、耗时、重试、格式修复、内容重生成、结果分类、熔断状态和后台复盘状态。基础 `model_attempts` 与结构化上下文清单始终记录，不受面板显示开关影响。
+前端开关打开后显示只读面板，按“调用链、上下文、错误与恢复、复盘调度”组织 Agent、动作、上下文类型、边界校验、耗时、重试、格式修复、内容重生成、阶段链、最终结果分类、熔断状态和后台复盘状态。基础 `model_attempts`、`model_attempt_stages` 与结构化上下文清单始终记录，不受面板显示开关影响。
 
 面板内的“记录完整上下文”是第二个敏感开关：默认关闭、开启前确认、只保存在服务端进程内并在重启后自动复位。开启后新产生的完整 Prompt/原始响应可在面板逐条查看，但每条必须再次确认才展开；查询仍须过滤 Key、Base URL、请求头，完整记录继续执行 7 天和容量清理。面板不可推进游戏、修改审计数据或重放付费请求。
 
@@ -335,12 +335,14 @@ Harness 组装 `AgentTurnInput` 时同时产生结构化上下文清单，至少
 
 项目定义的调用语义可通过可选 `TelemetrySink` 输出 attempt 开始/结束的脱敏事件；默认使用空实现。当前事实源仍为本地 SQLite 与审计文件；第三方平台只能作为未来适配器，不能成为运行依赖或绕过上下文脱敏边界。
 
-### 12.5 上下文来源证明与尝试阶段（部分实现）
+### 12.5 上下文来源证明与尝试阶段（已实现）
 
 - 当前已实现：参赛 Agent 输入只能由服务端唯一 `AgentContextAssembler` 产生。组装器直接从权威仓库按 `gameId + actorPlayerId` 读取该 Agent 自有信念，并从 `visibility=public` 查询构造公开时间线。
 - 当前已实现：组装器签发与具体输入内容绑定的来源证明，记录 game、actor、信念所有者、公开可见性、公开游标和输入哈希。出网门禁同时验证进程内签发身份和 SHA-256，调用者手写同形对象不能通过。
 - 当前已实现：Prompt 构造前替换公开事件、私有信念、actor 或 game 会使证明失效，并在客户端调用前记录 `context_boundary_violation`。
-- 模型尝试生命周期区分 `provider_succeeded`、`schema_validated`、`content_validated` 与 `action_committed`。Provider 返回不等于领域动作成功；过期丢弃、内容拒绝和事务失败必须保留准确的最终结果。
+- 当前已实现：模型尝试生命周期依次记录 `request_started`、`provider_returned`、`schema_validated`、`content_validated` 与 `action_committed`；Provider 返回不等于领域动作成功。只有最终动作或复盘摘要持久化后，`resultCode` 才能写为 `action_committed`。
+- 启动恢复会先用 `agent_actions` 或状态为 `done` 的 `review_summaries` 对账：若业务结果已提交但观测终态尚未来得及写入，则补记 `action_committed`，不把它误报为运行时中断。
+- 当前已实现：内容拒绝、领域拒绝、过期丢弃和事务失败分别保留 `content_rejected`、`domain_rejected`、`stale_discarded`、`commit_failed` 终态。并行投票每名 Agent 独立关联 attempt；同批未消费结果在其他调用导致流程停止时统一标为过期。结构已通过但尚未提交的 attempt 保持活动态，因此进程中断仍能被既有恢复机制捕获。
 - 当前已实现：信念与复盘中按玩家输出的集合显式检查 `playerId` 唯一性和完整覆盖。
 - 当前已实现：复盘新生成契约与提示词统一为每名 AI 的 verdict 60～100 个字符、keyMoments 1～2 条且单条最多 50 个字符、rating 必填为 1～5 整数、overall 100～160 个字符。持久化摘要继续兼容既有较短内容以及 pending/failed 空内容。
 - 零宽字符词面归一化不属于本轮范围，保留为已知残余风险。

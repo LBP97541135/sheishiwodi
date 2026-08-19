@@ -14,7 +14,10 @@ import {
   type WordPair,
 } from '@sheishiwodi/shared';
 
-import type { ModelAttemptRow } from '../db/model-attempt-repository.js';
+import type {
+  ModelAttemptRow,
+  ModelAttemptStageCode,
+} from '../db/model-attempt-repository.js';
 import {
   ContextAuditWriter,
   PersistentAgentObservability,
@@ -38,12 +41,24 @@ class MemoryAttemptStore implements ModelAttemptStore {
   begin(
     input: Omit<
       ModelAttemptRow,
-      'attemptNumber' | 'resultCode' | 'finishedAt' | 'durationMs'
+      'attemptNumber' | 'resultCode' | 'finishedAt' | 'durationMs' | 'stages'
     >,
   ) {
     const attemptNumber = this.rows.filter((row) => row.actionId === input.actionId).length + 1;
-    this.rows.push({ ...input, attemptNumber, resultCode: 'started' });
+    this.rows.push({
+      ...input,
+      attemptNumber,
+      resultCode: 'started',
+      stages: [{ stage: 'request_started', occurredAt: input.startedAt }],
+    });
     return attemptNumber;
+  }
+
+  markStage(attemptId: string, stage: ModelAttemptStageCode, occurredAt: string) {
+    const row = this.rows.find((entry) => entry.attemptId === attemptId);
+    if (row && !row.stages.some((entry) => entry.stage === stage)) {
+      row.stages.push({ stage, occurredAt });
+    }
   }
 
   finish(
@@ -121,7 +136,7 @@ describe('Agent observability', () => {
         actionId,
         attemptNumber: 2,
         attemptKind: 'format_repair',
-        resultCode: 'success',
+        resultCode: 'schema_validated',
       },
     ]);
     const manifests = readManifests(directory);

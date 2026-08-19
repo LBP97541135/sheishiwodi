@@ -170,11 +170,12 @@ function CallsView({ overview }: { overview: DeveloperOverview }) {
   return (
     <div className="developer-table-wrap">
       <table className="developer-table">
-        <thead><tr><th>时间</th><th>角色</th><th>动作</th><th>模型</th><th>尝试</th><th>结果</th><th>耗时</th></tr></thead>
+        <thead><tr><th>时间</th><th>角色</th><th>动作</th><th>模型</th><th>尝试</th><th>阶段</th><th>结果</th><th>耗时</th></tr></thead>
         <tbody>{overview.calls.map((call) => (
           <tr key={call.attemptId}>
             <td>{formatTime(call.startedAt)}</td><td>{call.roleId}</td><td>{call.actionType}</td>
             <td>{call.modelId}</td><td>{call.attemptNumber} / {call.attemptKind}</td>
+            <td>{call.stages?.map((stage) => stage.stage).join(' → ') || '-'}</td>
             <td><code>{call.resultCode}</code></td><td>{call.durationMs === undefined ? '-' : `${call.durationMs} ms`}</td>
           </tr>
         ))}</tbody>

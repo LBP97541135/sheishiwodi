@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+export const developerAttemptStageSchema = z.object({
+  stage: z.enum([
+    'request_started',
+    'provider_returned',
+    'schema_validated',
+    'content_validated',
+    'action_committed',
+  ]),
+  occurredAt: z.string().min(1),
+});
+
 export const developerAttemptSchema = z.object({
   attemptId: z.string().min(1),
   gameId: z.string().min(1),
@@ -15,6 +26,7 @@ export const developerAttemptSchema = z.object({
   startedAt: z.string().min(1),
   finishedAt: z.string().min(1).optional(),
   durationMs: z.number().int().nonnegative().optional(),
+  stages: z.array(developerAttemptStageSchema).optional(),
 });
 
 export const developerContextSourceSchema = z.object({

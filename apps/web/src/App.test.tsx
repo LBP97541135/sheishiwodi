@@ -77,7 +77,31 @@ describe('App', () => {
         return response({
           data: {
             fullRecordingEnabled,
-            calls: [],
+            calls: [
+              {
+                attemptId: 'attempt-1',
+                gameId: 'game-1',
+                commandId: 'start-1',
+                actionId: 'action-1',
+                playerId: 'agent-1',
+                roleId: 'deepseek',
+                modelId: 'model-x',
+                actionType: 'describe',
+                attemptNumber: 1,
+                attemptKind: 'initial',
+                resultCode: 'action_committed',
+                startedAt: '2026-08-19T05:00:00.000Z',
+                finishedAt: '2026-08-19T05:00:01.000Z',
+                durationMs: 1000,
+                stages: [
+                  { stage: 'request_started', occurredAt: '2026-08-19T05:00:00.000Z' },
+                  { stage: 'provider_returned', occurredAt: '2026-08-19T05:00:00.800Z' },
+                  { stage: 'schema_validated', occurredAt: '2026-08-19T05:00:00.850Z' },
+                  { stage: 'content_validated', occurredAt: '2026-08-19T05:00:00.900Z' },
+                  { stage: 'action_committed', occurredAt: '2026-08-19T05:00:01.000Z' },
+                ],
+              },
+            ],
             contexts: [],
             errorsAndRecovery: {
               failedAttempts: [],
@@ -114,6 +138,11 @@ describe('App', () => {
     expect(screen.getByRole('tab', { name: '上下文' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '错误与恢复' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '复盘调度' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'request_started → provider_returned → schema_validated → content_validated → action_committed',
+      ),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '开启记录' }));
     expect(confirm).toHaveBeenCalledTimes(1);

@@ -17,6 +17,7 @@ import { agentTurnInputSchema, type AgentTurnInput } from '@sheishiwodi/shared';
 import type {
   ModelAttemptKind,
   ModelAttemptRow,
+  ModelAttemptStageCode,
 } from '../db/model-attempt-repository.js';
 import { verifyAgentContextProvenance } from './agent-context-assembler.js';
 import type { AgentActContext } from './agent-policy.js';
@@ -50,9 +51,10 @@ export interface ModelAttemptStore {
   begin(
     input: Omit<
       ModelAttemptRow,
-      'attemptNumber' | 'resultCode' | 'finishedAt' | 'durationMs'
+      'attemptNumber' | 'resultCode' | 'finishedAt' | 'durationMs' | 'stages'
     >,
   ): number;
+  markStage(attemptId: string, stage: ModelAttemptStageCode, occurredAt: string): void;
   finish(
     attemptId: string,
     input: { resultCode: string; finishedAt: string; durationMs: number },
@@ -110,6 +112,12 @@ export interface AgentObservability {
     resultCode: string,
     options?: { rawResponse?: string },
   ): void;
+  markAttemptStage?(
+    attemptId: string,
+    stage: ModelAttemptStageCode,
+    options?: { rawResponse?: string },
+  ): void;
+  finalizeAttempt?(attemptId: string, resultCode: string): void;
   interruptActiveAttempts?(): InterruptedAttempt[];
 }
 
@@ -117,6 +125,8 @@ export const noOpAgentObservability: AgentObservability = {
   beginPlayerAttempt: () => ({ attemptId: 'noop', startedAtMs: Date.now() }),
   beginReviewAttempt: () => ({ attemptId: 'noop', startedAtMs: Date.now() }),
   finishAttempt: () => undefined,
+  markAttemptStage: () => undefined,
+  finalizeAttempt: () => undefined,
 };
 
 export interface FullContextRecord {
@@ -306,6 +316,7 @@ export class PersistentAgentObservability implements AgentObservability {
       actionId: string;
       actionType: string;
       controller: AbortController;
+      rawResponse?: string;
     }
   >();
 
@@ -517,6 +528,26 @@ export class PersistentAgentObservability implements AgentObservability {
       });
     }
     this.activeAttempts.delete(handle.attemptId);
+  }
+
+  markAttemptStage(
+    attemptId: string,
+    stage: ModelAttemptStageCode,
+    options?: { rawResponse?: string },
+  ) {
+    this.attempts.markStage(attemptId, stage, this.now().toISOString());
+    const active = this.activeAttempts.get(attemptId);
+    if (active && options?.rawResponse !== undefined) active.rawResponse = options.rawResponse;
+  }
+
+  finalizeAttempt(attemptId: string, resultCode: string) {
+    const active = this.activeAttempts.get(attemptId);
+    if (!active) return;
+    this.finishAttempt(
+      active.handle,
+      resultCode,
+      active.rawResponse === undefined ? undefined : { rawResponse: active.rawResponse },
+    );
   }
 
   interruptActiveAttempts(): InterruptedAttempt[] {

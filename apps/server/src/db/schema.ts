@@ -119,6 +119,18 @@ export const modelAttempts = sqliteTable(
   ],
 );
 
+export const modelAttemptStages = sqliteTable(
+  'model_attempt_stages',
+  {
+    attemptId: text('attempt_id')
+      .notNull()
+      .references(() => modelAttempts.attemptId, { onDelete: 'cascade' }),
+    stage: text('stage').notNull(),
+    occurredAt: text('occurred_at').notNull(),
+  },
+  (table) => [uniqueIndex('model_attempt_stages_identity').on(table.attemptId, table.stage)],
+);
+
 export const gameRuntimeRecovery = sqliteTable('game_runtime_recovery', {
   gameId: text('game_id').primaryKey(),
   actionId: text('action_id').notNull(),

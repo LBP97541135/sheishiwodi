@@ -214,5 +214,5 @@
 | TASK-079 拒绝重复玩家标识 | 已完成 | 信念概率与复盘逐 Agent 评价拒绝重复 `playerId`，同时保持完整覆盖校验 | DEC-097、TEST §2.8 | 信念、复盘生成和复盘摘要 Schema 均显式校验唯一 ID；策略级重复复盘输出进入格式修复。Node 22 Shared 5/5、Server 策略 14/14、Shared typecheck 通过 |
 | TASK-080 对齐复盘 Prompt 与 Schema | 已完成 | 统一结论、关键片段、总体评价和评分字段的字数、数量与必填约束 | DEC-097、SPEC agent-runtime、TEST §2.8 | 新生成契约固定 verdict 60～100、keyMoments 1～2 且单条最多 50、rating 必填、overall 100～160；历史摘要保持宽松读取兼容。Node 22 Shared 6/6、Server 12/12、Shared/Server typecheck 通过 |
 | TASK-081 恢复后台未分类异常 | 已完成 | 后台推进未分类异常立即持久化运行中断状态并由玩家确认恢复；不记模型失败、不消耗模型重试 | DEC-092/097、TEST §2.8 | `GameService` 将后台普通异常写入既有恢复门禁，`GameRepository` 原子追加脱敏 `runtime_interrupted` 流帧；SSE 重连在待确认期间不自动推进，Web 收帧后权威同步。Node 22 Server 故障注入 6/6、Web 定向 1/1、两端 typecheck 通过 |
-| TASK-082 细化 Agent 尝试阶段口径 | 待办 | 区分 Provider 返回、结构校验、内容校验和动作提交；内容拒绝或过期结果不得显示最终成功 | DEC-095/097、TEST §2.8 | 待产出：台账/面板契约、迁移兼容、测试、独立 commit |
+| TASK-082 细化 Agent 尝试阶段口径 | 已完成 | 区分 Provider 返回、结构校验、内容校验和动作提交；内容拒绝或过期结果不得显示最终成功 | DEC-095/097、TEST §2.8 | 新增 v3 `model_attempt_stages` 增量迁移与面板阶段列；成功终态统一为 `action_committed`，并覆盖 `content_rejected`、`domain_rejected`、`stale_discarded`、`commit_failed`；启动时对账已提交动作以关闭观测落账崩溃窗口。Node 22 默认测试 234/234、三 workspace typecheck、全仓 lint 与差异检查通过 |
 | TASK-083 固定 Node 22 与零付费 CI | 待办 | 增加运行时版本文件和 GitHub Actions；默认 CI 只跑零出网门禁；修正文档中过期验收状态 | DEC-097、SPEC architecture §8、TEST §2.8 | 待产出：CI 配置、静态检查、文档一致性、独立 commit |

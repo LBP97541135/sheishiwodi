@@ -3,7 +3,7 @@ import { copyFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const migrationUrl = new URL('../../drizzle/0000_initial.sql', import.meta.url);
-export const latestDatabaseVersion = 2;
+export const latestDatabaseVersion = 3;
 
 export function migrateDatabase(
   sqlite: Database.Database,
@@ -71,6 +71,14 @@ export function migrateDatabase(
     );
     CREATE INDEX IF NOT EXISTS model_attempts_game_started
       ON model_attempts (game_id, started_at);
+  `);
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS model_attempt_stages (
+      attempt_id TEXT NOT NULL REFERENCES model_attempts(attempt_id) ON DELETE CASCADE,
+      stage TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      PRIMARY KEY (attempt_id, stage)
+    );
   `);
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS game_runtime_recovery (

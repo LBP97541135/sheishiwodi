@@ -6,6 +6,18 @@ export type ModelAttemptKind =
   | 'content_regeneration'
   | 'system_retry';
 
+export type ModelAttemptStageCode =
+  | 'request_started'
+  | 'provider_returned'
+  | 'schema_validated'
+  | 'content_validated'
+  | 'action_committed';
+
+export interface ModelAttemptStage {
+  stage: ModelAttemptStageCode;
+  occurredAt: string;
+}
+
 export interface ModelAttemptRow {
   attemptId: string;
   gameId: string;
@@ -21,6 +33,7 @@ export interface ModelAttemptRow {
   startedAt: string;
   finishedAt?: string;
   durationMs?: number;
+  stages: ModelAttemptStage[];
 }
 
 export interface InterruptedModelAction {
@@ -31,7 +44,12 @@ export interface InterruptedModelAction {
 export class ModelAttemptRepository {
   constructor(private readonly database: AppDatabase) {}
 
-  begin(input: Omit<ModelAttemptRow, 'attemptNumber' | 'resultCode' | 'finishedAt' | 'durationMs'>) {
+  begin(
+    input: Omit<
+      ModelAttemptRow,
+      'attemptNumber' | 'resultCode' | 'finishedAt' | 'durationMs' | 'stages'
+    >,
+  ) {
     return this.database.sqlite.transaction(() => {
       const row = this.database.sqlite
         .prepare(
@@ -60,8 +78,18 @@ export class ModelAttemptRepository {
           input.attemptKind,
           input.startedAt,
         );
+      this.markStage(input.attemptId, 'request_started', input.startedAt);
       return attemptNumber;
     })();
+  }
+
+  markStage(attemptId: string, stage: ModelAttemptStageCode, occurredAt: string) {
+    this.database.sqlite
+      .prepare(
+        `INSERT OR IGNORE INTO model_attempt_stages (attempt_id, stage, occurred_at)
+         VALUES (?, ?, ?)`,
+      )
+      .run(attemptId, stage, occurredAt);
   }
 
   finish(
@@ -81,7 +109,23 @@ export class ModelAttemptRepository {
     return this.database.sqlite.transaction(() => {
       const rows = this.database.sqlite
         .prepare(
-          `SELECT attempt_id, game_id, action_id, started_at
+          `SELECT
+             attempt_id,
+             game_id,
+             action_id,
+             started_at,
+             CASE
+               WHEN EXISTS (
+                 SELECT 1 FROM agent_actions
+                 WHERE agent_actions.action_id = model_attempts.action_id
+               ) THEN 1
+               WHEN action_type = 'review' AND EXISTS (
+                 SELECT 1 FROM review_summaries
+                 WHERE review_summaries.game_id = model_attempts.game_id
+                   AND review_summaries.status = 'done'
+               ) THEN 1
+               ELSE 0
+             END AS action_committed
            FROM model_attempts WHERE finished_at IS NULL
            ORDER BY started_at, attempt_id`,
         )
@@ -90,16 +134,21 @@ export class ModelAttemptRepository {
         game_id: string;
         action_id: string;
         started_at: string;
+        action_committed: 0 | 1;
       }>;
       const update = this.database.sqlite.prepare(
         `UPDATE model_attempts
-         SET result_code = 'runtime_interrupted', finished_at = ?, duration_ms = ?
+         SET result_code = ?, finished_at = ?, duration_ms = ?
          WHERE attempt_id = ? AND finished_at IS NULL`,
       );
       const finishedAtMs = Date.parse(finishedAt);
       for (const row of rows) {
         const startedAtMs = Date.parse(row.started_at);
+        if (row.action_committed) {
+          this.markStage(row.attempt_id, 'action_committed', finishedAt);
+        }
         update.run(
+          row.action_committed ? 'action_committed' : 'runtime_interrupted',
           finishedAt,
           Number.isFinite(finishedAtMs) && Number.isFinite(startedAtMs)
             ? Math.max(0, finishedAtMs - startedAtMs)
@@ -108,10 +157,17 @@ export class ModelAttemptRepository {
         );
       }
       return Array.from(
-        new Map(rows.map((row) => [`${row.game_id}\0${row.action_id}`, {
-          gameId: row.game_id,
-          actionId: row.action_id,
-        }])).values(),
+        new Map(
+          rows
+            .filter((row) => !row.action_committed)
+            .map((row) => [
+              `${row.game_id}\0${row.action_id}`,
+              {
+                gameId: row.game_id,
+                actionId: row.action_id,
+              },
+            ]),
+        ).values(),
       );
     })();
   }
@@ -155,6 +211,7 @@ export class ModelAttemptRepository {
       startedAt: row.started_at,
       ...(row.finished_at ? { finishedAt: row.finished_at } : {}),
       ...(row.duration_ms === null ? {} : { durationMs: row.duration_ms }),
+      stages: this.listStages(row.attempt_id),
     }));
   }
 
@@ -186,7 +243,17 @@ export class ModelAttemptRepository {
       finished_at: string | null;
       duration_ms: number | null;
     }>;
-    return rows.map(mapRow);
+    return rows.map((row) => mapRow(row, this.listStages(row.attempt_id)));
+  }
+
+  private listStages(attemptId: string): ModelAttemptStage[] {
+    const rows = this.database.sqlite
+      .prepare(
+        `SELECT stage, occurred_at FROM model_attempt_stages
+         WHERE attempt_id = ? ORDER BY rowid`,
+      )
+      .all(attemptId) as Array<{ stage: ModelAttemptStageCode; occurred_at: string }>;
+    return rows.map((row) => ({ stage: row.stage, occurredAt: row.occurred_at }));
   }
 }
 
@@ -205,7 +272,7 @@ function mapRow(row: {
   started_at: string;
   finished_at: string | null;
   duration_ms: number | null;
-}): ModelAttemptRow {
+}, stages: ModelAttemptStage[]): ModelAttemptRow {
   return {
     attemptId: row.attempt_id,
     gameId: row.game_id,
@@ -221,5 +288,6 @@ function mapRow(row: {
     startedAt: row.started_at,
     ...(row.finished_at ? { finishedAt: row.finished_at } : {}),
     ...(row.duration_ms === null ? {} : { durationMs: row.duration_ms }),
+    stages,
   };
 }

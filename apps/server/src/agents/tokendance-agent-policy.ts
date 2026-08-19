@@ -163,6 +163,9 @@ export class TokendanceAgentPolicy implements AgentPolicy {
           extraBody,
           ...(attempt.signal ? { signal: attempt.signal } : {}),
         });
+        this.observability.markAttemptStage?.(attempt.attemptId, 'provider_returned', {
+          rawResponse: content,
+        });
         this.circuitBreaker.recordSuccess();
         this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'ok');
       } catch (error) {
@@ -192,7 +195,12 @@ export class TokendanceAgentPolicy implements AgentPolicy {
 
       try {
         const output = buildOutput(extractJson(content), input);
-        this.observability.finishAttempt(attempt, 'success', { rawResponse: content });
+        this.observability.markAttemptStage?.(attempt.attemptId, 'schema_validated');
+        if (context?.lifecycle) {
+          context.lifecycle.validatedAttemptId = attempt.attemptId;
+        } else {
+          this.observability.finishAttempt(attempt, 'schema_validated', { rawResponse: content });
+        }
         this.record(input.actor.playerId, output.belief);
         return output;
       } catch (error) {

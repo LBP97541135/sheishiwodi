@@ -28,6 +28,52 @@ describe('database startup reliability', () => {
       expect(
         reopened.sqlite.prepare('SELECT value FROM legacy_marker').get(),
       ).toEqual({ value: 'before' });
+      expect(
+        reopened.sqlite
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+          .get('model_attempt_stages'),
+      ).toEqual({ name: 'model_attempt_stages' });
+      reopened.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('从 v2 增量增加 attempt 阶段表并保留已有调用记录', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'database-stage-migration-'));
+    const databasePath = join(directory, 'test.db');
+    try {
+      const original = createDatabase(databasePath);
+      migrateDatabase(original.sqlite);
+      original.sqlite.exec(`
+        DROP TABLE model_attempt_stages;
+        INSERT INTO games (
+          game_id, status, phase, revision, event_seq, stream_seq,
+          snapshot_json, schema_version, created_at, updated_at
+        ) VALUES (
+          'legacy-game', 'in_progress', 'speaking', 0, 0, 0, '{}', 1,
+          '2026-08-19T05:00:00.000Z', '2026-08-19T05:00:00.000Z'
+        );
+        INSERT INTO model_attempts (
+          attempt_id, game_id, command_id, action_id, role_id, model_id,
+          action_type, attempt_number, attempt_kind, result_code, started_at
+        ) VALUES (
+          'legacy-attempt', 'legacy-game', 'legacy-command', 'legacy-action',
+          'deepseek', 'legacy-model', 'describe', 1, 'initial', 'success',
+          '2026-08-19T05:00:00.000Z'
+        );
+      `);
+      original.sqlite.pragma('user_version = 2');
+      original.close();
+
+      const reopened = createDatabase(databasePath);
+      migrateDatabase(reopened.sqlite);
+      expect(
+        reopened.sqlite.prepare('SELECT result_code FROM model_attempts').get(),
+      ).toEqual({ result_code: 'success' });
+      expect(
+        reopened.sqlite.prepare('SELECT COUNT(*) AS value FROM model_attempt_stages').get(),
+      ).toEqual({ value: 0 });
       reopened.close();
     } finally {
       rmSync(directory, { recursive: true, force: true });

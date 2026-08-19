@@ -98,6 +98,7 @@ export function buildServer(dependencies?: ServerDependencies) {
     gameRepository,
     runtime.clock,
     runtime.reviewPolicyFactory ?? (() => new FakeReviewPolicy()),
+    runtime.agentObservability,
   );
   const gameService = new GameService(
     gameRepository,

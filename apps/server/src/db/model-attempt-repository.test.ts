@@ -50,8 +50,35 @@ describe('ModelAttemptRepository', () => {
       });
 
       expect(repository.listByAction('action-1')).toMatchObject([
-        { attemptNumber: 1, attemptKind: 'initial', resultCode: 'invalid_format', durationMs: 100 },
-        { attemptNumber: 2, attemptKind: 'format_repair', resultCode: 'success', durationMs: 150 },
+        {
+          attemptNumber: 1,
+          attemptKind: 'initial',
+          resultCode: 'invalid_format',
+          durationMs: 100,
+          stages: [{ stage: 'request_started' }],
+        },
+        {
+          attemptNumber: 2,
+          attemptKind: 'format_repair',
+          resultCode: 'success',
+          durationMs: 150,
+          stages: [{ stage: 'request_started' }],
+        },
+      ]);
+      repository.markStage(
+        'attempt-2',
+        'provider_returned',
+        '2026-08-19T05:00:00.200Z',
+      );
+      repository.markStage(
+        'attempt-2',
+        'schema_validated',
+        '2026-08-19T05:00:00.220Z',
+      );
+      expect(repository.listByAction('action-1')[1]?.stages.map((stage) => stage.stage)).toEqual([
+        'request_started',
+        'provider_returned',
+        'schema_validated',
       ]);
 
       expect(
@@ -63,6 +90,32 @@ describe('ModelAttemptRepository', () => {
         }),
       ).toBe(1);
       expect(
+        repository.begin({
+          ...common,
+          attemptId: 'attempt-4',
+          actionId: 'action-committed',
+          attemptKind: 'initial',
+        }),
+      ).toBe(1);
+      database.sqlite
+        .prepare(
+          `INSERT INTO agent_actions (
+            action_id, game_id, player_id, round_number, action_type, base_revision,
+            belief_json, output_json, completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          'action-committed',
+          'game-1',
+          'agent-1',
+          1,
+          'describe',
+          0,
+          '{}',
+          '{}',
+          '2026-08-19T05:00:00.500Z',
+        );
+      expect(
         repository.interruptUnfinished('2026-08-19T05:00:01.000Z'),
       ).toEqual([{ gameId: 'game-1', actionId: 'action-interrupted' }]);
       expect(repository.listByAction('action-interrupted')).toMatchObject([
@@ -72,6 +125,13 @@ describe('ModelAttemptRepository', () => {
           durationMs: 1000,
         },
       ]);
+      expect(repository.listByAction('action-committed')).toMatchObject([
+        {
+          resultCode: 'action_committed',
+          finishedAt: '2026-08-19T05:00:01.000Z',
+          stages: [{ stage: 'request_started' }, { stage: 'action_committed' }],
+        },
+      ]);
       const columns = database.sqlite.prepare('PRAGMA table_info(model_attempts)').all() as Array<{
         name: string;
       }>;
@@ -79,6 +139,7 @@ describe('ModelAttemptRepository', () => {
         expect.arrayContaining(['prompt', 'response', 'api_key', 'base_url']),
       );
 
+      database.sqlite.prepare('DELETE FROM agent_actions WHERE game_id = ?').run('game-1');
       database.sqlite.prepare('DELETE FROM games WHERE game_id = ?').run('game-1');
       expect(repository.listByAction('action-1')).toEqual([]);
     } finally {

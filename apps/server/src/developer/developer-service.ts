@@ -40,7 +40,10 @@ export class DeveloperService {
       })),
       errorsAndRecovery: {
         failedAttempts: calls.filter(
-          (attempt) => attempt.resultCode !== 'success' && attempt.resultCode !== 'started',
+          (attempt) =>
+            !['action_committed', 'success', 'started', 'schema_validated'].includes(
+              attempt.resultCode,
+            ),
         ),
         interruptedGames: this.recovery
           .listAwaiting()

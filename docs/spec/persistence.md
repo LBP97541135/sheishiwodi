@@ -1,6 +1,6 @@
 # 持久化规格
 
-- 状态：首个里程碑基线、`agent_role_models`、`review_summaries` 与 `model_attempts` 已实现；可靠性迁移待继续
+- 状态：首个里程碑基线、`agent_role_models`、`review_summaries`、`model_attempts` 与可靠性迁移已实现
 - 适用范围：当前 SQLite + Drizzle 物理 Schema、原子提交与恢复
 
 ## 1. 目标
@@ -81,16 +81,20 @@ SQLite 文件是本地运行状态，不是词库或需求的 Git 事实源。
 
 `agent_actions` 仍只表示最终被状态机接受的语义动作，不混入请求尝试细节。公开文本只有在状态机提交后才通过 `game_events` 成为事实；模型标识、结果分类和尝试次数由下述 `model_attempts` 单独记录。
 
-### 2.6 `model_attempts`（DEC-095，已实现基础版本）
+### 2.6 `model_attempts` 与 `model_attempt_stages`（DEC-095/097，已实现）
 
 当前持久化每次真实模型请求的脱敏元数据：
 
 - `attemptId`、`gameId`、`commandId`、`actionId`、`playerId/roleId`
 - `modelId`、动作类型和尝试序号
 - 开始时间、结束时间、耗时
-- 复用 DEC-086 的结果/错误分类
+- 最终结果/错误分类；成功终态为 `action_committed`，Provider 或 Schema 成功不得提前写成最终成功
 - 尝试类型：初次调用、结构修复、内容重生成或系统重试
 - 调用结束状态；处理中为 `started`
+
+`model_attempt_stages` 以 `attemptId + stage` 为唯一键，顺序记录 `request_started`、`provider_returned`、`schema_validated`、`content_validated`、`action_committed` 及发生时间。它不保存响应正文。内容拒绝、领域拒绝、过期丢弃和事务失败只写入 `model_attempts.resultCode` 的准确终态，不伪造后续阶段。该表随 attempt 和对局级联删除。
+
+数据库版本 3 只为 v2 库增量创建阶段表，不改写既有 `model_attempts` 行；历史 `success` 结果继续可读，其阶段数组为空。新调用统一使用新阶段和 `action_committed` 终态。
 
 不得保存完整 Prompt、词牌、私有信念正文、模型原始响应、密钥、敏感基础地址、完整请求头或被拦截的泄词原文。
 

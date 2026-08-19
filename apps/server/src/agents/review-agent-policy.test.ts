@@ -50,6 +50,7 @@ class CapturingObservability implements AgentObservability {
     attemptKind: ModelAttemptKind;
   }> = [];
   readonly results: string[] = [];
+  readonly stages: string[] = [];
 
   beginPlayerAttempt(): AttemptHandle {
     throw new Error('Unexpected player attempt');
@@ -72,6 +73,10 @@ class CapturingObservability implements AgentObservability {
 
   finishAttempt(_handle: AttemptHandle, resultCode: string): void {
     this.results.push(resultCode);
+  }
+
+  markAttemptStage(_attemptId: string, stage: string): void {
+    this.stages.push(stage);
   }
 }
 
@@ -159,7 +164,12 @@ describe('TokendanceReviewPolicy prompt', () => {
 
     expect(client.calls).toHaveLength(2);
     expect(result.perAgent).toHaveLength(3);
-    expect(observability.results).toEqual(['invalid_format', 'success']);
+    expect(observability.results).toEqual(['invalid_format', 'schema_validated']);
+    expect(observability.stages).toEqual([
+      'provider_returned',
+      'provider_returned',
+      'schema_validated',
+    ]);
   });
 
   it('将复盘调用关联到命令、动作和独立 attempt', async () => {
@@ -184,6 +194,7 @@ describe('TokendanceReviewPolicy prompt', () => {
         attemptKind: 'initial',
       },
     ]);
-    expect(observability.results).toEqual(['success']);
+    expect(observability.results).toEqual(['schema_validated']);
+    expect(observability.stages).toEqual(['provider_returned', 'schema_validated']);
   });
 });
