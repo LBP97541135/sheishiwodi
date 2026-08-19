@@ -7,9 +7,10 @@ import type {
 
 import {
   ApiClientError,
-  getActiveGame,
+  getActiveGameState,
   getGame,
 } from './api';
+import { DeveloperPanel } from './components/DeveloperPanel';
 import { GameScreen } from './components/GameScreen';
 import { ExperienceControls, useExperienceSettings } from './experience-settings';
 import { ModelProfiles } from './components/ModelProfiles';
@@ -25,9 +26,10 @@ import {
 import { useGameStream } from './use-game-stream';
 
 type LoadState = 'loading' | 'ready' | 'failed';
-type TopView = 'game' | 'model-profiles' | 'review';
+type TopView = 'game' | 'model-profiles' | 'review' | 'developer';
 
 const LAST_GAME_KEY = 'sheishiwodi:last-game-id';
+const DEVELOPER_MODE_KEY = 'sheishiwodi:developer-mode';
 
 export function App() {
   const [loadState, setLoadState] = useState<LoadState>('loading');
@@ -37,6 +39,10 @@ export function App() {
   const [topView, setTopView] = useState<TopView>('game');
   const [guessModeNoticeOpen, setGuessModeNoticeOpen] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [developerAvailable, setDeveloperAvailable] = useState(false);
+  const [developerEnabled, setDeveloperEnabled] = useState(() =>
+    typeof sessionStorage !== 'undefined' && sessionStorage.getItem(DEVELOPER_MODE_KEY) === 'true',
+  );
   // 首帧一次性捕获待恢复的最近对局 ID（在任何 effect 之前），
   // 以便持久化 effect 的空态分支可以安全地清除 key 而不影响恢复。
   const [restoredLastGameId] = useState<string | null>(() =>
@@ -56,7 +62,17 @@ export function App() {
     const pendingCommand = readPendingGameCommand();
     const initialGame = pendingCommand
       ? settlePendingGameCommand(pendingCommand)
-      : getActiveGame();
+      : getActiveGameState().then((state) => {
+          if (!controller.signal.aborted) {
+            const available = state.developerModeAvailable === true;
+            setDeveloperAvailable(available);
+            if (!available) {
+              sessionStorage.removeItem(DEVELOPER_MODE_KEY);
+              setDeveloperEnabled(false);
+            }
+          }
+          return state.game;
+        });
     void initialGame
       .then(async (activeGame) => {
         if (controller.signal.aborted) return null;
@@ -265,6 +281,21 @@ export function App() {
     if (topView === 'review' && !isFinished) setTopView('game');
   }, [topView, isFinished]);
 
+  useEffect(() => {
+    if (topView === 'developer' && (!developerAvailable || !developerEnabled)) {
+      setTopView('game');
+    }
+  }, [developerAvailable, developerEnabled, topView]);
+
+  const toggleDeveloper = () => {
+    setDeveloperEnabled((current) => {
+      const next = !current;
+      sessionStorage.setItem(DEVELOPER_MODE_KEY, String(next));
+      setTopView(next ? 'developer' : 'game');
+      return next;
+    });
+  };
+
   if (loadState === 'loading') {
     return <StatusPage title="正在恢复对局…" description="正在读取本机保存的安全公开状态。" />;
   }
@@ -321,6 +352,16 @@ export function App() {
               复盘
             </button>
           )}
+          {developerAvailable && developerEnabled && (
+            <button
+              type="button"
+              className={topView === 'developer' ? 'top-nav__link is-active' : 'top-nav__link'}
+              aria-current={topView === 'developer' ? 'page' : undefined}
+              onClick={() => setTopView('developer')}
+            >
+              Agent 观测
+            </button>
+          )}
         </nav>
         <ExperienceControls
           audioEnabled={experience.audioEnabled}
@@ -328,6 +369,9 @@ export function App() {
           backgroundTheme={experience.backgroundTheme}
           onToggleAudio={experience.toggleAudio}
           onBackgroundChange={experience.changeBackground}
+          developerAvailable={developerAvailable}
+          developerEnabled={developerEnabled}
+          onToggleDeveloper={toggleDeveloper}
         />
       </div>
       {stream.showRecovery && <ConnectionNotice onRetry={stream.retryNow} />}
@@ -337,6 +381,8 @@ export function App() {
       )}
       {topView === 'model-profiles' ? (
         <ModelProfiles onBack={() => setTopView('game')} />
+      ) : topView === 'developer' && developerAvailable && developerEnabled ? (
+        <DeveloperPanel {...(gameId ? { gameId } : {})} onBack={() => setTopView('game')} />
       ) : topView === 'review' && game && isFinished ? (
         <ReviewScreen game={game} onBack={() => setTopView('game')} />
       ) : (

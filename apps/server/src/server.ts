@@ -30,6 +30,9 @@ import {
   PersistentAgentObservability,
   type AgentObservability,
 } from './agents/agent-observability.js';
+import type { ProviderCircuitBreakerPort } from './agents/provider-circuit-breaker.js';
+import { registerDeveloperRoutes } from './developer/developer-routes.js';
+import { DeveloperService } from './developer/developer-service.js';
 import { registerGameRoutes } from './games/game-routes.js';
 import { registerModelRoutes } from './games/model-routes.js';
 import { registerReviewRoutes } from './games/review-routes.js';
@@ -56,6 +59,9 @@ export interface ServerDependencies {
    */
   backgroundAdvance?: boolean;
   agentObservability?: AgentObservability;
+  developerMode?: boolean;
+  contextAudit?: ContextAuditWriter;
+  providerCircuitBreaker?: ProviderCircuitBreakerPort;
 }
 
 export function buildServer(dependencies?: ServerDependencies) {
@@ -104,7 +110,9 @@ export function buildServer(dependencies?: ServerDependencies) {
     },
     gameRecoveryRepository,
   );
-  registerGameRoutes(server, gameService);
+  registerGameRoutes(server, gameService, {
+    developerMode: runtime.developerMode === true,
+  });
   registerReviewRoutes(server, reviewService);
 
   const roleModelRepository =
@@ -124,6 +132,19 @@ export function buildServer(dependencies?: ServerDependencies) {
     runtime.clock,
   );
   registerModelRoutes(server, modelProfileService);
+
+  if (runtime.developerMode && runtime.contextAudit && runtime.providerCircuitBreaker) {
+    registerDeveloperRoutes(
+      server,
+      new DeveloperService(
+        new ModelAttemptRepository(runtime.database),
+        runtime.contextAudit,
+        gameRecoveryRepository,
+        runtime.providerCircuitBreaker,
+        reviewService,
+      ),
+    );
+  }
 
   server.addHook('onReady', async () => {
     const interrupted = new ModelAttemptRepository(runtime.database).interruptUnfinished(
@@ -189,15 +210,31 @@ export function createRuntimeDependencies(): ServerDependencies {
   let randomCursor = 0;
 
   const roleModelRepository = new AgentRoleModelRepository(database);
+  const contextAudit = new ContextAuditWriter(
+    resolve(process.env['AGENT_AUDIT_DIR'] ?? '.local/agent-audit'),
+    {
+      secretValues: [
+        process.env['TOKENDANCE_BASE_URL'] ?? '',
+        process.env['TOKENDANCE_API_KEY'] ?? '',
+        process.env['OPENAI_COMPATIBLE_BASE_URL'] ?? '',
+        process.env['OPENAI_COMPATIBLE_API_KEY'] ?? '',
+      ],
+      fullRecordMaxBytes: readPositiveInt(
+        process.env['AGENT_FULL_AUDIT_MAX_BYTES'],
+        20 * 1024 * 1024,
+      ),
+    },
+  );
   const observability = new PersistentAgentObservability(
     new ModelAttemptRepository(database),
-    new ContextAuditWriter(resolve(process.env['AGENT_AUDIT_DIR'] ?? '.local/agent-audit')),
+    contextAudit,
   );
   const {
     agentPolicyFactory,
     reviewPolicyFactory,
     modelProvider,
     areRequiredModelsConfigured,
+    circuitBreaker,
   } = resolveAgentProvider(
     roleModelRepository,
     fakeScenario,
@@ -222,6 +259,9 @@ export function createRuntimeDependencies(): ServerDependencies {
     // 运行时后台推进：开始与人类操作立即返回，AI 回合异步推进并经 SSE 实时下发。
     backgroundAdvance: true,
     agentObservability: observability,
+    developerMode: process.env['AGENT_DEVELOPER_MODE'] === 'true',
+    contextAudit,
+    providerCircuitBreaker: circuitBreaker,
   };
 }
 

@@ -4,6 +4,7 @@ export * from './api.js';
 export * from './model-profile.js';
 export * from './commands.js';
 export * from './content-validation.js';
+export * from './developer.js';
 export * from './enums.js';
 export * from './events.js';
 export * from './game-machine.js';

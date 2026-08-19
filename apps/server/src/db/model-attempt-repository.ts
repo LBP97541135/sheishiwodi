@@ -157,4 +157,69 @@ export class ModelAttemptRepository {
       ...(row.duration_ms === null ? {} : { durationMs: row.duration_ms }),
     }));
   }
+
+  listRecent(gameId?: string, limit = 100): ModelAttemptRow[] {
+    const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)));
+    const rows = this.database.sqlite
+      .prepare(
+        `SELECT attempt_id, game_id, command_id, action_id, player_id, role_id, model_id,
+                action_type, attempt_number, attempt_kind, result_code, started_at,
+                finished_at, duration_ms
+         FROM model_attempts
+         ${gameId ? 'WHERE game_id = ?' : ''}
+         ORDER BY started_at DESC, attempt_id DESC
+         LIMIT ?`,
+      )
+      .all(...(gameId ? [gameId, safeLimit] : [safeLimit])) as Array<{
+      attempt_id: string;
+      game_id: string;
+      command_id: string;
+      action_id: string;
+      player_id: string | null;
+      role_id: string;
+      model_id: string;
+      action_type: string;
+      attempt_number: number;
+      attempt_kind: ModelAttemptKind;
+      result_code: string;
+      started_at: string;
+      finished_at: string | null;
+      duration_ms: number | null;
+    }>;
+    return rows.map(mapRow);
+  }
+}
+
+function mapRow(row: {
+  attempt_id: string;
+  game_id: string;
+  command_id: string;
+  action_id: string;
+  player_id: string | null;
+  role_id: string;
+  model_id: string;
+  action_type: string;
+  attempt_number: number;
+  attempt_kind: ModelAttemptKind;
+  result_code: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+}): ModelAttemptRow {
+  return {
+    attemptId: row.attempt_id,
+    gameId: row.game_id,
+    commandId: row.command_id,
+    actionId: row.action_id,
+    ...(row.player_id ? { playerId: row.player_id } : {}),
+    roleId: row.role_id,
+    modelId: row.model_id,
+    actionType: row.action_type,
+    attemptNumber: row.attempt_number,
+    attemptKind: row.attempt_kind,
+    resultCode: row.result_code,
+    startedAt: row.started_at,
+    ...(row.finished_at ? { finishedAt: row.finished_at } : {}),
+    ...(row.duration_ms === null ? {} : { durationMs: row.duration_ms }),
+  };
 }

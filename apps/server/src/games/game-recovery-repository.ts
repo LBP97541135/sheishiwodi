@@ -39,6 +39,22 @@ export class GameRecoveryRepository {
       : null;
   }
 
+  listAwaiting(): GameRuntimeRecovery[] {
+    const rows = this.database.sqlite
+      .prepare(
+        `SELECT game_id, action_id, interrupted_at
+         FROM game_runtime_recovery
+         WHERE status = 'awaiting_confirmation'
+         ORDER BY interrupted_at DESC`,
+      )
+      .all() as Array<{ game_id: string; action_id: string; interrupted_at: string }>;
+    return rows.map((row) => ({
+      gameId: row.game_id,
+      actionId: row.action_id,
+      interruptedAt: row.interrupted_at,
+    }));
+  }
+
   resolve(gameId: string, resolution: 'continue' | 'start_new', resolvedAt: string): boolean {
     const result = this.database.sqlite
       .prepare(

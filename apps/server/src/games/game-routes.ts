@@ -40,7 +40,11 @@ const errorMessage = {
   REVISION_CONFLICT: '对局状态已更新，请刷新后重试',
 } as const;
 
-export function registerGameRoutes(server: FastifyInstance, gameService: GameService) {
+export function registerGameRoutes(
+  server: FastifyInstance,
+  gameService: GameService,
+  options: { developerMode?: boolean } = {},
+) {
   server.post('/api/games', async (request, reply) => {
     const parsed = createGameRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -75,7 +79,9 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
   server.get('/api/games/active', async (_request, reply) => {
     const game = gameService.getActiveGame();
     return reply.send(
-      apiSuccessSchema(activeGameDataSchema).parse({ data: { game } }),
+      apiSuccessSchema(activeGameDataSchema).parse({
+        data: { game, ...(options.developerMode ? { developerModeAvailable: true } : {}) },
+      }),
     );
   });
 

@@ -115,10 +115,13 @@ flowchart LR
 | 并发防护 | 防止慢请求覆盖新状态 | 每次调用绑定 `baseRevision`；返回后重新核对状态、行动者和动作类型，过期结果直接丢弃 |
 | 幂等与恢复 | 防止刷新/重启产生重复行动 | 稳定 `commandId`、事务写入、活动局恢复、SSE 游标补发与客户端去重 |
 | 可替换策略 | 兼顾可测性和真实体验 | 默认 `FakeAgentPolicy` 提供确定性测试；显式 provider 开关才实例化真实兼容协议策略 |
+| 可观测性 | 证明调用链和信息边界 | 持久化脱敏 `model_attempts`，独立上下文清单记录来源、可见级别、游标、模板版本和 Prompt 哈希；出网前确定性拦截越权输入 |
 
 真实 Provider 解析集中在 `provider-runtime.ts`：Tokendance 保持旧默认兼容，`openai-compatible` 只复用协议客户端和 harness，不注入厂商专用推理参数，也不继承任何模型 ID。
 
 完整运行时契约见 [Agent 运行时规格](docs/spec/agent-runtime.md)。
+
+本地调试时可在 `.env` 设置 `AGENT_DEVELOPER_MODE=true` 后重启服务。页面设置区会出现仅当前标签页生效的“开发者模式”开关，打开后可查看调用链、上下文清单、错误与恢复、复盘调度。完整 Prompt/原始响应使用面板内第二个默认关闭的敏感开关，只记录开启后的新调用、每条展开前再次确认，并过滤 Key、Base URL 和请求头；服务重启会自动关闭，记录最多保留 7 天且受 `AGENT_FULL_AUDIT_MAX_BYTES` 限制。总门禁关闭时诊断路由不注册，页面不会发出诊断请求。
 
 ## 信息隔离
 

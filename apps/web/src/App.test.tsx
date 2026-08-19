@@ -67,6 +67,81 @@ afterEach(() => {
 });
 
 describe('App', () => {
+  it('仅在服务端开放能力后显示开发者开关，并对完整上下文启用进行二次确认', async () => {
+    let fullRecordingEnabled = false;
+    const fetchMock = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
+      if (input === '/api/games/active') {
+        return response({ data: { game: null, developerModeAvailable: true } });
+      }
+      if (input === '/api/developer/overview') {
+        return response({
+          data: {
+            fullRecordingEnabled,
+            calls: [],
+            contexts: [],
+            errorsAndRecovery: {
+              failedAttempts: [],
+              interruptedGames: [],
+              providerCircuit: { state: 'closed' },
+            },
+            review: {
+              runningGameId: null,
+              queuedGameIds: [],
+              blockedByActiveGame: false,
+              stopped: false,
+            },
+          },
+        });
+      }
+      if (input === '/api/developer/full-recording' && init?.method === 'PUT') {
+        fullRecordingEnabled = true;
+        return response({ data: { enabled: true } });
+      }
+      if (input === '/api/developer/full-records') {
+        return response({ data: { records: [] } });
+      }
+      throw new Error(`unexpected request: ${input}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(<App />);
+
+    const developerToggle = await screen.findByRole('button', { name: '开发者模式：关' });
+    fireEvent.click(developerToggle);
+    expect(await screen.findByRole('heading', { name: 'Agent 观测面板' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '调用链' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '上下文' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '错误与恢复' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '复盘调度' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '开启记录' }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/developer/full-recording',
+      expect.anything(),
+    );
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: '开启记录' }));
+    expect(await screen.findByRole('button', { name: '停止记录' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/developer/full-recording',
+      expect.objectContaining({ method: 'PUT' }),
+    );
+  });
+
+  it('服务端未开放开发者模式时，页面和网络均无诊断入口', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ data: { game: null } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole('button', { name: '经典模式' });
+    expect(screen.queryByText(/开发者模式/)).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([path]) => String(path).includes('/api/developer/'))).toBe(false);
+  });
+
   it('仅保留猜词模式二期入口，复用 deta 版本提示并把焦点返回自身', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ data: { game: null } })));
 

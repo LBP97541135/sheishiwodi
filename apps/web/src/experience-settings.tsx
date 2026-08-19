@@ -10,6 +10,9 @@ interface ExperienceControlsProps {
   backgroundTheme: BackgroundTheme;
   onToggleAudio(): void;
   onBackgroundChange(theme: BackgroundTheme): void;
+  developerAvailable?: boolean;
+  developerEnabled?: boolean;
+  onToggleDeveloper?(): void;
 }
 
 export function ExperienceControls({
@@ -18,6 +21,9 @@ export function ExperienceControls({
   backgroundTheme,
   onToggleAudio,
   onBackgroundChange,
+  developerAvailable = false,
+  developerEnabled = false,
+  onToggleDeveloper,
 }: ExperienceControlsProps) {
   return (
     <div className="experience-controls" aria-label="显示与声音设置">
@@ -30,6 +36,16 @@ export function ExperienceControls({
         <span aria-hidden="true">{audioEnabled ? '♫' : '×'}</span>
         背景音乐：{audioEnabled ? '开' : '关'}
       </button>
+      {developerAvailable && onToggleDeveloper && (
+        <button
+          type="button"
+          className="utility-action"
+          aria-pressed={developerEnabled}
+          onClick={onToggleDeveloper}
+        >
+          开发者模式：{developerEnabled ? '开' : '关'}
+        </button>
+      )}
       <fieldset className="background-picker">
         <legend>背景</legend>
         <div className="segmented-control">

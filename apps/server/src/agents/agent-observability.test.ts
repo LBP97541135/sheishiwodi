@@ -217,6 +217,71 @@ describe('Agent observability', () => {
     ]);
     expect(observer.interruptActiveAttempts()).toEqual([]);
   });
+
+  it('完整上下文必须显式开启，并在保存提示词与响应前清除凭据和地址', () => {
+    const { input, roleId } = describeInput();
+    const store = new MemoryAttemptStore();
+    const directory = temporaryDirectory();
+    const secret = 'secret-key-value';
+    const audit = new ContextAuditWriter(directory, { secretValues: [secret] });
+    const observer = new PersistentAgentObservability(store, audit, {
+      now: () => new Date('2026-08-19T05:00:00.000Z'),
+      nextId: () => 'full-record-attempt',
+    });
+    const attemptInput = {
+      agentInput: input,
+      context: {
+        agentRoleId: roleId,
+        trace: {
+          gameId: input.gameId,
+          commandId: 'start-command',
+          actionId: 'full-record-action',
+          priorBeliefOwnerId: input.actor.playerId,
+          publicEventCursor: 0,
+        },
+      },
+      modelId: 'model-x',
+      messages: [{
+        role: 'user' as const,
+        content: `Authorization: Bearer token-123 ${secret} https://provider.example/v1/chat`,
+      }],
+      attemptKind: 'initial' as const,
+    };
+
+    const disabledHandle = observer.beginPlayerAttempt(attemptInput);
+    observer.finishAttempt(disabledHandle, 'success', { rawResponse: secret });
+    expect(audit.listFullRecords()).toEqual([]);
+
+    audit.setFullRecordingEnabled(true);
+    const handle = observer.beginPlayerAttempt(attemptInput);
+    observer.finishAttempt(handle, 'success', {
+      rawResponse: `api_key=${secret} https://provider.example/result`,
+    });
+
+    const record = audit.getFullRecord(handle.attemptId);
+    expect(record).toMatchObject({ resultCode: 'success' });
+    const persisted = JSON.stringify(record);
+    expect(persisted).not.toContain(secret);
+    expect(persisted).not.toContain('provider.example');
+    expect(persisted).not.toContain('token-123');
+    expect(persisted).toContain('[REDACTED]');
+    expect(persisted).toContain('[REDACTED_URL]');
+
+    audit.clearFullRecords();
+    expect(audit.listFullRecords()).toEqual([]);
+    expect(new ContextAuditWriter(directory).isFullRecordingEnabled()).toBe(false);
+
+    const capacityAudit = new ContextAuditWriter(directory, { fullRecordMaxBytes: 1_000 });
+    capacityAudit.setFullRecordingEnabled(true);
+    const capacityObserver = new PersistentAgentObservability(store, capacityAudit, {
+      nextId: () => 'capacity-attempt',
+    });
+    const capacityHandle = capacityObserver.beginPlayerAttempt(attemptInput);
+    capacityObserver.finishAttempt(capacityHandle, 'success', {
+      rawResponse: 'x'.repeat(2_000),
+    });
+    expect(capacityAudit.listFullRecords()).toEqual([]);
+  });
 });
 
 function describeInput() {

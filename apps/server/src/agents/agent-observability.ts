@@ -1,5 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { agentTurnInputSchema, type AgentTurnInput } from '@sheishiwodi/shared';
@@ -48,14 +58,14 @@ export interface ModelAttemptStore {
   ): void;
 }
 
-interface ContextSource {
+export interface ContextSource {
   kind: string;
   visibility: 'public' | 'actor_private' | 'terminal_private';
   itemCount: number;
   ownerPlayerId?: string;
 }
 
-interface ContextManifest {
+export interface ContextManifest {
   version: 1;
   attemptId: string;
   attemptNumber: number;
@@ -108,23 +118,194 @@ export const noOpAgentObservability: AgentObservability = {
   finishAttempt: () => undefined,
 };
 
-export class ContextAuditWriter {
-  constructor(private readonly rootDirectory: string) {}
+export interface FullContextRecord {
+  version: 1;
+  attemptId: string;
+  gameId: string;
+  actionType: string;
+  createdAt: string;
+  prompt: ChatMessage[];
+  resultCode?: string;
+  rawResponse?: string;
+}
 
-  write(manifest: ContextManifest) {
+export interface TelemetrySink {
+  emit(event: {
+    type: 'attempt_started' | 'attempt_finished';
+    attemptId: string;
+    gameId: string;
+    actionId: string;
+    actionType: string;
+    occurredAt: string;
+    resultCode?: string;
+  }): void;
+}
+
+export const noOpTelemetrySink: TelemetrySink = { emit: () => undefined };
+
+export class ContextAuditWriter {
+  private fullRecordingEnabled = false;
+  private readonly fullRecordPaths = new Map<string, string>();
+
+  constructor(
+    private readonly rootDirectory: string,
+    private readonly options: {
+      secretValues?: readonly string[];
+      fullRecordMaxAgeMs?: number;
+      fullRecordMaxBytes?: number;
+      now?: () => Date;
+    } = {},
+  ) {
+    this.cleanupFullRecords();
+  }
+
+  write(manifest: ContextManifest, messages?: readonly ChatMessage[]) {
     const gameDirectory = join(this.rootDirectory, hashId(manifest.gameId));
     const target = join(gameDirectory, `${hashId(manifest.attemptId)}.json`);
     const temporary = `${target}.tmp`;
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: 'utf8' });
     renameSync(temporary, target);
+    if (this.fullRecordingEnabled && messages) {
+      try {
+        const record: FullContextRecord = {
+          version: 1,
+          attemptId: manifest.attemptId,
+          gameId: manifest.gameId,
+          actionType: manifest.actionType,
+          createdAt: manifest.createdAt,
+          prompt: sanitizeValue(messages, this.options.secretValues ?? []) as ChatMessage[],
+        };
+        const fullTarget = this.fullRecordPath(manifest.attemptId);
+        writeJsonAtomically(fullTarget, record);
+        this.fullRecordPaths.set(manifest.attemptId, fullTarget);
+        this.cleanupFullRecords();
+      } catch {
+        // 完整记录是显式调试附加能力，失败不能影响基础审计或正常对局。
+      }
+    }
+  }
+
+  finishFullRecord(attemptId: string, resultCode: string, rawResponse?: string) {
+    const target = this.fullRecordPaths.get(attemptId) ?? this.fullRecordPath(attemptId);
+    if (!existsSync(target)) return;
+    try {
+      const record = JSON.parse(readFileSync(target, 'utf8')) as FullContextRecord;
+      const next: FullContextRecord = {
+        ...record,
+        resultCode,
+        ...(rawResponse === undefined
+          ? {}
+          : { rawResponse: sanitizeText(rawResponse, this.options.secretValues ?? []) }),
+      };
+      writeJsonAtomically(target, next);
+      this.cleanupFullRecords();
+    } catch {
+      // 不让可选调试记录破坏模型结果提交。
+    } finally {
+      this.fullRecordPaths.delete(attemptId);
+    }
+  }
+
+  setFullRecordingEnabled(enabled: boolean) {
+    this.fullRecordingEnabled = enabled;
+  }
+
+  isFullRecordingEnabled() {
+    return this.fullRecordingEnabled;
+  }
+
+  listManifests(gameId?: string): ContextManifest[] {
+    if (!existsSync(this.rootDirectory)) return [];
+    const manifests: ContextManifest[] = [];
+    for (const directory of readdirSync(this.rootDirectory, { withFileTypes: true })) {
+      if (!directory.isDirectory() || directory.name === 'full') continue;
+      const path = join(this.rootDirectory, directory.name);
+      for (const file of readdirSync(path, { withFileTypes: true })) {
+        if (!file.isFile() || !file.name.endsWith('.json')) continue;
+        try {
+          const manifest = JSON.parse(readFileSync(join(path, file.name), 'utf8')) as ContextManifest;
+          if (!gameId || manifest.gameId === gameId) manifests.push(manifest);
+        } catch {
+          // 单个损坏的诊断文件不影响其他只读观测结果。
+        }
+      }
+    }
+    return manifests.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  listFullRecords(gameId?: string): FullContextRecord[] {
+    const directory = join(this.rootDirectory, 'full');
+    if (!existsSync(directory)) return [];
+    return readdirSync(directory, { withFileTypes: true })
+      .filter((file) => file.isFile() && file.name.endsWith('.json'))
+      .flatMap((file) => {
+        try {
+          const record = JSON.parse(readFileSync(join(directory, file.name), 'utf8')) as FullContextRecord;
+          return !gameId || record.gameId === gameId ? [record] : [];
+        } catch {
+          return [];
+        }
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  getFullRecord(attemptId: string): FullContextRecord | null {
+    const target = this.fullRecordPath(attemptId);
+    if (!existsSync(target)) return null;
+    try {
+      return JSON.parse(readFileSync(target, 'utf8')) as FullContextRecord;
+    } catch {
+      return null;
+    }
+  }
+
+  clearFullRecords() {
+    rmSync(join(this.rootDirectory, 'full'), { recursive: true, force: true });
+    this.fullRecordPaths.clear();
+  }
+
+  cleanupFullRecords() {
+    const directory = join(this.rootDirectory, 'full');
+    if (!existsSync(directory)) return;
+    const now = (this.options.now?.() ?? new Date()).getTime();
+    const maxAgeMs = this.options.fullRecordMaxAgeMs ?? 7 * 24 * 60 * 60 * 1_000;
+    const maxBytes = this.options.fullRecordMaxBytes ?? 20 * 1024 * 1024;
+    const files = readdirSync(directory, { withFileTypes: true })
+      .filter((file) => file.isFile() && file.name.endsWith('.json'))
+      .map((file) => {
+        const path = join(directory, file.name);
+        const stat = statSync(path);
+        return { path, size: stat.size, modifiedAt: stat.mtimeMs };
+      })
+      .sort((a, b) => a.modifiedAt - b.modifiedAt);
+    for (const file of files) {
+      if (now - file.modifiedAt > maxAgeMs) unlinkSync(file.path);
+    }
+    const remaining = files.filter((file) => existsSync(file.path));
+    let total = remaining.reduce((sum, file) => sum + file.size, 0);
+    for (const file of remaining) {
+      if (total <= maxBytes) break;
+      unlinkSync(file.path);
+      total -= file.size;
+    }
+  }
+
+  private fullRecordPath(attemptId: string) {
+    return join(this.rootDirectory, 'full', `${hashId(attemptId)}.json`);
   }
 }
 
 export class PersistentAgentObservability implements AgentObservability {
   private readonly activeAttempts = new Map<
     string,
-    { handle: AttemptHandle; gameId: string; actionId: string; controller: AbortController }
+    {
+      handle: AttemptHandle;
+      gameId: string;
+      actionId: string;
+      actionType: string;
+      controller: AbortController;
+    }
   >();
 
   constructor(
@@ -134,6 +315,7 @@ export class PersistentAgentObservability implements AgentObservability {
       now?: () => Date;
       nowMs?: () => number;
       nextId?: () => string;
+      telemetrySink?: TelemetrySink;
     } = {},
   ) {}
 
@@ -200,7 +382,7 @@ export class PersistentAgentObservability implements AgentObservability {
         sources: playerSources(input.agentInput),
         validation: { status: valid ? 'passed' : 'failed', checks },
         createdAt: now.toISOString(),
-      });
+      }, input.messages);
     } catch (error) {
       this.finishAttempt(handle, 'audit_write_failed');
       throw error;
@@ -214,7 +396,16 @@ export class PersistentAgentObservability implements AgentObservability {
       handle,
       gameId: trace.gameId,
       actionId: trace.actionId,
+      actionType: input.agentInput.actionType,
       controller,
+    });
+    this.emitTelemetry({
+      type: 'attempt_started',
+      attemptId: handle.attemptId,
+      gameId: trace.gameId,
+      actionId: trace.actionId,
+      actionType: input.agentInput.actionType,
+      occurredAt: now.toISOString(),
     });
     return handle;
   }
@@ -281,7 +472,7 @@ export class PersistentAgentObservability implements AgentObservability {
           checks: ['finished_game_input', 'terminal_review_scope'],
         },
         createdAt: now.toISOString(),
-      });
+      }, input.messages);
     } catch (error) {
       this.finishAttempt(handle, 'audit_write_failed');
       throw error;
@@ -290,18 +481,40 @@ export class PersistentAgentObservability implements AgentObservability {
       handle,
       gameId: input.reviewInput.gameId,
       actionId: input.actionId,
+      actionType: 'review',
       controller,
+    });
+    this.emitTelemetry({
+      type: 'attempt_started',
+      attemptId: handle.attemptId,
+      gameId: input.reviewInput.gameId,
+      actionId: input.actionId,
+      actionType: 'review',
+      occurredAt: now.toISOString(),
     });
     return handle;
   }
 
-  finishAttempt(handle: AttemptHandle, resultCode: string) {
+  finishAttempt(handle: AttemptHandle, resultCode: string, options?: { rawResponse?: string }) {
     const finishedAt = this.now();
     this.attempts.finish(handle.attemptId, {
       resultCode,
       finishedAt: finishedAt.toISOString(),
       durationMs: Math.max(0, this.nowMs() - handle.startedAtMs),
     });
+    this.audit.finishFullRecord(handle.attemptId, resultCode, options?.rawResponse);
+    const active = this.activeAttempts.get(handle.attemptId);
+    if (active) {
+      this.emitTelemetry({
+        type: 'attempt_finished',
+        attemptId: handle.attemptId,
+        gameId: active.gameId,
+        actionId: active.actionId,
+        actionType: active.actionType,
+        occurredAt: finishedAt.toISOString(),
+        resultCode,
+      });
+    }
     this.activeAttempts.delete(handle.attemptId);
   }
 
@@ -325,6 +538,14 @@ export class PersistentAgentObservability implements AgentObservability {
 
   private nextId() {
     return this.options.nextId?.() ?? randomUUID();
+  }
+
+  private emitTelemetry(event: Parameters<TelemetrySink['emit']>[0]) {
+    try {
+      (this.options.telemetrySink ?? noOpTelemetrySink).emit(event);
+    } catch {
+      // 可选外部观测出口不得影响本地事实源与对局。
+    }
   }
 }
 
@@ -392,4 +613,36 @@ function hashPrompt(messages: readonly ChatMessage[]) {
 
 function hashId(value: string) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function writeJsonAtomically(target: string, value: unknown) {
+  const temporary = `${target}.tmp`;
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  renameSync(temporary, target);
+}
+
+function sanitizeValue(value: unknown, secrets: readonly string[]): unknown {
+  if (typeof value === 'string') return sanitizeText(value, secrets);
+  if (Array.isArray(value)) return value.map((entry) => sanitizeValue(entry, secrets));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, sanitizeValue(entry, secrets)]),
+    );
+  }
+  return value;
+}
+
+function sanitizeText(value: string, secrets: readonly string[]) {
+  let sanitized = value;
+  for (const secret of secrets) {
+    if (secret) sanitized = sanitized.split(secret).join('[REDACTED]');
+  }
+  return sanitized
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, 'Bearer [REDACTED]')
+    .replace(/https?:\/\/[^\s"')]+/gi, '[REDACTED_URL]')
+    .replace(
+      /("?(?:authorization|api[-_]?key|x-api-key)"?\s*[:=]\s*)[^\s,}]+/gi,
+      '$1[REDACTED]',
+    );
 }

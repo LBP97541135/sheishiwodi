@@ -123,6 +123,15 @@ export class ReviewService {
     await this.runningPromise;
   }
 
+  snapshot() {
+    return {
+      runningGameId: this.runningGameId,
+      queuedGameIds: [...this.queue],
+      blockedByActiveGame: Boolean(this.games.findActiveSnapshot()),
+      stopped: this.stopped,
+    };
+  }
+
   private async run(gameId: string) {
     let modelId = this.resolveModelId();
     try {

@@ -208,6 +208,7 @@ export const humanGameViewSchema = z
 export const activeGameDataSchema = z
   .object({
     game: humanGameViewSchema.nullable(),
+    developerModeAvailable: z.literal(true).optional(),
   })
   .strict();
 

@@ -117,7 +117,7 @@ Application 取得当前行动锁
 - 中转站基础地址、认证密钥只能由服务端环境变量读取，绝不下发浏览器或落库。角色/复盘 model ID 由服务端权威持有，其中参赛角色 model ID 可通过模型档案界面选择并持久化到 `agent_role_models`。
 - Provider 由 `AGENT_PROVIDER=fake|tokendance|openai-compatible` 切换（默认 `fake`）；所选真实 Provider 的 Base URL 与 API Key 均非空时才实例化真实策略，否则一律假模型。Tokendance 保持内置 model 回退兼容；通用模式不设默认 model，三角色 model 由模型档案显式保存，评测 model 由服务端 env 显式配置，缺任一项时开局前拒绝。真实变量清单见 `agent-runtime.md` 第 11 节。
 - 仓库提供不含真实值的根 `.env.example`；真实 `.env`（gitignored）由负责人自填，真实配置不得进入 Git、SQLite、日志、SSE、复盘或截图。
-- 下一阶段增加默认关闭的 `AGENT_DEVELOPER_MODE` 服务端门禁；它只控制诊断路由和前端能力入口，不改变 Provider、模型配置或基础脱敏审计。完整上下文记录开关只存于服务端当前进程，不写入 env、数据库或浏览器持久化，服务重启后自动关闭。
+- 已实现默认关闭的 `AGENT_DEVELOPER_MODE` 服务端门禁；它只控制诊断路由和前端能力入口，不改变 Provider、模型配置或基础脱敏审计。完整上下文记录开关只存于服务端当前进程，不写入 env、数据库或浏览器持久化，服务重启后自动关闭。
 
 ## 7. 根脚本契约
 

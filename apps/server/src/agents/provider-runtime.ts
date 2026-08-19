@@ -8,7 +8,11 @@ import type { ReviewPolicy } from './review-policy.js';
 import { TokendanceReviewPolicy } from './review-agent-policy.js';
 import { TokendanceAgentPolicy } from './tokendance-agent-policy.js';
 import { TokendanceClient } from './tokendance-client.js';
-import { ProviderCircuitBreaker } from './provider-circuit-breaker.js';
+import {
+  noOpProviderCircuitBreaker,
+  ProviderCircuitBreaker,
+  type ProviderCircuitBreakerPort,
+} from './provider-circuit-breaker.js';
 import {
   noOpAgentObservability,
   type AgentObservability,
@@ -24,6 +28,7 @@ export interface ResolvedAgentProvider {
   modelProvider: ModelProviderContext;
   /** 开始真实对局前动态检查，允许用户在服务启动后通过模型档案补齐角色 model ID。 */
   areRequiredModelsConfigured: () => boolean;
+  circuitBreaker: ProviderCircuitBreakerPort;
 }
 
 type ProviderEnvironment = Readonly<Record<string, string | undefined>>;
@@ -199,6 +204,7 @@ function realProvider(options: {
       reviewModelConfigured: options.reviewModel.length > 0,
     },
     areRequiredModelsConfigured: options.areRequiredModelsConfigured,
+    circuitBreaker,
   };
 }
 
@@ -219,6 +225,7 @@ function fakeProvider(
       reviewModelConfigured,
     },
     areRequiredModelsConfigured: () => true,
+    circuitBreaker: noOpProviderCircuitBreaker,
   };
 }
 

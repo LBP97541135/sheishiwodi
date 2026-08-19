@@ -1,6 +1,6 @@
 # API 与事件流规格
 
-- 状态：首个里程碑、模型档案、单局复盘、服务端中断恢复路由与浏览器恢复已实现；Agent 开发者诊断接口待实现
+- 状态：首个里程碑、模型档案、单局复盘、服务端中断恢复路由、浏览器恢复与 Agent 开发者诊断接口已实现
 - 适用范围：本机单用户 REST + SSE
 
 ## 1. 总则
@@ -188,11 +188,13 @@ confirmed: true
 - 存在活动局（`in_progress` / `awaiting_spectator`）时 `PUT` 返回 409 拒绝改配置；未知 `roleId` 返回 404。
 - `POST /api/games/:gameId/start` 在通用模式三角色或评测 model 未配齐时返回 409 `MODEL_CONFIGURATION_REQUIRED`；消息不包含 Base URL、Key 或具体环境变量值。
 
-### 4.7 本地 Agent 诊断（规划）
+### 4.7 本地 Agent 诊断（已实现）
 
 只有服务端 `AGENT_DEVELOPER_MODE=true` 时才注册专用诊断路由并向前端返回安全的“诊断能力可用”布尔值；默认和普通模式不注册路由、不返回记录，直接构造 URL 也不能读取诊断数据。
 
 脱敏诊断投影供 Agent 面板查询调用链、上下文清单结果、模型尝试、熔断和复盘队列状态。面板内可切换当前服务会话的完整上下文记录；该状态只保存在服务端内存，重启自动关闭。完整 Prompt/响应只能按单条记录、再次确认后读取，并继续过滤 Base URL、Key、请求头和本地文件路径。所有诊断接口均不得推进游戏、修改队列、删除长期审计或重新发起模型调用；清除完整调试文件使用独立确认操作。
+
+当前诊断路由为 `GET /api/developer/overview`、`PUT /api/developer/full-recording`、`GET /api/developer/full-records`、`GET /api/developer/full-records/:attemptId` 与 `DELETE /api/developer/full-records`。只有总门禁开启时才注册；`GET /api/games/active` 也只在此时附带值恒为 `true` 的 `developerModeAvailable` 能力位，关闭时该字段不存在。
 
 
 
