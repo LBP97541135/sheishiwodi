@@ -31,6 +31,17 @@ class CapturingClient {
   }
 }
 
+class ScriptedReviewClient {
+  calls: ChatMessage[][] = [];
+
+  constructor(private readonly replies: string[]) {}
+
+  async chatCompletion(params: { messages: ChatMessage[] }): Promise<string> {
+    this.calls.push(params.messages);
+    return this.replies[this.calls.length - 1] ?? '';
+  }
+}
+
 class CapturingObservability implements AgentObservability {
   readonly reviewAttempts: Array<{
     commandId: string;
@@ -122,6 +133,32 @@ describe('TokendanceReviewPolicy prompt', () => {
 
     await policy.generate(input);
     expect(client.extraBodies[0]).toEqual({ enable_thinking: false });
+  });
+
+  it('重复 perAgent.playerId 触发格式修复而不是冒充完整覆盖', async () => {
+    const duplicate = JSON.stringify({
+      perAgent: [
+        { playerId: 'agent-1', verdict: '重复一', keyMoments: [], rating: 3 },
+        { playerId: 'agent-2', verdict: '正常二', keyMoments: [], rating: 3 },
+        { playerId: 'agent-3', verdict: '正常三', keyMoments: [], rating: 3 },
+        { playerId: 'agent-3', verdict: '重复三', keyMoments: [], rating: 3 },
+      ],
+      overall: '整体评价',
+    });
+    const valid = await new CapturingClient().chatCompletion({ messages: [] });
+    const client = new ScriptedReviewClient([duplicate, valid]);
+    const observability = new CapturingObservability();
+    const policy = new TokendanceReviewPolicy({
+      client: client as unknown as TokendanceClient,
+      modelId: 'review-model',
+      observability,
+    });
+
+    const result = await policy.generate(input);
+
+    expect(client.calls).toHaveLength(2);
+    expect(result.perAgent).toHaveLength(3);
+    expect(observability.results).toEqual(['invalid_format', 'success']);
   });
 
   it('将复盘调用关联到命令、动作和独立 attempt', async () => {

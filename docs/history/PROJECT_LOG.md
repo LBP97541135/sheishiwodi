@@ -1453,3 +1453,10 @@
 - 删除 GameService 中分散的信念/时间线手工组装路径，串行描述/辩解和并行投票均消费同一入口；不改变 Prompt 内容、模型参数、并行方式或重试次数。
 - 新增缺少证明与伪造公开事件来源的负向测试；额外私有字段测试改为使用真实签发证明，证明输入被篡改后仍会失效。所有失败均记录 `context_boundary_violation`，客户端调用数保持 0。
 - 使用项目内 Node 22 直接运行 Agent 观测、公开内容恢复与完整 GameService 流程定向测试，共 28/28 通过；Server typecheck 通过。测试仅使用 fake/scripted client，没有读取真实 Key、联网或产生费用。
+
+## 2026-08-19 拒绝重复玩家标识（TASK-079）
+
+- 在共享 `beliefSnapshotSchema` 中显式拒绝 `playerUndercoverProbabilities` 的重复 `playerId`，并让确定性覆盖校验同时检查数组长度、唯一数量和全部存活玩家，关闭“重复一个已有玩家后仍覆盖集合”的漏洞。
+- 复用同一唯一性数组 Schema 约束复盘生成结果和持久化摘要的 `perAgent`，避免重复评价进入数据库或 API 投影。
+- 新增信念与复盘共享负向测试，并在真实复盘策略测试中构造重复 `agent-3` 的四条结果，确认第一次输出记录 `invalid_format`、执行一次既有格式修复后接受三名唯一 Agent。
+- Node 22 下 Shared 定向 5/5、Server 参赛/复盘策略 14/14、Shared typecheck 通过；全部使用本地结构数据和 scripted client，不联网、不读取 Key、不产生费用。

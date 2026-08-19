@@ -26,7 +26,17 @@ export const beliefSnapshotSchema = z
     playerUndercoverProbabilities: z.array(playerProbabilitySchema).min(1),
     reasoningSummary: z.string().trim().min(1).max(300),
   })
-  .strict();
+  .strict()
+  .superRefine((belief, context) => {
+    const playerIds = belief.playerUndercoverProbabilities.map((entry) => entry.playerId);
+    if (new Set(playerIds).size !== playerIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['playerUndercoverProbabilities'],
+        message: 'playerId 必须唯一',
+      });
+    }
+  });
 
 export const agentTurnInputSchema = z
   .object({
@@ -88,7 +98,8 @@ export function validateBeliefSnapshot(
   const parsed = beliefSnapshotSchema.parse(belief);
   const probabilityIds = parsed.playerUndercoverProbabilities.map((entry) => entry.playerId);
   if (
-    new Set(probabilityIds).size !== livingPlayerIds.length ||
+    probabilityIds.length !== livingPlayerIds.length ||
+    new Set(probabilityIds).size !== probabilityIds.length ||
     livingPlayerIds.some((playerId) => !probabilityIds.includes(playerId))
   ) {
     throw new Error('BELIEF_PLAYERS_INVALID');
