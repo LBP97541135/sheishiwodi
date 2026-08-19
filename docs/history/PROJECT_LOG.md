@@ -1494,3 +1494,11 @@
 - 清理当前状态文档中的过期描述：TASK-057 全栈真实验收、异步复盘 Web 闭环、单局 Markdown、运行中断双选恢复、背景/BGM 和稳定性/可观测性任务均改为已完成；历史日志中当时真实发生的 ABI 阻塞记录保持不变。
 - Node 22 下本轮累计默认测试 234/234、三 workspace typecheck、全仓 lint、Shared/Server/Web 生产构建通过；Playwright normal 4/4、spectator 4/4、tie 2/2，共 10/10。所有自动验证均使用 fake/scripted 模型，不读取真实 Key、不联网调用模型、不产生费用。
 - CI 契约静态自检确认版本、fake provider、空凭据、五类门禁命令和禁止 live 命令均符合规格；远端 Actions 的首次运行需在提交推送 GitHub 后由平台生成，不在本地伪造为已通过。
+
+## 2026-08-19 细化模型格式失败诊断与修复（TASK-084）
+
+- PR 后一次额外的真实浏览器探索验收在第二轮投票触发安全终止。只读对齐临时 SQLite/WAL 后确认：DeepSeek 的初始投票、格式修复与系统重试共六次均已收到 Provider 响应，但全部停在 `schema_validated` 之前；另外两项并行投票被正确收口为 `stale_discarded`，不存在状态机并发覆盖或提交失败。
+- `AgentFormatError` 新增稳定原因分类。调用台账以 `invalid_format:<reason>` 保存非法 JSON、非对象、首个 strict Schema 字段路径/issue code、非法目标、信念总和或玩家集合错误；原因不含失败字段值、模型原文、词牌、Prompt 或私有信念正文。
+- 格式修复不再只说“输出不合法”，而是携带本次脱敏失败位置和完整契约：允许的顶层/信念字段、候选词与理由长度、唯一存活玩家 ID、概率范围与总和及合法投票目标。严格 Schema 和既有重试预算保持不变，不自动删除字段或伪造模型信念。
+- 共享概率 Schema 补齐 `0..1` 上限；JSON 解析显式拒绝数组根节点。Provider 计时日志改为 `provider_returned`/`provider_failed`，避免将传输成功误读为行动成功。
+- Node 22 下定向策略/观测/Shared 回归 21/21，随后 Shared 55/55、Server 112/112、Web 67/67、三个 workspace typecheck、全仓 ESLint 与 `git diff --check` 通过。全部使用 fake/scripted client，不读取真实 Key、不联网、不产生费用；修复后的付费整局复测待负责人再次显式授权。

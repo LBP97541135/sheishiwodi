@@ -128,7 +128,7 @@ describe('Agent observability', () => {
         actionId,
         attemptNumber: 1,
         attemptKind: 'initial',
-        resultCode: 'invalid_format',
+        resultCode: 'invalid_format:no_json',
       },
       {
         attemptId: 'attempt-2',

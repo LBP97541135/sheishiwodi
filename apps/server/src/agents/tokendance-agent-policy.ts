@@ -51,7 +51,28 @@ export class AgentSystemError extends Error {
   }
 }
 
-class AgentFormatError extends Error {}
+type AgentFormatErrorCode =
+  | 'NO_JSON'
+  | 'NOT_OBJECT'
+  | 'INVALID_JSON'
+  | 'SCHEMA_INVALID'
+  | 'ILLEGAL_TARGET'
+  | 'BELIEF_TOTAL_INVALID'
+  | 'BELIEF_INVALID';
+
+class AgentFormatError extends Error {
+  constructor(
+    readonly code: AgentFormatErrorCode,
+    readonly issue?: string,
+  ) {
+    super(issue ? `${code}:${issue}` : code);
+    this.name = 'AgentFormatError';
+  }
+
+  resultCode() {
+    return `invalid_format:${this.code.toLowerCase()}${this.issue ? `:${this.issue}` : ''}`;
+  }
+}
 
 export interface TokendanceAgentPolicyOptions {
   client: TokendanceClient;
@@ -167,9 +188,9 @@ export class TokendanceAgentPolicy implements AgentPolicy {
           rawResponse: content,
         });
         this.circuitBreaker.recordSuccess();
-        this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'ok');
+        this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'provider_returned');
       } catch (error) {
-        this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'fail');
+        this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'provider_failed');
         if (error instanceof TokendanceError && error.kind === 'interrupted') {
           this.observability.finishAttempt(attempt, 'runtime_interrupted');
           throw new AgentRuntimeInterruptedError();
@@ -208,14 +229,14 @@ export class TokendanceAgentPolicy implements AgentPolicy {
           this.observability.finishAttempt(attempt, 'internal_error', { rawResponse: content });
           throw error;
         }
-        this.observability.finishAttempt(attempt, 'invalid_format', { rawResponse: content });
+        this.observability.finishAttempt(attempt, error.resultCode(), { rawResponse: content });
         if (!repairUsed) {
           repairUsed = true;
           attemptKind = 'format_repair';
           messages = [
             ...baseMessages,
             { role: 'assistant', content },
-            { role: 'user', content: repairInstruction(input) },
+            { role: 'user', content: repairInstruction(input, error) },
           ];
           continue;
         }
@@ -242,7 +263,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     actionType: string,
     startedAt: number,
     repairUsed: boolean,
-    result: 'ok' | 'fail',
+    result: 'provider_returned' | 'provider_failed',
   ) {
     if (!this.debug) return;
     const elapsed = Date.now() - startedAt;
@@ -445,14 +466,23 @@ function renderBeliefHistory(input: AgentTurnInput): string {
   return parts.join('\n');
 }
 
-function repairInstruction(input: AgentTurnInput): string {
+function repairInstruction(input: AgentTurnInput, error: AgentFormatError): string {
   const livingIds = livingIdsOf(input);
+  const isVote = input.actionType === 'vote' || input.actionType === 'revote';
+  const actionContract = isVote
+    ? `顶层必须且只能包含 belief、targetPlayerId、reason；reason 是 1 至 200 字符的字符串；` +
+      `targetPlayerId 必须是以下之一：${input.legalTargets.join(', ')}。`
+    : `顶层必须且只能包含 belief、text；text 是字符串。`;
   return (
-    `上一次回复不是合法的 JSON 或不满足要求。请只返回一个 JSON 对象，不要任何解释或代码块标记。` +
-    `playerUndercoverProbabilities 必须且只能包含这些 playerId：${livingIds.join(', ')}，概率之和约等于 ${input.publicConfig.undercoverCount}。` +
-    (input.actionType === 'vote' || input.actionType === 'revote'
-      ? `targetPlayerId 必须是以下之一：${input.legalTargets.join(', ')}。`
-      : '')
+    `上一次回复未通过本地校验，脱敏原因：${error.message}。` +
+    `请只返回一个 JSON 对象，不要解释、代码块或额外字段。${actionContract}` +
+    `belief 必须且只能包含 opposingWordCandidates、playerUndercoverProbabilities、reasoningSummary。` +
+    `opposingWordCandidates 是数组；每项必须且只能包含 word、confidence、evidence，` +
+    `word 为 1 至 40 字符，confidence 为 0 到 1 的数字，evidence 为 1 至 200 字符。` +
+    `reasoningSummary 为 1 至 300 字符。` +
+    `playerUndercoverProbabilities 每项必须且只能包含 playerId、probability；` +
+    `这些 playerId 必须各出现一次且不能重复：${livingIds.join(', ')}；` +
+    `probability 必须是 0 到 1 的数字，全部概率之和必须等于 ${input.publicConfig.undercoverCount}。`
   );
 }
 
@@ -468,13 +498,16 @@ function extractJson(content: string): Record<string, unknown> {
   if (start === -1 || end === -1 || end < start) {
     throw new AgentFormatError('NO_JSON');
   }
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(text.slice(start, end + 1)) as unknown;
-    if (!parsed || typeof parsed !== 'object') throw new AgentFormatError('NOT_OBJECT');
-    return parsed as Record<string, unknown>;
+    parsed = JSON.parse(text.slice(start, end + 1)) as unknown;
   } catch {
     throw new AgentFormatError('INVALID_JSON');
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new AgentFormatError('NOT_OBJECT');
+  }
+  return parsed as Record<string, unknown>;
 }
 
 function buildOutput(
@@ -485,7 +518,9 @@ function buildOutput(
 
   if (input.actionType === 'describe' || input.actionType === 'defend') {
     const result = speechActionOutputSchema.safeParse(parsed);
-    if (!result.success) throw new AgentFormatError('SCHEMA_INVALID');
+    if (!result.success) {
+      throw new AgentFormatError('SCHEMA_INVALID', firstSchemaIssue(result.error.issues));
+    }
     return {
       ...result.data,
       belief: normalizeBeliefTotal(
@@ -498,7 +533,9 @@ function buildOutput(
   }
 
   const result = voteActionOutputSchema.safeParse(parsed);
-  if (!result.success) throw new AgentFormatError('SCHEMA_INVALID');
+  if (!result.success) {
+    throw new AgentFormatError('SCHEMA_INVALID', firstSchemaIssue(result.error.issues));
+  }
   if (!input.legalTargets.includes(result.data.targetPlayerId)) {
     throw new AgentFormatError('ILLEGAL_TARGET');
   }
@@ -510,6 +547,16 @@ function buildOutput(
       input.publicConfig.undercoverCount,
     ),
   };
+}
+
+function firstSchemaIssue(issues: readonly { path: PropertyKey[]; code: string }[]): string {
+  const issue = issues[0];
+  if (!issue) return 'unknown';
+  const path = issue.path
+    .map((part) => (typeof part === 'number' ? 'item' : String(part).replace(/[^a-zA-Z0-9_-]/g, '_')))
+    .join('.');
+  const code = issue.code.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `${path || 'root'}:${code}`;
 }
 
 /**
