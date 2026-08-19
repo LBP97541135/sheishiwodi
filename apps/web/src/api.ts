@@ -3,6 +3,11 @@ import {
   apiErrorResponseSchema,
   apiSuccessSchema,
   availableModelListSchema,
+  developerFullRecordClearResultSchema,
+  developerFullRecordDetailSchema,
+  developerFullRecordListSchema,
+  developerOverviewSchema,
+  fullRecordingStateSchema,
   humanGameViewSchema,
   modelProfileListSchema,
   modelProfileSchema,
@@ -12,6 +17,7 @@ import {
   type CreateGameRequest,
   type HumanGameView,
   type ReviewSummary,
+  type ResolveInterruptedGameRequest,
   type StartGameRequest,
   type SubmitDefenseRequest,
   type SubmitDescriptionRequest,
@@ -40,8 +46,12 @@ async function request(path: string, init?: RequestInit) {
 }
 
 export async function getActiveGame() {
+  return (await getActiveGameState()).game;
+}
+
+export async function getActiveGameState() {
   const body = await request('/api/games/active');
-  return apiSuccessSchema(activeGameDataSchema).parse(body).data.game;
+  return apiSuccessSchema(activeGameDataSchema).parse(body).data;
 }
 
 export async function createGame(input: CreateGameRequest) {
@@ -112,6 +122,18 @@ export async function abandonGame(gameId: string, input: AbandonGameRequest) {
   return apiSuccessSchema(humanGameViewSchema).parse(body).data;
 }
 
+export async function resolveInterruptedGame(
+  gameId: string,
+  input: ResolveInterruptedGameRequest,
+) {
+  const body = await request(`/api/games/${gameId}/recovery`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return apiSuccessSchema(humanGameViewSchema).parse(body).data;
+}
+
 export type { HumanGameView, ReviewSummary };
 
 export async function getReview(gameId: string) {
@@ -150,4 +172,35 @@ export async function updateModelSelection(roleId: string, modelId: string) {
     body: JSON.stringify({ modelId }),
   });
   return apiSuccessSchema(modelProfileSchema).parse(body).data;
+}
+
+export async function getDeveloperOverview(gameId?: string) {
+  const query = gameId ? `?gameId=${encodeURIComponent(gameId)}` : '';
+  const body = await request(`/api/developer/overview${query}`);
+  return apiSuccessSchema(developerOverviewSchema).parse(body).data;
+}
+
+export async function setFullContextRecording(enabled: boolean) {
+  const body = await request('/api/developer/full-recording', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  return apiSuccessSchema(fullRecordingStateSchema).parse(body).data;
+}
+
+export async function getDeveloperFullRecords(gameId?: string) {
+  const query = gameId ? `?gameId=${encodeURIComponent(gameId)}` : '';
+  const body = await request(`/api/developer/full-records${query}`);
+  return apiSuccessSchema(developerFullRecordListSchema).parse(body).data.records;
+}
+
+export async function getDeveloperFullRecord(attemptId: string) {
+  const body = await request(`/api/developer/full-records/${encodeURIComponent(attemptId)}`);
+  return apiSuccessSchema(developerFullRecordDetailSchema).parse(body).data;
+}
+
+export async function clearDeveloperFullRecords() {
+  const body = await request('/api/developer/full-records', { method: 'DELETE' });
+  return apiSuccessSchema(developerFullRecordClearResultSchema).parse(body).data;
 }

@@ -61,6 +61,11 @@ export const terminateForSystemErrorCommandSchema = commandEnvelopeSchema.extend
   errorType: z.string().trim().min(1).max(64),
 });
 
+export const resolveInterruptedGameCommandSchema = commandEnvelopeSchema.extend({
+  type: z.literal('ResolveInterruptedGame'),
+  resolution: z.enum(['continue', 'start_new']),
+});
+
 export const disqualifyPlayerForRuleViolationCommandSchema = commandEnvelopeSchema.extend({
   type: z.literal('DisqualifyPlayerForRuleViolation'),
   failedActionId: identifierSchema,
@@ -96,6 +101,7 @@ export const gameCommandSchema = z.discriminatedUnion('type', [
   submitVoteCommandSchema,
   continueSpectatingCommandSchema,
   abandonGameCommandSchema,
+  resolveInterruptedGameCommandSchema,
   terminateForSystemErrorCommandSchema,
   disqualifyPlayerForRuleViolationCommandSchema,
 ]);
@@ -115,6 +121,14 @@ export type ContinueSpectatingCommand = z.infer<typeof continueSpectatingCommand
 export type ContinueSpectatingRequest = z.infer<typeof continueSpectatingRequestSchema>;
 export type AbandonGameCommand = z.infer<typeof abandonGameCommandSchema>;
 export type AbandonGameRequest = z.infer<typeof abandonGameRequestSchema>;
+export const resolveInterruptedGameRequestSchema = resolveInterruptedGameCommandSchema.omit({
+  type: true,
+  gameId: true,
+  actorId: true,
+  expectedRevision: true,
+});
+export type ResolveInterruptedGameCommand = z.infer<typeof resolveInterruptedGameCommandSchema>;
+export type ResolveInterruptedGameRequest = z.infer<typeof resolveInterruptedGameRequestSchema>;
 export type TerminateForSystemErrorCommand = z.infer<typeof terminateForSystemErrorCommandSchema>;
 export type DisqualifyPlayerForRuleViolationCommand = z.infer<
   typeof disqualifyPlayerForRuleViolationCommandSchema

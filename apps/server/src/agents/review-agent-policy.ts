@@ -6,7 +6,18 @@ import {
 } from '@sheishiwodi/shared';
 
 import { reasoningDisableBodyFor } from './model-reasoning.js';
+import {
+  ContextBoundaryViolationError,
+  noOpAgentObservability,
+  type AgentObservability,
+  type ModelAttemptKind,
+} from './agent-observability.js';
 import type { ReviewInput, ReviewPolicy } from './review-policy.js';
+import {
+  CircuitOpenError,
+  noOpProviderCircuitBreaker,
+  type ProviderCircuitBreakerPort,
+} from './provider-circuit-breaker.js';
 import { TokendanceError, type ChatMessage, type TokendanceClient } from './tokendance-client.js';
 
 /** 复盘系统级失败（脱敏），不含 Key/URL/上游正文。 */
@@ -14,6 +25,13 @@ export class ReviewSystemError extends Error {
   constructor(readonly code: ReviewErrorCode) {
     super(`REVIEW_SYSTEM_${code}`);
     this.name = 'ReviewSystemError';
+  }
+}
+
+export class ReviewRuntimeInterruptedError extends Error {
+  constructor() {
+    super('REVIEW_RUNTIME_INTERRUPTED');
+    this.name = 'ReviewRuntimeInterruptedError';
   }
 }
 
@@ -29,6 +47,8 @@ export interface TokendanceReviewPolicyOptions {
   reasoningHints?: boolean;
   /** 按评测模型的精确 model ID 返回专属请求参数。 */
   extraBodyForModel?: (modelId: string) => Record<string, unknown>;
+  observability?: AgentObservability;
+  circuitBreaker?: ProviderCircuitBreakerPort;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -45,6 +65,8 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly reasoningHints: boolean;
   private readonly extraBodyForModel: (modelId: string) => Record<string, unknown>;
+  private readonly observability: AgentObservability;
+  private readonly circuitBreaker: ProviderCircuitBreakerPort;
 
   constructor(options: TokendanceReviewPolicyOptions) {
     this.client = options.client;
@@ -54,10 +76,28 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
     this.sleep = options.sleep ?? defaultSleep;
     this.reasoningHints = options.reasoningHints ?? true;
     this.extraBodyForModel = options.extraBodyForModel ?? (() => ({}));
+    this.observability = options.observability ?? noOpAgentObservability;
+    this.circuitBreaker = options.circuitBreaker ?? noOpProviderCircuitBreaker;
   }
 
-  async generate(input: ReviewInput): Promise<ReviewGeneration> {
+  async generate(
+    input: ReviewInput,
+    context: {
+      commandId: string;
+      actionId: string;
+      lifecycle?: { validatedAttemptId?: string };
+    } = {
+      commandId: `review/${input.gameId}`,
+      actionId: `review/${input.gameId}`,
+    },
+  ): Promise<ReviewGeneration> {
     if (!this.modelId) throw new ReviewSystemError('MODEL_NOT_CONFIGURED');
+    try {
+      this.circuitBreaker.beforeLogicalCall();
+    } catch (error) {
+      if (error instanceof CircuitOpenError) throw new ReviewSystemError('PROVIDER_UNAVAILABLE');
+      throw error;
+    }
 
     const baseMessages = buildReviewMessages(input);
     const extraBody = {
@@ -72,29 +112,79 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
     let repairUsed = false;
     let systemAttempts = 0;
     let lastSystemCode: ReviewErrorCode = 'INTERNAL_ERROR';
+    let attemptKind: ModelAttemptKind = 'initial';
 
     for (;;) {
       let content: string;
+      let attempt;
       try {
-        content = await this.client.chatCompletion({ modelId: this.modelId, messages, extraBody });
+        attempt = this.observability.beginReviewAttempt({
+          reviewInput: input,
+          commandId: context.commandId,
+          actionId: context.actionId,
+          modelId: this.modelId,
+          messages,
+          attemptKind,
+        });
       } catch (error) {
+        if (error instanceof ContextBoundaryViolationError) {
+          throw new ReviewSystemError('INTERNAL_ERROR');
+        }
+        throw new ReviewSystemError('INTERNAL_ERROR');
+      }
+      try {
+        content = await this.client.chatCompletion({
+          modelId: this.modelId,
+          messages,
+          extraBody,
+          ...(attempt.signal ? { signal: attempt.signal } : {}),
+        });
+        this.observability.markAttemptStage?.(attempt.attemptId, 'provider_returned', {
+          rawResponse: content,
+        });
+        this.circuitBreaker.recordSuccess();
+      } catch (error) {
+        if (error instanceof TokendanceError && error.kind === 'interrupted') {
+          this.observability.finishAttempt(attempt, 'runtime_interrupted');
+          throw new ReviewRuntimeInterruptedError();
+        }
         const classified = classifyClientError(error);
+        this.observability.finishAttempt(attempt, classified.code.toLowerCase());
         lastSystemCode = classified.code;
-        if (!classified.retryable) throw new ReviewSystemError(classified.code);
+        if (!classified.retryable) {
+          this.circuitBreaker.recordFailure('permanent');
+          throw new ReviewSystemError(classified.code);
+        }
         systemAttempts += 1;
-        if (systemAttempts > this.maxSystemRetries) throw new ReviewSystemError(lastSystemCode);
+        if (systemAttempts > this.maxSystemRetries) {
+          this.circuitBreaker.recordFailure('transient');
+          throw new ReviewSystemError(lastSystemCode);
+        }
         await this.sleep(this.retryDelayMs);
         messages = baseMessages;
         repairUsed = false;
+        attemptKind = 'system_retry';
         continue;
       }
 
       try {
-        return buildReviewOutput(extractJson(content), agentIds);
+        const output = buildReviewOutput(extractJson(content), agentIds);
+        this.observability.markAttemptStage?.(attempt.attemptId, 'schema_validated');
+        if (context.lifecycle) {
+          context.lifecycle.validatedAttemptId = attempt.attemptId;
+        } else {
+          this.observability.finishAttempt(attempt, 'schema_validated', { rawResponse: content });
+        }
+        return output;
       } catch (error) {
-        if (!(error instanceof ReviewFormatError)) throw error;
+        if (!(error instanceof ReviewFormatError)) {
+          this.observability.finishAttempt(attempt, 'internal_error', { rawResponse: content });
+          throw error;
+        }
+        this.observability.finishAttempt(attempt, 'invalid_format', { rawResponse: content });
         if (!repairUsed) {
           repairUsed = true;
+          attemptKind = 'format_repair';
           messages = [
             ...baseMessages,
             { role: 'assistant', content },
@@ -107,6 +197,7 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
         await this.sleep(this.retryDelayMs);
         messages = baseMessages;
         repairUsed = false;
+        attemptKind = 'system_retry';
       }
     }
   }
@@ -239,7 +330,9 @@ function renderTimeline(
 function repairInstruction(agentIds: readonly string[]): string {
   return (
     `上一次回复不是合法 JSON 或不满足要求。请只返回一个 JSON 对象，不要任何解释或代码块标记。` +
-    `perAgent 必须且只能覆盖这些 playerId：${agentIds.join(', ')}，每个恰好一条；rating 为 1~5 的整数。`
+    `perAgent 必须且只能覆盖这些 playerId：${agentIds.join(', ')}，每个恰好一条；` +
+    `verdict 60～100 个字符；keyMoments 1～2 条且每条不超过 50 个字符；` +
+    `rating 必填且为 1～5 的整数；overall 100～160 个字符。`
   );
 }
 

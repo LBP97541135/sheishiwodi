@@ -358,6 +358,55 @@ export class GameRepository {
     }));
   }
 
+  appendOperationalFrame(input: {
+    gameId: string;
+    type: string;
+    payload: Record<string, unknown>;
+    occurredAt: string;
+  }): boolean {
+    const append = this.database.sqlite.transaction(() => {
+      const row = this.database.sqlite
+        .prepare('SELECT status, stream_seq, snapshot_json FROM games WHERE game_id = ?')
+        .get(input.gameId) as
+        | { status: string; stream_seq: number; snapshot_json: string }
+        | undefined;
+      if (!row || row.status !== 'in_progress') return false;
+
+      const snapshot = gameSnapshotSchema.parse(JSON.parse(row.snapshot_json));
+      if (snapshot.streamSeq !== row.stream_seq) throw new Error('DATA_INCONSISTENT');
+      const streamSeq = row.stream_seq + 1;
+
+      this.database.sqlite
+        .prepare(
+          `INSERT INTO public_stream_entries (
+            game_id, stream_seq, type, event_seq, payload_json, created_at
+          ) VALUES (?, ?, ?, NULL, ?, ?)`,
+        )
+        .run(
+          input.gameId,
+          streamSeq,
+          input.type,
+          JSON.stringify(input.payload),
+          input.occurredAt,
+        );
+      const update = this.database.sqlite
+        .prepare(
+          `UPDATE games SET stream_seq = ?, snapshot_json = ?
+           WHERE game_id = ? AND stream_seq = ?`,
+        )
+        .run(
+          streamSeq,
+          JSON.stringify({ ...snapshot, streamSeq }),
+          input.gameId,
+          row.stream_seq,
+        );
+      if (update.changes !== 1) throw new Error('REVISION_CONFLICT');
+      return true;
+    });
+
+    return append();
+  }
+
   listPublicTimeline(gameId: string): PublicTimelineItem[] {
     const rows = this.database.sqlite
       .prepare(

@@ -1,6 +1,6 @@
 # 持久化规格
 
-- 状态：首个里程碑基线、`agent_role_models` 与 `review_summaries` 已实现；`model_attempts` 尚未实现
+- 状态：首个里程碑基线、`agent_role_models`、`review_summaries`、`model_attempts` 与可靠性迁移已实现
 - 适用范围：当前 SQLite + Drizzle 物理 Schema、原子提交与恢复
 
 ## 1. 目标
@@ -79,17 +79,28 @@ SQLite 文件是本地运行状态，不是词库或需求的 Git 事实源。
 - `outputJson`：描述/辩解文本，或投票目标与理由
 - `completedAt`
 
-当前没有独立的公开事件上界、模型标识、校验结果和尝试次数字段；这些信息如在真实模型切片需要，应通过迁移增加，不能假定已经持久化。公开文本只有在状态机提交后才通过 `game_events` 成为事实。
+`agent_actions` 仍只表示最终被状态机接受的语义动作，不混入请求尝试细节。公开文本只有在状态机提交后才通过 `game_events` 成为事实；模型标识、结果分类和尝试次数由下述 `model_attempts` 单独记录。
 
-### 2.6 `model_attempts`（尚未实现）
+### 2.6 `model_attempts` 与 `model_attempt_stages`（DEC-095/097，已实现）
 
-后续真实模型系统错误恢复计划保存以下脱敏元数据：
+当前持久化每次真实模型请求的脱敏元数据：
 
-- `attemptId`、`actionId`、尝试序号
-- 结果：成功、结构修复失败、网络、超时、限流、服务端或未知错误
-- 开始时间、耗时、脱敏摘要
+- `attemptId`、`gameId`、`commandId`、`actionId`、`playerId/roleId`
+- `modelId`、动作类型和尝试序号
+- 开始时间、结束时间、耗时
+- 最终结果/错误分类；成功终态为 `action_committed`，Provider 或 Schema 成功不得提前写成最终成功
+- 尝试类型：初次调用、结构修复、内容重生成或系统重试
+- 调用结束状态；处理中为 `started`
 
-不得保存密钥、敏感基础地址、完整请求头、被拦截的泄词原文或无必要的完整模型响应。
+`model_attempt_stages` 以 `attemptId + stage` 为唯一键，顺序记录 `request_started`、`provider_returned`、`schema_validated`、`content_validated`、`action_committed` 及发生时间。它不保存响应正文。内容拒绝、领域拒绝、过期丢弃和事务失败只写入 `model_attempts.resultCode` 的准确终态，不伪造后续阶段。该表随 attempt 和对局级联删除。
+
+数据库版本 3 只为 v2 库增量创建阶段表，不改写既有 `model_attempts` 行；历史 `success` 结果继续可读，其阶段数组为空。新调用统一使用新阶段和 `action_committed` 终态。
+
+不得保存完整 Prompt、词牌、私有信念正文、模型原始响应、密钥、敏感基础地址、完整请求头或被拦截的泄词原文。
+
+上下文清单和显式调试模式下的完整追踪不进入本表：它们写入 Git 忽略的独立本地审计目录，并通过 `attemptId` 关联。普通模式只保存来源、可见级别、公开游标、模板版本、Prompt 哈希和边界校验结果；完整 Prompt/响应默认关闭。
+
+`model_attempts` 已通过外键随对局级联删除。结构化上下文清单当前写入 `AGENT_AUDIT_DIR`（默认 `.local/agent-audit`）并按散列后的 game/attempt 路径保存；其按局清理，以及完整 Prompt/响应调试文件的 7 天/容量限制和主动清除，仍待后续阶段实现。
 
 ### 2.7 `public_stream_entries`
 
@@ -127,9 +138,13 @@ SQLite 文件是本地运行状态，不是词库或需求的 Git 事实源。
 
 当前已存在按 `gameId` 唯一的异步复盘摘要表，保存 `status`、非敏感 `modelId`、结构化 `summaryJson`、可选脱敏 `errorCode` 与创建/更新时间。正常终局后服务端可入队生成，重启时恢复 `pending/generating` 记录；失败不得改变游戏事实。Web 在单局复盘页轮询并展示该摘要，允许失败后重新生成；AI 评价始终与 `HumanGameView.factReview` 的确定性事实分区展示，不能覆盖事实。
 
-### 2.11 后续实体
+### 2.11 `game_runtime_recovery`
 
-`model_attempts` 与更完整的跨任务调度在对应里程碑再落地。本阶段的 `gameId`、角色模型映射、事件、私有动作和复盘摘要已经为后续读取提供基础。
+当前已实现每局一条运行中断恢复记录：保存 `gameId`、被中断的 `actionId`、`awaiting_confirmation/resolved` 状态、中断时间与解决时间。该表不复制 Prompt、响应或游戏私有内容，并随对局级联删除。服务启动时把遗留 `started` attempt 标为 `runtime_interrupted`；若所属对局仍在进行，则写入等待确认记录并停止自动推进。运行时后台推进遇到未分类程序异常也写入同一状态；同时原子追加只含 `{ state: 'interrupted' }` 的公开运行帧并推进 `streamSeq`，不修改领域 revision、事件或胜负事实。
+
+### 2.12 后续实体
+
+`model_attempts`、结构化上下文审计、运行中断恢复、全局复盘调度和轻量 Provider 熔断已经落地。完整上下文调试记录保存在 Git 忽略的独立审计目录，不进入 SQLite；仅在服务进程内显式开启，最多保留 7 天并受容量上限约束，支持启动清理和面板主动清除。可选 `TelemetrySink` 只输出脱敏生命周期事件，默认不联网。
 
 ## 3. 原子提交协议
 
@@ -158,6 +173,13 @@ SQLite 文件是本地运行状态，不是词库或需求的 Git 事实源。
 - 数据库忙或乐观并发冲突属于可重试基础设施错误，不得转换为玩家行为。
 
 首个里程碑可以采用进程内单队列配合数据库唯一约束；数据库约束必须作为防重复的最终防线。
+
+当前调度规则（DEC-092/093，已实现）：
+
+- 正在执行的模型调用因进程停止而中断时，持久化“中断后等待玩家确认”的运行状态；它不计入常规模型重试次数。
+- 继续旧局时只重新执行中断动作；开始新局时旧局以无胜者的独立原因终止。
+- 后台复盘全局并发为 1；存在 `preparing`、`in_progress` 或 `awaiting_spectator` 对局时不启动新复盘。
+- 已发出的复盘允许完成；待处理任务持久化，空闲后优先当前刚结束对局，再处理更早任务。
 
 ## 5. 词库同步
 
@@ -203,8 +225,11 @@ enabled
 - 浏览器恢复读取当前 `HumanGameView`，而不是直接返回数据库行或完整事件负载。
 - 准备状态恢复后继续等待 `StartGame`；正常终局、放弃和系统异常终止不可恢复为进行中。
 - 开发与测试使用独立 SQLite 文件；自动化测试默认使用临时数据库并在用例结束后清理自身产物。
+- 迁移开始前生成一次可恢复备份；不创建每局备份或每日轮转备份。
+- SQLite 繁忙使用可配置的有限等待，默认约 3 秒；只重试事务，不得重新调用模型。
+- 检测到数据库完整性异常时保留数据库和 WAL 原文件，停止业务读写并进入仅健康检查可用的本机诊断模式；不得自动猜测修复。
 
 ## 8. 来源
 
 - 需求：[`../acceptance/REQUIREMENTS.md`](../acceptance/REQUIREMENTS.md) 第 89–98、106–123、167–192 条。
-- 决策：DEC-022 至 DEC-024、DEC-028 至 DEC-032、DEC-047、DEC-049、DEC-052 至 DEC-054、DEC-071 至 DEC-074、DEC-077、DEC-079 至 DEC-082。
+- 决策：DEC-022 至 DEC-024、DEC-028 至 DEC-032、DEC-047、DEC-049、DEC-052 至 DEC-054、DEC-071 至 DEC-074、DEC-077、DEC-079 至 DEC-082、DEC-092 至 DEC-096。

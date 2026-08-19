@@ -61,11 +61,116 @@ const response = (body: unknown, ok = true) => ({ ok, json: async () => body });
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe('App', () => {
+  it('仅在服务端开放能力后显示开发者开关，并对完整上下文启用进行二次确认', async () => {
+    let fullRecordingEnabled = false;
+    const fetchMock = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
+      if (input === '/api/games/active') {
+        return response({ data: { game: null, developerModeAvailable: true } });
+      }
+      if (input === '/api/developer/overview') {
+        return response({
+          data: {
+            fullRecordingEnabled,
+            calls: [
+              {
+                attemptId: 'attempt-1',
+                gameId: 'game-1',
+                commandId: 'start-1',
+                actionId: 'action-1',
+                playerId: 'agent-1',
+                roleId: 'deepseek',
+                modelId: 'model-x',
+                actionType: 'describe',
+                attemptNumber: 1,
+                attemptKind: 'initial',
+                resultCode: 'action_committed',
+                startedAt: '2026-08-19T05:00:00.000Z',
+                finishedAt: '2026-08-19T05:00:01.000Z',
+                durationMs: 1000,
+                stages: [
+                  { stage: 'request_started', occurredAt: '2026-08-19T05:00:00.000Z' },
+                  { stage: 'provider_returned', occurredAt: '2026-08-19T05:00:00.800Z' },
+                  { stage: 'schema_validated', occurredAt: '2026-08-19T05:00:00.850Z' },
+                  { stage: 'content_validated', occurredAt: '2026-08-19T05:00:00.900Z' },
+                  { stage: 'action_committed', occurredAt: '2026-08-19T05:00:01.000Z' },
+                ],
+              },
+            ],
+            contexts: [],
+            errorsAndRecovery: {
+              failedAttempts: [],
+              interruptedGames: [],
+              providerCircuit: { state: 'closed' },
+            },
+            review: {
+              runningGameId: null,
+              queuedGameIds: [],
+              blockedByActiveGame: false,
+              stopped: false,
+            },
+          },
+        });
+      }
+      if (input === '/api/developer/full-recording' && init?.method === 'PUT') {
+        fullRecordingEnabled = true;
+        return response({ data: { enabled: true } });
+      }
+      if (input === '/api/developer/full-records') {
+        return response({ data: { records: [] } });
+      }
+      throw new Error(`unexpected request: ${input}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(<App />);
+
+    const developerToggle = await screen.findByRole('button', { name: '开发者模式：关' });
+    fireEvent.click(developerToggle);
+    expect(await screen.findByRole('heading', { name: 'Agent 观测面板' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '调用链' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '上下文' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '错误与恢复' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '复盘调度' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'request_started → provider_returned → schema_validated → content_validated → action_committed',
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '开启记录' }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/developer/full-recording',
+      expect.anything(),
+    );
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: '开启记录' }));
+    expect(await screen.findByRole('button', { name: '停止记录' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/developer/full-recording',
+      expect.objectContaining({ method: 'PUT' }),
+    );
+  });
+
+  it('服务端未开放开发者模式时，页面和网络均无诊断入口', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ data: { game: null } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole('button', { name: '经典模式' });
+    expect(screen.queryByText(/开发者模式/)).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([path]) => String(path).includes('/api/developer/'))).toBe(false);
+  });
+
   it('仅保留猜词模式二期入口，复用 deta 版本提示并把焦点返回自身', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ data: { game: null } })));
 
@@ -294,4 +399,112 @@ describe('App', () => {
     listeners.get('round_started')?.();
     expect(await screen.findByRole('heading', { name: '第 2 轮' })).toBeInTheDocument();
   });
+
+  it('服务中断恢复视图要求玩家选择，并使用恢复端点继续当前动作', async () => {
+    const interrupted = interruptedGame();
+    const continued = {
+      ...interrupted,
+      operationalStatus: { state: 'agent_working', actorId: 'agent-1' },
+      allowedCommands: ['AbandonGame'],
+    } as const;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ data: { game: interrupted } }))
+      .mockResolvedValueOnce(response(successBody(continued)));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('crypto', { randomUUID: () => 'recovery-command' });
+
+    render(<App />);
+    const dialog = await screen.findByRole('dialog', { name: '上一局在模型行动时中断' });
+    expect(within(dialog).getByRole('button', { name: '继续上一局' })).toHaveFocus();
+    fireEvent.click(within(dialog).getByRole('button', { name: '继续上一局' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/games/game-1/recovery',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ commandId: 'recovery-command', resolution: 'continue' }),
+      }),
+    );
+    expect(sessionStorage.getItem('sheishiwodi:pending-game-command')).toBeNull();
+  });
+
+  it('中断恢复选择开始新局后回到经典模式入口', async () => {
+    const interrupted = interruptedGame();
+    const abandoned = {
+      ...interrupted,
+      status: 'abandoned',
+      phase: 'ended',
+      revision: 4,
+      round: null,
+      endReason: 'interrupted_not_resumed',
+      allowedCommands: [],
+      operationalStatus: { state: 'idle' },
+    } as const;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ data: { game: interrupted } }))
+      .mockResolvedValueOnce(response(successBody(abandoned)));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('crypto', { randomUUID: () => 'new-game-command' });
+
+    render(<App />);
+    const dialog = await screen.findByRole('dialog', { name: '上一局在模型行动时中断' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '开始新对局' }));
+
+    expect(await screen.findByRole('button', { name: '经典模式' })).toBeInTheDocument();
+    expect(localStorage.getItem('sheishiwodi:last-game-id')).toBeNull();
+  });
+
+  it('刷新后确认开始新局时不重新打开刚结束的旧局', async () => {
+    const abandoned = {
+      ...interruptedGame(),
+      status: 'abandoned',
+      phase: 'ended',
+      revision: 4,
+      round: null,
+      endReason: 'interrupted_not_resumed',
+      allowedCommands: [],
+      operationalStatus: { state: 'idle' },
+    } as const;
+    localStorage.setItem('sheishiwodi:last-game-id', abandoned.gameId);
+    sessionStorage.setItem(
+      'sheishiwodi:pending-game-command',
+      JSON.stringify({
+        version: 1,
+        kind: 'recovery',
+        gameId: abandoned.gameId,
+        expectedRevision: 3,
+        request: { commandId: 'lost-start-new-response', resolution: 'start_new' },
+      }),
+    );
+    const fetchMock = vi.fn().mockResolvedValue(response(successBody(abandoned)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole('button', { name: '经典模式' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem('sheishiwodi:pending-game-command')).toBeNull();
+  });
 });
+
+function interruptedGame() {
+  return {
+    ...preparingGame,
+    status: 'in_progress',
+    phase: 'speaking',
+    revision: 3,
+    eventCursor: 8,
+    round: {
+      number: 1,
+      speakingOrder: ['agent-1', 'human-1', 'agent-2', 'agent-3'],
+      currentActorId: 'agent-1',
+      actionType: 'describe',
+      tieCandidateIds: [],
+    },
+    allowedCommands: ['ResolveInterruptedGame'],
+    operationalStatus: { state: 'interrupted' },
+  } as const;
+}

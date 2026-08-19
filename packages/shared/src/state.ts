@@ -75,6 +75,7 @@ export const gameSnapshotSchema = z
         'player_rule_violation',
         'abandoned_by_human',
         'model_failure_limit',
+        'interrupted_not_resumed',
       ])
       .optional(),
   })

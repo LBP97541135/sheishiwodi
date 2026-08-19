@@ -10,7 +10,7 @@
 
 ### 环境要求
 
-- Node.js 20.11+，推荐 Node.js 22 LTS。
+- Node.js 22（仓库通过 [`.node-version`](.node-version) 固定为 22.14.0）。
 - pnpm 9.15.9。
 
 ```bash
@@ -22,6 +22,8 @@ pnpm dev
 ```
 
 浏览器访问 `http://127.0.0.1:9001`，Fastify API 监听 `http://127.0.0.1:3001`。默认使用 `FakeAgentPolicy`、本地词库和 SQLite，不需要 API Key、不会联网，也不会产生模型费用。
+
+默认端口被占用时，可在本地环境中设置 `SHEISHIWODI_API_PORT`、`SHEISHIWODI_WEB_PORT` 和与前者一致的 `SHEISHIWODI_API_ORIGIN`；Playwright 可用独立的 `E2E_API_PORT`、`E2E_WEB_PORT` 与正在运行的开发服务并存。
 
 首次运行 E2E 时，如本机还没有 Chromium：
 
@@ -106,19 +108,63 @@ flowchart LR
 
 每个 AI 是独立策略实例，共享规则但不共享私有上下文。描述必须按公开顺序生成，因为前一人的描述会成为后一人的公开信息；同一投票阶段的 AI 选票互不可见、互不依赖，因此可以并行预取，再按状态机顺序校验和提交。
 
+### Agent 整体架构
+
+本项目采用“中心化编排器 + 多个受约束 Agent”，而不是让多个模型自由互聊。`GameService` 是唯一编排器，负责决定何时调用哪名 Agent；`AgentContextAssembler` 从服务端权威数据读取该 Agent 自己的私有信息和已经公开的信息，并签发与输入哈希绑定的来源证明；`AgentPolicy` 只负责把这份最小上下文转换为结构化行动提案。模型无权直接改变阶段、淘汰玩家或判断胜负，所有结果最终都必须交给共享纯状态机裁决并通过 SQLite 事务提交。
+
+三个参赛 Agent 使用相同的输入、输出和恢复契约，只更换角色人格与 model ID。赛后复盘 Agent 是独立的低优先级任务，只读取已经持久化的终局事实；它不能修改对局结果，也不会阻塞玩家开始新局。默认 `FakeAgentPolicy` 与真实 OpenAI 兼容策略实现同一接口，因此测试 harness 与生产 harness 走的是同一条编排、校验和持久化路径。
+
+### 单次真实 Agent 行动流程
+
+```mermaid
+flowchart TD
+  Trigger["人类命令或后台调度"] --> Orchestrator["GameService 编排器"]
+  Orchestrator --> Snapshot["读取权威快照、当前行动者与 revision"]
+  Snapshot --> Context["AgentContextAssembler<br/>组装最小上下文并签发来源证明"]
+  Context --> Policy["真实 AgentPolicy<br/>按角色解析 model ID 与请求参数"]
+  Policy --> Circuit{"Provider 熔断检查"}
+  Circuit -- "已开路" --> ProviderError["脱敏错误与恢复流程"]
+  Circuit -- "允许" --> Started["边界检查、上下文审计并记录 request_started<br/>gameId → commandId → actionId → attemptId"]
+  Started --> Boundary{"来源证明、输入哈希<br/>与信息边界校验通过"}
+  Boundary -- "失败" --> Blocked["context_boundary_violation<br/>保留失败台账，但不请求模型"]
+  Boundary -- "通过" --> Model["独立角色模型生成结构化行动与信念"]
+  Model --> Returned["记录 provider_returned"]
+  Returned --> Schema{"strict Zod Schema<br/>结构、信念覆盖与合法目标校验"}
+
+  Schema -- "不合法" --> Repair["一次格式修复或有限系统重试"]
+  Repair --> Model
+  Schema -- "通过" --> SchemaOk["记录 schema_validated"]
+  SchemaOk --> Content{"发言长度、句数与<br/>原词泄露校验"}
+  Content -- "可重新生成" --> Regenerate["内容重生成，不公开失败原文"]
+  Regenerate --> Policy
+  Content -- "通过" --> ContentOk["记录 content_validated"]
+  ContentOk --> Fresh{"revision、行动者与<br/>动作类型仍然有效"}
+  Fresh -- "已过期" --> Stale["stale_discarded<br/>旧结果不写入对局"]
+  Fresh -- "有效" --> Machine["共享纯状态机裁决<br/>阶段、投票、淘汰与胜负"]
+  Machine --> Transaction["SQLite 原子事务<br/>快照、事件、私有行动、公开帧、幂等结果"]
+  Transaction --> Committed["记录 action_committed"]
+  Committed --> Public["HumanGameView + SSE<br/>只发布允许公开的信息"]
+  Transaction --> Private["私有信念与投票理由<br/>仅终局复盘可见"]
+```
+
+调度上有三种明确边界：描述和辩解按公开顺序串行生成；秘密投票在同一公开信息上并行生成，但仍按状态机顺序逐个校验和提交；赛后复盘全局并发为 1，活动对局期间不启动新的复盘任务，已经发出的复盘允许正常完成。`FakeAgentPolicy` 不访问 Provider，也不产生真实请求阶段，但它返回行动后仍经过相同的服务层内容校验、共享状态机与持久化事务，因此默认测试验证的是正式编排路径，而不是另一套简化游戏逻辑。
+
 | Harness 层 | 解决的问题 | 实现方式 |
 | --- | --- | --- |
-| 输入投影 | 防止模型看到不该知道的信息 | `AgentInputProjector` 从权威快照构造不可变白名单，只含自己的词牌、公开事件、合法目标和自己的历史信念 |
+| 输入投影 | 防止模型看到不该知道的信息 | `AgentContextAssembler` 从权威仓库读取数据，`AgentInputProjector` 构造最小白名单；来源证明绑定 game、actor、私有信念所有者、公开游标与输入 SHA-256 |
 | 结构合同 | 防止自然语言直接控制系统 | 描述、投票、信念和复盘都使用 strict Zod Schema；未知字段、漏字段、非法概率和非法目标会被拒绝 |
 | 状态裁决 | 防止模型决定规则或胜负 | 模型只返回行动提案；共享纯状态机决定行动者、平票分支、淘汰和终局 |
-| 自动恢复 | 降低真实模型的不稳定性 | 一次格式修复；内容错误重新生成；超时、网络、429、5xx 有限重试；永久配置错误不盲目重试 |
+| 自动恢复 | 降低真实模型和运行环境的不稳定性 | 一次格式修复；内容错误重新生成；超时、网络、429、5xx 有限重试；永久错误熔断；进程中断后由玩家确认继续或开始新局 |
 | 并发防护 | 防止慢请求覆盖新状态 | 每次调用绑定 `baseRevision`；返回后重新核对状态、行动者和动作类型，过期结果直接丢弃 |
 | 幂等与恢复 | 防止刷新/重启产生重复行动 | 稳定 `commandId`、事务写入、活动局恢复、SSE 游标补发与客户端去重 |
 | 可替换策略 | 兼顾可测性和真实体验 | 默认 `FakeAgentPolicy` 提供确定性测试；显式 provider 开关才实例化真实兼容协议策略 |
+| 可观测性 | 证明调用链、信息边界与最终落地结果 | 持久化脱敏 `model_attempts` 与阶段链，区分请求开始、Provider 返回、结构通过、内容通过和动作提交；独立上下文清单记录来源、可见级别、游标、模板版本和 Prompt 哈希 |
 
 真实 Provider 解析集中在 `provider-runtime.ts`：Tokendance 保持旧默认兼容，`openai-compatible` 只复用协议客户端和 harness，不注入厂商专用推理参数，也不继承任何模型 ID。
 
 完整运行时契约见 [Agent 运行时规格](docs/spec/agent-runtime.md)。
+
+本地调试时可在 `.env` 设置 `AGENT_DEVELOPER_MODE=true` 后重启服务。页面设置区会出现仅当前标签页生效的“开发者模式”开关，打开后可查看调用链、上下文清单、错误与恢复、复盘调度。完整 Prompt/原始响应使用面板内第二个默认关闭的敏感开关，只记录开启后的新调用、每条展开前再次确认，并过滤 Key、Base URL 和请求头；服务重启会自动关闭，记录最多保留 7 天且受 `AGENT_FULL_AUDIT_MAX_BYTES` 限制。总门禁关闭时诊断路由不注册，页面不会发出诊断请求。
 
 ## 信息隔离
 
@@ -165,6 +211,8 @@ pnpm test:e2e
 
 默认测试和 E2E 强制假模型、临时 SQLite 和确定性随机序列，不读取 `.env` 中的 Key，也不访问网络。E2E 覆盖桌面与移动端的正常终局、刷新恢复、放弃、淘汰观战和平票重投。
 
+GitHub Actions 使用同一 Node 22 与 pnpm 版本执行 typecheck、lint、默认测试、build 和 Playwright E2E。工作流显式强制假模型并清空真实 Provider 凭据，不调用任何 `test:live*`；真实模型验收始终由负责人在本地手动授权。
+
 真实模型验证只能显式执行：
 
 ```bash
@@ -182,7 +230,7 @@ pnpm test:live:full    # 可选，真实模型整局，调用和费用更多
 
 - 猜词模式尚未实现，目前只有明确的二期占位提示。
 - 当前只提供本局复盘和 Markdown 导出，没有跨局历史列表。
-- 真实模型已完成策略级 3 模型 × 2 动作验收，以及复用同一状态机的真实模型整局；HTTP + SQLite 的真实付费整局仍待在匹配的 Node 22 / `better-sqlite3` 环境完成。
+- 真实模型已完成策略级、纯状态机整局，以及一次 Web/HTTP/SSE/SQLite 正常终局与真实复盘验收；该全栈验收是显式授权的一次性付费验证，不进入默认 CI 或长期 E2E。
 - 角色 PNG 和 10.5 MB WAV 仍需在正式发布前压缩，并补齐最终素材来源记录。
 - 模型输出具有随机性；默认自动化证明 harness 和规则稳定，不能保证每一次真实模型内容都同样精彩。
 

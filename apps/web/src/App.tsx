@@ -3,51 +3,33 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import type {
   CreateGameRequest,
   HumanGameView,
-  StartGameRequest,
 } from '@sheishiwodi/shared';
 
 import {
   ApiClientError,
-  abandonGame,
-  continueSpectating,
-  createGame,
-  getActiveGame,
+  getActiveGameState,
   getGame,
-  startGame,
-  submitDefense,
-  submitDescription,
-  submitVote,
 } from './api';
+import { DeveloperPanel } from './components/DeveloperPanel';
 import { GameScreen } from './components/GameScreen';
 import { ExperienceControls, useExperienceSettings } from './experience-settings';
 import { ModelProfiles } from './components/ModelProfiles';
 import { NewGameForm } from './components/NewGameForm';
 import { PreparingGame } from './components/PreparingGame';
 import { ReviewScreen } from './components/ReviewScreen';
+import {
+  executeTrackedGameCommand,
+  readPendingGameCommand,
+  settlePendingGameCommand,
+  type PendingGameCommand,
+} from './game-command-recovery';
+import { useGameStream } from './use-game-stream';
 
 type LoadState = 'loading' | 'ready' | 'failed';
-type TopView = 'game' | 'model-profiles' | 'review';
+type TopView = 'game' | 'model-profiles' | 'review' | 'developer';
 
 const LAST_GAME_KEY = 'sheishiwodi:last-game-id';
-
-const STREAM_EVENT_TYPES = [
-  'state_synced',
-  'game_started',
-  'round_started',
-  'turn_started',
-  'speech_published',
-  'vote_progressed',
-  'votes_revealed',
-  'tie_declared',
-  'revote_started',
-  'round_ended_without_elimination',
-  'player_eliminated',
-  'player_rule_violated',
-  'spectating_started',
-  'game_abandoned',
-  'terminal_reveal_ready',
-  'game_system_terminated',
-];
+const DEVELOPER_MODE_KEY = 'sheishiwodi:developer-mode';
 
 export function App() {
   const [loadState, setLoadState] = useState<LoadState>('loading');
@@ -56,6 +38,11 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [topView, setTopView] = useState<TopView>('game');
   const [guessModeNoticeOpen, setGuessModeNoticeOpen] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [developerAvailable, setDeveloperAvailable] = useState(false);
+  const [developerEnabled, setDeveloperEnabled] = useState(() =>
+    typeof sessionStorage !== 'undefined' && sessionStorage.getItem(DEVELOPER_MODE_KEY) === 'true',
+  );
   // 首帧一次性捕获待恢复的最近对局 ID（在任何 effect 之前），
   // 以便持久化 effect 的空态分支可以安全地清除 key 而不影响恢复。
   const [restoredLastGameId] = useState<string | null>(() =>
@@ -72,10 +59,27 @@ export function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void getActiveGame()
+    const pendingCommand = readPendingGameCommand();
+    const initialGame = pendingCommand
+      ? settlePendingGameCommand(pendingCommand)
+      : getActiveGameState().then((state) => {
+          if (!controller.signal.aborted) {
+            const available = state.developerModeAvailable === true;
+            setDeveloperAvailable(available);
+            if (!available) {
+              sessionStorage.removeItem(DEVELOPER_MODE_KEY);
+              setDeveloperEnabled(false);
+            }
+          }
+          return state.game;
+        });
+    void initialGame
       .then(async (activeGame) => {
         if (controller.signal.aborted) return null;
         if (activeGame) return activeGame;
+        if (pendingCommand?.kind === 'recovery' && pendingCommand.request.resolution === 'start_new') {
+          return null;
+        }
         const lastGameId = restoredLastGameId;
         if (!lastGameId) return null;
         try {
@@ -100,19 +104,25 @@ export function App() {
       });
 
     return () => controller.abort();
-  }, [restoredLastGameId]);
+  }, [loadAttempt, restoredLastGameId]);
 
   useEffect(() => {
     if (game?.gameId) localStorage.setItem(LAST_GAME_KEY, game.gameId);
     else localStorage.removeItem(LAST_GAME_KEY);
   }, [game?.gameId]);
 
-  const refresh = useCallback((gameId: string) => {
+  const refresh = useCallback((gameId: string, force = false) => {
     void getGame(gameId)
       .then((view) => {
         const current = gameRef.current;
-        // 只在游标前进时更新，避免旧帧回退视图。
-        if (!current || current.gameId !== view.gameId || view.eventCursor > current.eventCursor) {
+        // 允许同一事实版本更新运行状态；拒绝同游标但不同 revision 的乱序响应。
+        if (
+          (force && (!current || view.eventCursor >= current.eventCursor)) ||
+          !current ||
+          current.gameId !== view.gameId ||
+          view.eventCursor > current.eventCursor ||
+          (view.eventCursor === current.eventCursor && view.revision === current.revision)
+        ) {
           setGame(view);
         }
       })
@@ -124,144 +134,133 @@ export function App() {
   // 对局进行中通过 SSE 感知服务端自动推进，收到安全帧后重新拉取完整安全视图。
   const gameId = game?.gameId;
   const live = game?.status === 'in_progress' || game?.status === 'awaiting_spectator';
-  useEffect(() => {
-    if (!gameId || !live || typeof EventSource === 'undefined') return;
-    const source = new EventSource(`/api/games/${gameId}/stream?after=${eventCursorRef.current}`);
-    const handler = () => refresh(gameId);
-    for (const type of STREAM_EVENT_TYPES) {
-      source.addEventListener(type, handler);
-    }
-    source.onmessage = handler;
-    return () => source.close();
-  }, [gameId, live, refresh]);
+  const currentCursor = useCallback(() => eventCursorRef.current, []);
+  const stream = useGameStream({
+    ...(gameId ? { gameId } : {}),
+    enabled: live,
+    currentCursor,
+    synchronize: refresh,
+  });
 
-  const handleCreate = async (input: CreateGameRequest) => {
+  const runCommand = useCallback(async (command: PendingGameCommand) => {
     setBusy(true);
     setError(null);
     try {
-      setGame(await createGame(input));
-    } catch (createError) {
-      setError(messageFor(createError));
+      setGame(await executeTrackedGameCommand(command));
+    } catch (commandError) {
+      setError(messageForCommand(commandError));
     } finally {
       setBusy(false);
     }
+  }, []);
+
+  const handleCreate = async (input: CreateGameRequest) => {
+    await runCommand({ version: 1, kind: 'create', request: input });
   };
 
   const handleStart = async () => {
     if (!game) return;
-    setBusy(true);
-    setError(null);
-    const command: StartGameRequest = {
-      commandId: crypto.randomUUID(),
-      actorId: game.human.playerId,
+    await runCommand({
+      version: 1,
+      kind: 'start',
+      gameId: game.gameId,
       expectedRevision: game.revision,
-    };
-    try {
-      setGame(await startGame(game.gameId, command));
-    } catch (startError) {
-      setError(messageFor(startError));
-    } finally {
-      setBusy(false);
-    }
+      request: {
+        commandId: crypto.randomUUID(),
+        actorId: game.human.playerId,
+        expectedRevision: game.revision,
+      },
+    });
   };
 
   const handleDescribe = async (text: string) => {
     if (!game) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setGame(
-        await submitDescription(game.gameId, {
-          commandId: crypto.randomUUID(),
-          actorId: game.human.playerId,
-          expectedRevision: game.revision,
-          text,
-        }),
-      );
-    } catch (submitError) {
-      setError(messageFor(submitError));
-    } finally {
-      setBusy(false);
-    }
+    await runCommand({
+      version: 1,
+      kind: 'description',
+      gameId: game.gameId,
+      expectedRevision: game.revision,
+      request: {
+        commandId: crypto.randomUUID(),
+        actorId: game.human.playerId,
+        expectedRevision: game.revision,
+        text,
+      },
+    });
   };
 
   const handleDefense = async (text: string) => {
     if (!game) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setGame(
-        await submitDefense(game.gameId, {
-          commandId: crypto.randomUUID(),
-          actorId: game.human.playerId,
-          expectedRevision: game.revision,
-          text,
-        }),
-      );
-    } catch (submitError) {
-      setError(messageFor(submitError));
-    } finally {
-      setBusy(false);
-    }
+    await runCommand({
+      version: 1,
+      kind: 'defense',
+      gameId: game.gameId,
+      expectedRevision: game.revision,
+      request: {
+        commandId: crypto.randomUUID(),
+        actorId: game.human.playerId,
+        expectedRevision: game.revision,
+        text,
+      },
+    });
   };
 
   const handleVote = async (targetPlayerId: string) => {
     if (!game) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setGame(
-        await submitVote(game.gameId, {
-          commandId: crypto.randomUUID(),
-          actorId: game.human.playerId,
-          expectedRevision: game.revision,
-          targetPlayerId,
-        }),
-      );
-    } catch (submitError) {
-      setError(messageFor(submitError));
-    } finally {
-      setBusy(false);
-    }
+    await runCommand({
+      version: 1,
+      kind: 'vote',
+      gameId: game.gameId,
+      expectedRevision: game.revision,
+      request: {
+        commandId: crypto.randomUUID(),
+        actorId: game.human.playerId,
+        expectedRevision: game.revision,
+        targetPlayerId,
+      },
+    });
   };
 
   const handleSpectate = async () => {
     if (!game) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setGame(
-        await continueSpectating(game.gameId, {
-          commandId: crypto.randomUUID(),
-          actorId: game.human.playerId,
-          expectedRevision: game.revision,
-        }),
-      );
-    } catch (spectateError) {
-      setError(messageFor(spectateError));
-    } finally {
-      setBusy(false);
-    }
+    await runCommand({
+      version: 1,
+      kind: 'spectate',
+      gameId: game.gameId,
+      expectedRevision: game.revision,
+      request: {
+        commandId: crypto.randomUUID(),
+        actorId: game.human.playerId,
+        expectedRevision: game.revision,
+      },
+    });
   };
 
   const handleAbandon = async () => {
     if (!game) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setGame(
-        await abandonGame(game.gameId, {
-          commandId: crypto.randomUUID(),
-          actorId: game.human.playerId,
-          expectedRevision: game.revision,
-          confirmed: true,
-        }),
-      );
-    } catch (abandonError) {
-      setError(messageFor(abandonError));
-    } finally {
-      setBusy(false);
-    }
+    await runCommand({
+      version: 1,
+      kind: 'abandon',
+      gameId: game.gameId,
+      expectedRevision: game.revision,
+      request: {
+        commandId: crypto.randomUUID(),
+        actorId: game.human.playerId,
+        expectedRevision: game.revision,
+        confirmed: true,
+      },
+    });
+  };
+
+  const handleInterruptedGame = async (resolution: 'continue' | 'start_new') => {
+    if (!game) return;
+    await runCommand({
+      version: 1,
+      kind: 'recovery',
+      gameId: game.gameId,
+      expectedRevision: game.revision,
+      request: { commandId: crypto.randomUUID(), resolution },
+    });
   };
 
   const handleNewGame = () => {
@@ -282,12 +281,38 @@ export function App() {
     if (topView === 'review' && !isFinished) setTopView('game');
   }, [topView, isFinished]);
 
+  useEffect(() => {
+    if (topView === 'developer' && (!developerAvailable || !developerEnabled)) {
+      setTopView('game');
+    }
+  }, [developerAvailable, developerEnabled, topView]);
+
+  const toggleDeveloper = () => {
+    setDeveloperEnabled((current) => {
+      const next = !current;
+      sessionStorage.setItem(DEVELOPER_MODE_KEY, String(next));
+      setTopView(next ? 'developer' : 'game');
+      return next;
+    });
+  };
+
   if (loadState === 'loading') {
     return <StatusPage title="正在恢复对局…" description="正在读取本机保存的安全公开状态。" />;
   }
 
   if (loadState === 'failed') {
-    return <StatusPage title="本地服务未连接" description={error ?? '请确认本地服务已经启动。'} />;
+    return (
+      <StatusPage
+        title="本地服务未连接"
+        description={error ?? '请确认本地服务已经启动。'}
+        actionLabel="重新连接"
+        onAction={() => {
+          setError(null);
+          setLoadState('loading');
+          setLoadAttempt((value) => value + 1);
+        }}
+      />
+    );
   }
 
   return (
@@ -327,6 +352,16 @@ export function App() {
               复盘
             </button>
           )}
+          {developerAvailable && developerEnabled && (
+            <button
+              type="button"
+              className={topView === 'developer' ? 'top-nav__link is-active' : 'top-nav__link'}
+              aria-current={topView === 'developer' ? 'page' : undefined}
+              onClick={() => setTopView('developer')}
+            >
+              Agent 观测
+            </button>
+          )}
         </nav>
         <ExperienceControls
           audioEnabled={experience.audioEnabled}
@@ -334,11 +369,20 @@ export function App() {
           backgroundTheme={experience.backgroundTheme}
           onToggleAudio={experience.toggleAudio}
           onBackgroundChange={experience.changeBackground}
+          developerAvailable={developerAvailable}
+          developerEnabled={developerEnabled}
+          onToggleDeveloper={toggleDeveloper}
         />
       </div>
+      {stream.showRecovery && <ConnectionNotice onRetry={stream.retryNow} />}
       <GuessModeNotice open={guessModeNoticeOpen} onClose={closeGuessModeNotice} />
+      {game?.operationalStatus.state === 'interrupted' && (
+        <InterruptedGameDialog busy={busy} onResolve={handleInterruptedGame} />
+      )}
       {topView === 'model-profiles' ? (
         <ModelProfiles onBack={() => setTopView('game')} />
+      ) : topView === 'developer' && developerAvailable && developerEnabled ? (
+        <DeveloperPanel {...(gameId ? { gameId } : {})} onBack={() => setTopView('game')} />
       ) : topView === 'review' && game && isFinished ? (
         <ReviewScreen game={game} onBack={() => setTopView('game')} />
       ) : (
@@ -432,13 +476,28 @@ function GuessModeNotice({ open, onClose }: { open: boolean; onClose(): void }) 
   );
 }
 
-function StatusPage({ title, description }: { title: string; description: string }) {
+function StatusPage({
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?(): void;
+}) {
   return (
     <main className="shell">
       <section className="storyboard" aria-labelledby="status-title">
         <p className="eyebrow">本地对局</p>
         <h1 id="status-title">{title}</h1>
         <p className="lede">{description}</p>
+        {actionLabel && onAction && (
+          <button type="button" className="primary-action" onClick={onAction}>
+            {actionLabel}
+          </button>
+        )}
       </section>
     </main>
   );
@@ -447,4 +506,79 @@ function StatusPage({ title, description }: { title: string; description: string
 function messageFor(error: unknown) {
   if (error instanceof ApiClientError) return error.message;
   return '无法连接本地服务，请确认 pnpm dev 正在运行';
+}
+
+function messageForCommand(error: unknown) {
+  if (error instanceof ApiClientError) return error.message;
+  return '连接中断，操作结果待确认；恢复连接后会自动校准';
+}
+
+function ConnectionNotice({ onRetry }: { onRetry(): void }) {
+  return (
+    <div className="connection-notice" role="status">
+      <span>连接中断，正在恢复</span>
+      <button type="button" onClick={onRetry}>立即重试</button>
+    </div>
+  );
+}
+
+function InterruptedGameDialog({
+  busy,
+  onResolve,
+}: {
+  busy: boolean;
+  onResolve(resolution: 'continue' | 'start_new'): Promise<void>;
+}) {
+  const continueRef = useRef<HTMLButtonElement>(null);
+  const newGameRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    continueRef.current?.focus();
+  }, []);
+
+  return (
+    <div className="coming-soon-backdrop">
+      <section
+        className="coming-soon-dialog recovery-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="recovery-title"
+        aria-describedby="recovery-description"
+        onKeyDown={(event) => {
+          if (event.key !== 'Tab') return;
+          if (event.shiftKey && document.activeElement === continueRef.current) {
+            event.preventDefault();
+            newGameRef.current?.focus();
+          } else if (!event.shiftKey && document.activeElement === newGameRef.current) {
+            event.preventDefault();
+            continueRef.current?.focus();
+          }
+        }}
+      >
+        <p className="eyebrow">对局恢复</p>
+        <h2 id="recovery-title">上一局在模型行动时中断</h2>
+        <p id="recovery-description">请选择继续当前回合，或结束旧局后重新开始。</p>
+        <div className="action-row">
+          <button
+            type="button"
+            ref={continueRef}
+            className="primary-action"
+            disabled={busy}
+            onClick={() => void onResolve('continue')}
+          >
+            {busy ? '正在恢复…' : '继续上一局'}
+          </button>
+          <button
+            type="button"
+            ref={newGameRef}
+            className="secondary-action"
+            disabled={busy}
+            onClick={() => void onResolve('start_new')}
+          >
+            开始新对局
+          </button>
+        </div>
+      </section>
+    </div>
+  );
 }

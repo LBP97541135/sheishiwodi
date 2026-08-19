@@ -31,29 +31,48 @@ export class FakeReviewPolicy implements ReviewPolicy {
       const votes = actions.filter(
         (action) => action.actionType === 'vote' || action.actionType === 'revote',
       );
-      const keyMoments = actions.slice(0, 4).map((action) => {
+      const keyMoments = actions.slice(0, 2).map((action) => {
         if (action.actionType === 'describe' || action.actionType === 'defend') {
           const text = typeof action.output['text'] === 'string' ? action.output['text'] : '';
           const label = action.actionType === 'defend' ? '辩解' : '描述';
-          return `第${action.roundNumber}轮${label}：${text}`;
+          return truncate(`第${action.roundNumber}轮${label}：${text}`, 50);
         }
         const targetId =
           typeof action.output['targetPlayerId'] === 'string'
             ? action.output['targetPlayerId']
             : '';
-        return `第${action.roundNumber}轮投给 ${nameOf.get(targetId) ?? '未知'}`;
+        return truncate(`第${action.roundNumber}轮投给 ${nameOf.get(targetId) ?? '未知'}`, 50);
       });
       return {
         playerId: player.playerId,
-        verdict: `${player.displayName}（${camp}）共行动 ${actions.length} 次、投票 ${votes.length} 次，信念与公开发言保持一致。`,
-        keyMoments,
+        verdict: fitText(
+          `${player.displayName}（${camp}）共行动 ${actions.length} 次、投票 ${votes.length} 次，信念与公开发言保持一致；可以继续根据每轮新增证据及时调整怀疑和行动。`,
+          60,
+          100,
+        ),
+        keyMoments: keyMoments.length > 0 ? keyMoments : ['全局｜缺少可评价的私有行动记录'],
         rating: 3,
       };
     });
 
     const winner = input.winnerCamp === 'civilian' ? '平民阵营' : '卧底阵营';
-    const overall = `本局由${winner}获胜（${input.endReason}）。公开时间线共 ${input.publicTimeline.length} 条事件，AI 私有行动 ${input.factReview.agentActions.length} 条。这是离线假复盘，用于占位与测试。`;
+    const overall = fitText(
+      `本局由${winner}获胜（${input.endReason}）。公开时间线共 ${input.publicTimeline.length} 条事件，AI 私有行动 ${input.factReview.agentActions.length} 条。离线复盘只用于验证确定性事实、展示结构和恢复流程；真实评价仍由显式配置的复盘模型生成。`,
+      100,
+      160,
+    );
 
     return reviewGenerationSchema.parse({ perAgent, overall });
   }
+}
+
+function truncate(value: string, maxLength: number) {
+  return value.trim().slice(0, maxLength);
+}
+
+function fitText(value: string, minLength: number, maxLength: number) {
+  const truncated = truncate(value, maxLength);
+  return truncated.length >= minLength
+    ? truncated
+    : `${truncated}${'。'.repeat(minLength - truncated.length)}`;
 }

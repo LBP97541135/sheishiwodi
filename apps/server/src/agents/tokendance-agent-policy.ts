@@ -9,7 +9,18 @@ import {
 } from '@sheishiwodi/shared';
 
 import type { AgentActContext, AgentPolicy } from './agent-policy.js';
+import {
+  ContextBoundaryViolationError,
+  noOpAgentObservability,
+  type AgentObservability,
+  type ModelAttemptKind,
+} from './agent-observability.js';
 import { reasoningDisableBodyFor } from './model-reasoning.js';
+import {
+  CircuitOpenError,
+  noOpProviderCircuitBreaker,
+  type ProviderCircuitBreakerPort,
+} from './provider-circuit-breaker.js';
 import { TokendanceError, type ChatMessage, type TokendanceClient } from './tokendance-client.js';
 
 /** 模型系统级失败（网络耗尽、始终格式错误、未配置模型）。脱敏，不含 Key/URL。 */
@@ -26,6 +37,8 @@ export type AgentSystemErrorCode =
   | 'BAD_RESPONSE'
   | 'FORMAT_INVALID'
   | 'CONTENT_INVALID'
+  | 'CONTEXT_BOUNDARY_VIOLATION'
+  | 'CIRCUIT_OPEN'
   | 'INTERNAL_ERROR';
 
 export class AgentSystemError extends Error {
@@ -38,7 +51,28 @@ export class AgentSystemError extends Error {
   }
 }
 
-class AgentFormatError extends Error {}
+type AgentFormatErrorCode =
+  | 'NO_JSON'
+  | 'NOT_OBJECT'
+  | 'INVALID_JSON'
+  | 'SCHEMA_INVALID'
+  | 'ILLEGAL_TARGET'
+  | 'BELIEF_TOTAL_INVALID'
+  | 'BELIEF_INVALID';
+
+class AgentFormatError extends Error {
+  constructor(
+    readonly code: AgentFormatErrorCode,
+    readonly issue?: string,
+  ) {
+    super(issue ? `${code}:${issue}` : code);
+    this.name = 'AgentFormatError';
+  }
+
+  resultCode() {
+    return `invalid_format:${this.code.toLowerCase()}${this.issue ? `:${this.issue}` : ''}`;
+  }
+}
 
 export interface TokendanceAgentPolicyOptions {
   client: TokendanceClient;
@@ -52,6 +86,15 @@ export interface TokendanceAgentPolicyOptions {
   extraBodyForModel?: (modelId: string) => Record<string, unknown>;
   /** 开启后打印脱敏计时日志（角色/model/耗时/是否修复重试），绝不含 Key/URL/响应正文。 */
   debug?: boolean;
+  observability?: AgentObservability;
+  circuitBreaker?: ProviderCircuitBreakerPort;
+}
+
+export class AgentRuntimeInterruptedError extends Error {
+  constructor() {
+    super('AGENT_RUNTIME_INTERRUPTED');
+    this.name = 'AgentRuntimeInterruptedError';
+  }
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -65,6 +108,8 @@ export class TokendanceAgentPolicy implements AgentPolicy {
   private readonly debug: boolean;
   private readonly reasoningHints: boolean;
   private readonly extraBodyForModel: (modelId: string) => Record<string, unknown>;
+  private readonly observability: AgentObservability;
+  private readonly circuitBreaker: ProviderCircuitBreakerPort;
   private readonly beliefHistory = new Map<string, BeliefSnapshot[]>();
 
   constructor(options: TokendanceAgentPolicyOptions) {
@@ -76,6 +121,8 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     this.debug = options.debug ?? false;
     this.reasoningHints = options.reasoningHints ?? true;
     this.extraBodyForModel = options.extraBodyForModel ?? (() => ({}));
+    this.observability = options.observability ?? noOpAgentObservability;
+    this.circuitBreaker = options.circuitBreaker ?? noOpProviderCircuitBreaker;
   }
 
   priorBeliefs(playerId: string): readonly BeliefSnapshot[] {
@@ -91,6 +138,12 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     if (!modelId) {
       throw new AgentSystemError('MODEL_NOT_CONFIGURED', roleId);
     }
+    try {
+      this.circuitBreaker.beforeLogicalCall();
+    } catch (error) {
+      if (error instanceof CircuitOpenError) throw new AgentSystemError('CIRCUIT_OPEN', roleId);
+      throw error;
+    }
 
     const baseMessages = buildMessages(input, context?.contentRetry);
     // 精确 model 配置优先于可选的已知家族提示；通用 provider 默认不启用家族猜测。
@@ -102,42 +155,88 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     let repairUsed = false;
     let systemAttempts = 0;
     let lastSystemCode: AgentSystemErrorCode = 'INTERNAL_ERROR';
+    let attemptKind: ModelAttemptKind = context?.contentRetry
+      ? 'content_regeneration'
+      : 'initial';
 
     for (;;) {
       let content: string;
       const startedAt = Date.now();
+      let attempt;
       try {
-        content = await this.client.chatCompletion({ modelId, messages, extraBody });
-        this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'ok');
+        attempt = this.observability.beginPlayerAttempt({
+          agentInput: input,
+          context: context ?? { agentRoleId: roleId },
+          modelId,
+          messages,
+          attemptKind,
+        });
       } catch (error) {
-        this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'fail');
+        if (error instanceof ContextBoundaryViolationError) {
+          throw new AgentSystemError('CONTEXT_BOUNDARY_VIOLATION', roleId);
+        }
+        throw new AgentSystemError('INTERNAL_ERROR', roleId);
+      }
+      try {
+        content = await this.client.chatCompletion({
+          modelId,
+          messages,
+          extraBody,
+          ...(attempt.signal ? { signal: attempt.signal } : {}),
+        });
+        this.observability.markAttemptStage?.(attempt.attemptId, 'provider_returned', {
+          rawResponse: content,
+        });
+        this.circuitBreaker.recordSuccess();
+        this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'provider_returned');
+      } catch (error) {
+        this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'provider_failed');
+        if (error instanceof TokendanceError && error.kind === 'interrupted') {
+          this.observability.finishAttempt(attempt, 'runtime_interrupted');
+          throw new AgentRuntimeInterruptedError();
+        }
         const classified = classifyClientError(error);
+        this.observability.finishAttempt(attempt, classified.code.toLowerCase());
         lastSystemCode = classified.code;
         if (!classified.retryable) {
+          this.circuitBreaker.recordFailure('permanent');
           throw new AgentSystemError(classified.code, roleId);
         }
         systemAttempts += 1;
         if (systemAttempts > this.maxSystemRetries) {
+          this.circuitBreaker.recordFailure('transient');
           throw new AgentSystemError(lastSystemCode, roleId);
         }
         await this.sleep(this.retryDelayMs);
         messages = baseMessages;
         repairUsed = false;
+        attemptKind = 'system_retry';
         continue;
       }
 
       try {
         const output = buildOutput(extractJson(content), input);
+        this.observability.markAttemptStage?.(attempt.attemptId, 'schema_validated');
+        if (context?.lifecycle) {
+          context.lifecycle.validatedAttemptId = attempt.attemptId;
+        } else {
+          this.observability.finishAttempt(attempt, 'schema_validated', { rawResponse: content });
+        }
         this.record(input.actor.playerId, output.belief);
         return output;
       } catch (error) {
-        if (!(error instanceof AgentFormatError)) throw error;
+        if (!(error instanceof AgentFormatError)) {
+          this.observability.finishAttempt(attempt, 'internal_error', { rawResponse: content });
+          throw error;
+        }
+        this.observability.finishAttempt(attempt, error.resultCode(), { rawResponse: content });
         if (!repairUsed) {
           repairUsed = true;
+          attemptKind = 'format_repair';
           messages = [
             ...baseMessages,
             { role: 'assistant', content },
-            { role: 'user', content: repairInstruction(input) },
+            { role: 'user', content: repairInstruction(input, error) },
           ];
           continue;
         }
@@ -148,6 +247,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
         await this.sleep(this.retryDelayMs);
         messages = baseMessages;
         repairUsed = false;
+        attemptKind = 'system_retry';
       }
     }
   }
@@ -163,7 +263,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     actionType: string,
     startedAt: number,
     repairUsed: boolean,
-    result: 'ok' | 'fail',
+    result: 'provider_returned' | 'provider_failed',
   ) {
     if (!this.debug) return;
     const elapsed = Date.now() - startedAt;
@@ -366,14 +466,23 @@ function renderBeliefHistory(input: AgentTurnInput): string {
   return parts.join('\n');
 }
 
-function repairInstruction(input: AgentTurnInput): string {
+function repairInstruction(input: AgentTurnInput, error: AgentFormatError): string {
   const livingIds = livingIdsOf(input);
+  const isVote = input.actionType === 'vote' || input.actionType === 'revote';
+  const actionContract = isVote
+    ? `顶层必须且只能包含 belief、targetPlayerId、reason；reason 是 1 至 200 字符的字符串；` +
+      `targetPlayerId 必须是以下之一：${input.legalTargets.join(', ')}。`
+    : `顶层必须且只能包含 belief、text；text 是字符串。`;
   return (
-    `上一次回复不是合法的 JSON 或不满足要求。请只返回一个 JSON 对象，不要任何解释或代码块标记。` +
-    `playerUndercoverProbabilities 必须且只能包含这些 playerId：${livingIds.join(', ')}，概率之和约等于 ${input.publicConfig.undercoverCount}。` +
-    (input.actionType === 'vote' || input.actionType === 'revote'
-      ? `targetPlayerId 必须是以下之一：${input.legalTargets.join(', ')}。`
-      : '')
+    `上一次回复未通过本地校验，脱敏原因：${error.message}。` +
+    `请只返回一个 JSON 对象，不要解释、代码块或额外字段。${actionContract}` +
+    `belief 必须且只能包含 opposingWordCandidates、playerUndercoverProbabilities、reasoningSummary。` +
+    `opposingWordCandidates 是数组；每项必须且只能包含 word、confidence、evidence，` +
+    `word 为 1 至 40 字符，confidence 为 0 到 1 的数字，evidence 为 1 至 200 字符。` +
+    `reasoningSummary 为 1 至 300 字符。` +
+    `playerUndercoverProbabilities 每项必须且只能包含 playerId、probability；` +
+    `这些 playerId 必须各出现一次且不能重复：${livingIds.join(', ')}；` +
+    `probability 必须是 0 到 1 的数字，全部概率之和必须等于 ${input.publicConfig.undercoverCount}。`
   );
 }
 
@@ -389,13 +498,16 @@ function extractJson(content: string): Record<string, unknown> {
   if (start === -1 || end === -1 || end < start) {
     throw new AgentFormatError('NO_JSON');
   }
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(text.slice(start, end + 1)) as unknown;
-    if (!parsed || typeof parsed !== 'object') throw new AgentFormatError('NOT_OBJECT');
-    return parsed as Record<string, unknown>;
+    parsed = JSON.parse(text.slice(start, end + 1)) as unknown;
   } catch {
     throw new AgentFormatError('INVALID_JSON');
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new AgentFormatError('NOT_OBJECT');
+  }
+  return parsed as Record<string, unknown>;
 }
 
 function buildOutput(
@@ -406,7 +518,9 @@ function buildOutput(
 
   if (input.actionType === 'describe' || input.actionType === 'defend') {
     const result = speechActionOutputSchema.safeParse(parsed);
-    if (!result.success) throw new AgentFormatError('SCHEMA_INVALID');
+    if (!result.success) {
+      throw new AgentFormatError('SCHEMA_INVALID', firstSchemaIssue(result.error.issues));
+    }
     return {
       ...result.data,
       belief: normalizeBeliefTotal(
@@ -419,7 +533,9 @@ function buildOutput(
   }
 
   const result = voteActionOutputSchema.safeParse(parsed);
-  if (!result.success) throw new AgentFormatError('SCHEMA_INVALID');
+  if (!result.success) {
+    throw new AgentFormatError('SCHEMA_INVALID', firstSchemaIssue(result.error.issues));
+  }
   if (!input.legalTargets.includes(result.data.targetPlayerId)) {
     throw new AgentFormatError('ILLEGAL_TARGET');
   }
@@ -431,6 +547,16 @@ function buildOutput(
       input.publicConfig.undercoverCount,
     ),
   };
+}
+
+function firstSchemaIssue(issues: readonly { path: PropertyKey[]; code: string }[]): string {
+  const issue = issues[0];
+  if (!issue) return 'unknown';
+  const path = issue.path
+    .map((part) => (typeof part === 'number' ? 'item' : String(part).replace(/[^a-zA-Z0-9_-]/g, '_')))
+    .join('.');
+  const code = issue.code.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `${path || 'root'}:${code}`;
 }
 
 /**

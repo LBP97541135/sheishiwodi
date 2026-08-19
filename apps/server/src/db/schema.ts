@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const wordPairs = sqliteTable('word_pairs', {
   wordPairId: text('word_pair_id').primaryKey(),
@@ -93,6 +93,50 @@ export const agentActions = sqliteTable('agent_actions', {
   beliefJson: text('belief_json').notNull(),
   outputJson: text('output_json').notNull(),
   completedAt: text('completed_at').notNull(),
+});
+
+export const modelAttempts = sqliteTable(
+  'model_attempts',
+  {
+    attemptId: text('attempt_id').primaryKey(),
+    gameId: text('game_id').notNull(),
+    commandId: text('command_id').notNull(),
+    actionId: text('action_id').notNull(),
+    playerId: text('player_id'),
+    roleId: text('role_id').notNull(),
+    modelId: text('model_id').notNull(),
+    actionType: text('action_type').notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    attemptKind: text('attempt_kind').notNull(),
+    resultCode: text('result_code').notNull(),
+    startedAt: text('started_at').notNull(),
+    finishedAt: text('finished_at'),
+    durationMs: integer('duration_ms'),
+  },
+  (table) => [
+    uniqueIndex('model_attempts_action_number').on(table.actionId, table.attemptNumber),
+    index('model_attempts_game_started').on(table.gameId, table.startedAt),
+  ],
+);
+
+export const modelAttemptStages = sqliteTable(
+  'model_attempt_stages',
+  {
+    attemptId: text('attempt_id')
+      .notNull()
+      .references(() => modelAttempts.attemptId, { onDelete: 'cascade' }),
+    stage: text('stage').notNull(),
+    occurredAt: text('occurred_at').notNull(),
+  },
+  (table) => [uniqueIndex('model_attempt_stages_identity').on(table.attemptId, table.stage)],
+);
+
+export const gameRuntimeRecovery = sqliteTable('game_runtime_recovery', {
+  gameId: text('game_id').primaryKey(),
+  actionId: text('action_id').notNull(),
+  status: text('status').notNull(),
+  interruptedAt: text('interrupted_at').notNull(),
+  resolvedAt: text('resolved_at'),
 });
 
 // 角色模型配置：仅存 role_id → model_id，绝不保存 Base URL 或 API Key。

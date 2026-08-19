@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { TokendanceClient } from './tokendance-client.js';
+import { TokendanceClient, TokendanceError } from './tokendance-client.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -48,5 +48,35 @@ describe('TokendanceClient request body precedence', () => {
       model: 'actual-model',
       messages,
     });
+  });
+
+  it('外部停机信号与超时使用不同的脱敏错误分类', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              'abort',
+              () => reject(new DOMException('aborted', 'AbortError')),
+              { once: true },
+            );
+          }),
+      ),
+    );
+    const client = new TokendanceClient({
+      baseUrl: 'https://gateway.example/v1',
+      apiKey: 'secret',
+      timeoutMs: 10_000,
+    });
+    const controller = new AbortController();
+    const pending = client.chatCompletion({
+      modelId: 'model',
+      messages: [{ role: 'user', content: 'hello' }],
+      signal: controller.signal,
+    });
+
+    controller.abort();
+    await expect(pending).rejects.toEqual(new TokendanceError('interrupted'));
   });
 });

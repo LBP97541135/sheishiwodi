@@ -4,13 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-这是一个 AI 版“谁是卧底”本地全栈项目。产品规则、架构和首个里程碑规格已经确认，首个里程碑七个切片（使用可控假模型的可持久化、可恢复基础玩法）已全部验收。里程碑之外已完成 Tokendance 真实策略、模型档案、统一 Agent 校验与自动恢复、角色/场景素材、背景切换和 BGM；TASK-057 已产出策略级与纯状态机整局真实模型脱敏报告，但 HTTP/SQLite 整局验收和最终任务收口仍未完成。开发以 `docs/spec/` 为工程契约，以 `docs/tasks/TASKS.md` 和 `docs/tasks/milestone-1-checklist.md` 跟踪实时任务；不要从聊天归档或被替代的旧决策推断当前行为。
+这是一个 AI 版“谁是卧底”本地全栈项目。产品规则、架构和首个里程碑规格已经确认，首个里程碑七个切片（使用可控假模型的可持久化、可恢复基础玩法）已全部验收。里程碑之外已完成真实模型策略、模型档案、统一 Agent 校验与恢复、角色/场景素材、背景切换、BGM、异步复盘和开发者观测面板；TASK-057 已通过 Web、HTTP、SSE、SQLite、三名真实参赛 Agent 与真实复盘 Agent 的一次性全栈验收，并保留脱敏证据。开发以 `docs/spec/` 为工程契约，以 `docs/tasks/TASKS.md` 和 `docs/tasks/milestone-1-checklist.md` 跟踪实时任务；不要从聊天归档或被替代的旧决策推断当前行为。
 
 首个里程碑的纵向最小闭环见 `docs/acceptance/milestone-1.md`。真实模型受 provider 开关约束：`AGENT_PROVIDER` 默认 `fake`，支持 `tokendance` 与 `openai-compatible`；所选真实 Provider 的 Base URL、API Key 均就绪才走真实策略。Tokendance 保持既有 model 回退；通用模式不设默认 model，三角色须在模型档案手填，评测 model 须由 env 显式配置，缺项时开局前拒绝。通用模式不按名称自动猜测关闭思考参数，可用 `OPENAI_COMPATIBLE_MODEL_EXTRA_BODY` 按精确 model ID 为参赛与评测模型分别配置。默认 `dev/test/test:e2e` 永不联网、不读 Key。仅 model ID 可下发/落库；Base URL、API Key、请求头、完整模型响应绝不进入浏览器、数据库、日志、仓库或复盘。重复泄词强退与脱敏系统终止已经实现。异步 AI 总结已具备服务端任务、持久化、查询/重试 API 和 Web 轮询展示，当前单局复盘支持脱敏 Markdown 导出；跨局历史列表仍未实现。三个 AI 角色、两个人类剪影、审讯室背景与 BGM 已按 `docs/notes/ASSETS.md` 接入，发布前仍需压缩和补齐来源记录。
 
 ## 常用命令
 
 工程初始化后，根工作区必须保持以下命令契约：
+
+仓库运行时固定为 `.node-version` 中的 Node 22.14.0，包管理器固定为 `packageManager` 声明的 pnpm 9.15.9；安装原生 SQLite 依赖和执行命令必须使用同一 Node 主版本。
 
 ```bash
 pnpm dev
@@ -66,11 +68,9 @@ pnpm --filter @sheishiwodi/shared test -- src/path/to/file.test.ts
 pnpm --filter @sheishiwodi/shared test -- -t "测试名称"
 ```
 
-在 `package.json` 尚未创建或相应脚本尚未落地前，不要声称这些命令已经可用；先按 `docs/spec/architecture.md` 的脚本契约初始化。
-
 ## 架构边界
 
-计划中的 pnpm workspace 分为：
+当前 pnpm workspace 分为：
 
 - `apps/web`：React + Vite 前端，只消费共享类型和服务端公开 API。
 - `apps/server`：Fastify 服务，负责权威状态、编排、SQLite/Drizzle、Agent 调用和公开投影。

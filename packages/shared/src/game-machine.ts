@@ -3,6 +3,7 @@ import type {
   AbandonGameCommand,
   ContinueSpectatingCommand,
   DisqualifyPlayerForRuleViolationCommand,
+  ResolveInterruptedGameCommand,
   SubmitDefenseCommand,
   SubmitDescriptionCommand,
   SubmitVoteCommand,
@@ -122,6 +123,38 @@ export function terminateForSystemError(
       phase: 'ended',
       round: null,
       endReason: 'model_failure_limit',
+    }),
+  };
+}
+
+export function declineInterruptedGame(
+  snapshot: GameSnapshot,
+  command: ResolveInterruptedGameCommand,
+  dependencies: MachineDependencies,
+): MachineTransition {
+  if (snapshot.revision !== command.expectedRevision) throw new Error('REVISION_CONFLICT');
+  if (snapshot.status !== 'in_progress' || command.resolution !== 'start_new') {
+    throw new Error('INVALID_TRANSITION');
+  }
+  if (command.actorId !== snapshot.humanPlayerId) throw new Error('ACTOR_NOT_ALLOWED');
+  const result = buildTransition(
+    snapshot,
+    command.commandId,
+    [['game_interruption_declined', 'public', { playerId: command.actorId }]],
+    dependencies,
+    null,
+  );
+  const abandoned = { ...result.snapshot };
+  delete abandoned.winnerCamp;
+  delete abandoned.resumeAfterSpectating;
+  return {
+    ...result,
+    snapshot: gameSnapshotSchema.parse({
+      ...abandoned,
+      status: 'abandoned',
+      phase: 'ended',
+      round: null,
+      endReason: 'interrupted_not_resumed',
     }),
   };
 }

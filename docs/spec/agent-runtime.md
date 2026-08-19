@@ -1,6 +1,6 @@
 # Agent 运行时规格
 
-- 状态：假模型、Tokendance 与通用 OpenAI 兼容中转运行时及错误兜底已实现
+- 状态：假模型、真实模型运行时、调用台账、结构化上下文审计、出网前边界门禁、完整调试记录、开发者面板与轻量熔断已实现
 - 适用范围：`FakeAgentPolicy` 与 OpenAI Chat Completions 兼容策略（由 `AGENT_PROVIDER` 切换）
 
 ## 1. 目标
@@ -37,10 +37,10 @@ GameService.advanceUntilHumanOrStop（已实现）
 
 `GameService` 通过依赖注入的 `backgroundAdvance` 布尔开关决定人类命令提交后如何驱动后续 AI 回合：
 
-- **运行时（`createRuntimeDependencies` 置 `true`）**：`startGame` 与人类操作在持久化本次转移后立即返回当前视图，AI 回合经 `settleAdvance` 异步推进（`void advanceUntilHumanOrStop(...).catch(...)`），前端靠 SSE 实时接收逐帧公开状态。这样开始/操作请求不会被真实模型的串行往返长时间阻塞——界面立即跳入对局并显示"某 AI 正在思考"，而不是卡在"正在开始…"。后台推进失败只脱敏记日志（仅打印 `error.name`），绝不外泄 Key/URL。
+- **运行时（`createRuntimeDependencies` 置 `true`）**：`startGame` 与人类操作在持久化本次转移后立即返回当前视图，AI 回合经 `settleAdvance` 异步推进（`void advanceUntilHumanOrStop(...).catch(...)`），前端靠 SSE 实时接收逐帧公开状态。这样开始/操作请求不会被真实模型的串行往返长时间阻塞——界面立即跳入对局并显示"某 AI 正在思考"，而不是卡在"正在开始…"。后台推进遇到未分类程序异常时，不将其伪装为模型失败或自动重试；服务端持久化等待玩家确认的运行中断，并发布不含异常详情的 `runtime_interrupted` 流帧。日志仍只打印 `error.name`，绝不外泄 Key/URL。
 - **测试（`createTestEnvironment` 默认 `false`）**：`settleAdvance` 同步 `await advanceUntilHumanOrStop(...)`，保证断言能确定地读到已推进到下一个人类行动者（或终局）的状态。
 
-同一进程内 `advancingGames` 去重保证同一对局的推进循环不会并发重入；后台与同步两条路径共用同一 `runAdvanceLoop`，行为一致，仅返回时机不同。
+同一进程内 `advancingGames` 去重保证同一对局的推进循环不会并发重入；后台与同步两条路径共用同一 `runAdvanceLoop`，行为一致，仅返回时机不同。存在 `awaiting_confirmation` 中断记录时，服务启动恢复和 SSE 重连都不得自动推进，必须等待玩家选择继续或开始新局。
 
 E2E 通过 `playwright.config.ts` 的服务端 `webServer.env` 预置 `AGENT_PROVIDER=fake` 与空 `TOKENDANCE_*`，强制走 `FakeAgentPolicy`：`main.ts` 的 `loadDotEnv()` 对"已存在的环境变量"不覆盖，故即便本机 `.env` 配了任一真实 Provider 与 Key，E2E 仍绝不联网、绝不读 Key、绝不消耗付费额度。`helpers.ts` 的轮询循环改用挂钟截止时间兜底，避免把后台推进期间"当前是 AI 行动者"的自旋等待计入固定步数预算而误判超时。
 
@@ -220,6 +220,8 @@ VoteActionOutput
 | HTTP 401/403 | 否 | `AUTH_FAILED` |
 | HTTP 404 / model missing | 否 | `MODEL_NOT_FOUND` |
 | JSON/Schema/belief/target | 一次格式修复，随后进入系统重试 | `FORMAT_INVALID` |
+
+格式修复不得只返回笼统的“格式不合法”。Harness 应从本地解析或 strict Schema 中提取稳定、脱敏的失败原因：非法 JSON/根对象、首个失败字段路径与 issue code、非法目标、信念总和或信念玩家集合。原因不得包含失败字段值或模型原文，并应与完整输出字段、长度、玩家唯一性、概率和合法目标约束一起提供给同一次格式修复请求。调用台账以 `invalid_format:<reason>` 记录该原因；该细分不改变对外的最终 `FORMAT_INVALID` 分类和既有重试预算。
 | content length/sentence | 一次内容重生成 | `CONTENT_INVALID` |
 | word leak | 首次重生成，第二次规则强退 | 不属于系统错误 |
 | stale revision | 丢弃，不计模型错误 | 无公开错误 |
@@ -279,7 +281,75 @@ OPENAI_COMPATIBLE_MODEL_EXTRA_BODY= # 精确 model ID → 单次请求参数对�
 
 复盘评价必须结论先行，并按“判断更新、行动一致性、实际影响”的优先级分析。评价只能使用行动当时可见的信息，不能根据最终胜负倒推表现；单个 AI 的简评控制在 60～100 个中文字符，包含最强事实依据和一条具体改进，关键节点最多 2 条；总体点评控制在 100～160 个中文字符，只提炼胜负手、关键转折和最大反事实。1～5 分使用统一行为锚点，不按所属阵营最终输赢直接评分。禁止复述规则、身份词牌或完整流程，禁止空泛表扬、编造事实和长段照抄私有信念。
 
-## 12. 来源
+## 12. 调用观测、上下文审计与熔断
+
+本节对应 DEC-095/096，调用台账、上下文门禁、完整调试记录与清理、本地面板、轻量熔断和可选 `TelemetrySink` 接口均已实现。现有三个模型的超时配置和第 9 节恢复语义不变。
+
+### 12.1 调用链与持久化元数据
+
+当前已实现。
+
+每次模型调用必须归入以下稳定链路：
+
+```text
+gameId -> commandId -> actionId -> attemptId
+```
+
+- `commandId` 表示触发本轮推进的人类命令或系统调度命令。
+- `actionId` 表示某名 Agent 在指定修订号上的语义动作；并行投票每名 Agent 独立。
+- `attemptId` 表示一次实际模型请求，格式修复、内容重生成和系统重试均产生新的尝试记录。
+- `model_attempts` 只保存角色、model ID、动作类型、尝试序号、开始/结束时间、耗时、最终结果分类和恢复类型等脱敏元数据；关联的 `model_attempt_stages` 保存阶段及发生时间。
+
+### 12.2 上下文清单与调用前门禁
+
+当前已实现基础版本：每次真实参赛 Agent 与复盘模型请求先登记独立 attempt，再写入结构化清单；清单写入失败或边界校验失败均不会发出模型请求。
+
+Harness 组装 `AgentTurnInput` 时同时产生结构化上下文清单，至少描述每段输入的来源、可见级别、公开事件游标、Prompt 模板版本和内容哈希。调用前必须执行确定性边界检查：
+
+- 只允许目标 Agent 自己的词牌和私有历史。
+- 只允许截至当前公开游标的描述、已揭晓投票与淘汰信息。
+- 禁止其他玩家词牌、其他 Agent 私有信念、当前未揭晓选票、真实阵营和未来事件。
+- 校验失败时以 `context_boundary_violation` 阻止请求，不进入模型，也不产生公开游戏事件。
+
+结构化清单写入独立的本地审计文件，不混入普通日志或业务数据库。完整 Prompt 与原始响应默认关闭；显式调试模式开启后仍须过滤 API Key、Base URL、请求头，并写入 Git 忽略目录。
+
+`model_attempts` 已通过数据库外键随对局级联删除。完整 Prompt/响应调试文件执行“最多 7 天 + 可配置本地容量上限”，服务启动时清理，并可从面板主动清除；清理器不删除长期元数据和结构化清单。
+
+### 12.3 本地调试面板
+
+当前已实现。
+
+`AGENT_DEVELOPER_MODE=true` 是服务端权威总门禁，默认关闭。关闭时不装配诊断路由、不返回诊断能力标记或数据，前端也不渲染入口；开启后，前端设置区才显示只保存在当前标签页的开发者模式开关。
+
+前端开关打开后显示只读面板，按“调用链、上下文、错误与恢复、复盘调度”组织 Agent、动作、上下文类型、边界校验、耗时、重试、格式修复、内容重生成、阶段链、最终结果分类、熔断状态和后台复盘状态。基础 `model_attempts`、`model_attempt_stages` 与结构化上下文清单始终记录，不受面板显示开关影响。
+
+面板内的“记录完整上下文”是第二个敏感开关：默认关闭、开启前确认、只保存在服务端进程内并在重启后自动复位。开启后新产生的完整 Prompt/原始响应可在面板逐条查看，但每条必须再次确认才展开；查询仍须过滤 Key、Base URL、请求头，完整记录继续执行 7 天和容量清理。面板不可推进游戏、修改审计数据或重放付费请求。
+
+### 12.4 轻量 Provider 熔断
+
+当前已实现。参赛 Agent 与复盘评价共享同一个单进程、单 Provider 熔断器；断路器在整次逻辑动作开始前检查，不切断该动作内部已经获准的既有有限重试。
+
+- 认证失败、权限错误、模型不存在等确定性配置错误立即打开熔断，阻止新的无意义调用。
+- 网络、429 和 5xx 先沿用第 9 节的有限重试；短时间连续失败达到配置阈值后进入短暂冷却。
+- 冷却结束只允许一个探测请求；成功关闭熔断，失败继续冷却。
+- 已经发出的请求不因熔断强制取消；熔断错误使用脱敏分类返回，当前状态通过开发者面板的“错误与恢复”视图投影。
+- 熔断器为单进程、单 Provider 的轻量组件；首版本不建设分布式协调。
+
+项目定义的调用语义可通过可选 `TelemetrySink` 输出 attempt 开始/结束的脱敏事件；默认使用空实现。当前事实源仍为本地 SQLite 与审计文件；第三方平台只能作为未来适配器，不能成为运行依赖或绕过上下文脱敏边界。
+
+### 12.5 上下文来源证明与尝试阶段（已实现）
+
+- 当前已实现：参赛 Agent 输入只能由服务端唯一 `AgentContextAssembler` 产生。组装器直接从权威仓库按 `gameId + actorPlayerId` 读取该 Agent 自有信念，并从 `visibility=public` 查询构造公开时间线。
+- 当前已实现：组装器签发与具体输入内容绑定的来源证明，记录 game、actor、信念所有者、公开可见性、公开游标和输入哈希。出网门禁同时验证进程内签发身份和 SHA-256，调用者手写同形对象不能通过。
+- 当前已实现：Prompt 构造前替换公开事件、私有信念、actor 或 game 会使证明失效，并在客户端调用前记录 `context_boundary_violation`。
+- 当前已实现：模型尝试生命周期依次记录 `request_started`、`provider_returned`、`schema_validated`、`content_validated` 与 `action_committed`；Provider 返回不等于领域动作成功。只有最终动作或复盘摘要持久化后，`resultCode` 才能写为 `action_committed`。
+- 启动恢复会先用 `agent_actions` 或状态为 `done` 的 `review_summaries` 对账：若业务结果已提交但观测终态尚未来得及写入，则补记 `action_committed`，不把它误报为运行时中断。
+- 当前已实现：内容拒绝、领域拒绝、过期丢弃和事务失败分别保留 `content_rejected`、`domain_rejected`、`stale_discarded`、`commit_failed` 终态。并行投票每名 Agent 独立关联 attempt；同批未消费结果在其他调用导致流程停止时统一标为过期。结构已通过但尚未提交的 attempt 保持活动态，因此进程中断仍能被既有恢复机制捕获。
+- 当前已实现：信念与复盘中按玩家输出的集合显式检查 `playerId` 唯一性和完整覆盖。
+- 当前已实现：复盘新生成契约与提示词统一为每名 AI 的 verdict 60～100 个字符、keyMoments 1～2 条且单条最多 50 个字符、rating 必填为 1～5 整数、overall 100～160 个字符。持久化摘要继续兼容既有较短内容以及 pending/failed 空内容。
+- 零宽字符词面归一化不属于本轮范围，保留为已知残余风险。
+
+## 13. 来源
 
 - 需求：[`../acceptance/REQUIREMENTS.md`](../acceptance/REQUIREMENTS.md) 第 20–29、51–85、109–145、187–192 条。
-- 决策：DEC-004、DEC-005、DEC-010 至 DEC-015、DEC-017 至 DEC-021、DEC-029 至 DEC-039、DEC-052 至 DEC-054、DEC-068、DEC-072 至 DEC-074、DEC-082。
+- 决策：DEC-004、DEC-005、DEC-010 至 DEC-015、DEC-017 至 DEC-021、DEC-029 至 DEC-039、DEC-052 至 DEC-054、DEC-068、DEC-072 至 DEC-074、DEC-082、DEC-086、DEC-092、DEC-093、DEC-095、DEC-096、DEC-097。

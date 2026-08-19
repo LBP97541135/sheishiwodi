@@ -247,4 +247,27 @@ describe('对局准备 API', () => {
     await server.close();
     environment.cleanup();
   });
+
+  it('数据库完整性失败时只暴露降级健康检查，不注册业务路由', async () => {
+    const environment = createTestEnvironment();
+    environment.dependencies.database.health = {
+      healthy: false,
+      code: 'DATABASE_INTEGRITY_FAILED',
+    };
+    const server = buildServer(environment.dependencies);
+
+    const health = await server.inject({ method: 'GET', url: '/api/health' });
+    const activeGame = await server.inject({ method: 'GET', url: '/api/games/active' });
+
+    expect(health.statusCode).toBe(200);
+    expect(health.json()).toEqual({
+      status: 'degraded',
+      service: 'sheishiwodi-server',
+      code: 'DATABASE_INTEGRITY_FAILED',
+    });
+    expect(activeGame.statusCode).toBe(404);
+
+    await server.close();
+    environment.cleanup();
+  });
 });

@@ -127,6 +127,31 @@ h1 {
   gap: 24px;
 }
 
+.connection-notice {
+  display: flex;
+  width: min(100%, 960px);
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 2px solid #9d7410;
+  margin: -6px 0 16px;
+  background: #fff4c7;
+  color: #5d4408;
+  font-weight: 800;
+  padding: 8px 12px;
+}
+
+.connection-notice button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  background: #fffdf6;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 5px 10px;
+}
+
 .storyboard:has(.new-game) {
   padding: clamp(24px, 4vw, 44px);
 }
@@ -1088,6 +1113,17 @@ legend {
     height: 140px;
   }
 
+  .seats--game .seat {
+    padding: 8px 3px;
+  }
+
+  .seats--game .seat > strong {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 0.82rem;
+    line-height: 1.15;
+  }
+
   .finale-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1307,6 +1343,180 @@ legend {
   min-width: 0;
 }
 
+.developer-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.developer-panel__header,
+.developer-panel__actions,
+.developer-panel__sensitive-controls,
+.developer-record header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.developer-panel__header h1 {
+  margin: 0;
+  font-size: 2.35rem;
+  letter-spacing: 0;
+}
+
+.developer-panel__sensitive-controls {
+  border-block: 2px solid #26231f;
+  padding: 14px 0;
+}
+
+.developer-panel__sensitive-controls > div {
+  display: grid;
+  flex: 1 1 300px;
+  gap: 3px;
+}
+
+.developer-panel__sensitive-controls span {
+  color: #555047;
+  font-size: 0.86rem;
+}
+
+.developer-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 2px solid #26231f;
+}
+
+.developer-tabs button {
+  min-height: 42px;
+  flex: 0 0 auto;
+  border: 0;
+  border-bottom: 4px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 8px 14px;
+}
+
+.developer-tabs button[aria-selected='true'] {
+  border-bottom-color: #b33a2f;
+  background: rgba(62, 111, 142, 0.12);
+}
+
+.developer-panel__body {
+  min-height: 220px;
+}
+
+.developer-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.developer-table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.developer-table th,
+.developer-table td {
+  border-bottom: 1px solid #b9b3a8;
+  padding: 9px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.developer-table th {
+  background: rgba(62, 111, 142, 0.12);
+}
+
+.developer-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.developer-list li {
+  display: grid;
+  gap: 7px;
+  border-bottom: 1px solid #b9b3a8;
+  padding: 14px 0;
+}
+
+.developer-list li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.developer-list p,
+.developer-list small,
+.developer-facts p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.developer-list .secondary-action {
+  justify-self: start;
+}
+
+.developer-facts {
+  display: grid;
+  gap: 12px;
+}
+
+.developer-facts > code {
+  display: block;
+  overflow-wrap: anywhere;
+  border-left: 4px solid #b33a2f;
+  background: rgba(179, 58, 47, 0.08);
+  padding: 9px 12px;
+}
+
+.developer-empty {
+  color: #555047;
+}
+
+.developer-record {
+  display: grid;
+  gap: 12px;
+  border-top: 3px solid #26231f;
+  padding-top: 18px;
+}
+
+.developer-record h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.developer-record pre {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  border: 2px solid #26231f;
+  background: #1f2427;
+  color: #f7f3e8;
+  padding: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .developer-panel__header h1 {
+    font-size: 1.85rem;
+  }
+
+  .developer-panel__actions,
+  .developer-panel__actions button {
+    width: 100%;
+  }
+}
+
 /* 列表视图标题无需主页级别的巨大展示字号，收敛到更协调的尺寸。 */
 .model-profiles__header h1 {
   font-size: clamp(1.9rem, 3.4vw, 2.9rem);
@@ -1393,6 +1603,23 @@ legend {
   background: #fffdf6;
   padding: 8px 10px;
   width: 100%;
+}
+
+.recovery-dialog {
+  width: min(100%, 520px);
+}
+
+.recovery-dialog .action-row {
+  justify-content: flex-end;
+}
+
+.recovery-dialog .action-row .primary-action {
+  justify-self: auto;
+}
+
+.recovery-dialog button:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .model-card__field input:disabled {

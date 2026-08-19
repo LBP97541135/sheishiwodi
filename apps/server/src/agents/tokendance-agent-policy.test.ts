@@ -12,6 +12,7 @@ import {
 } from '@sheishiwodi/shared';
 
 import { projectAgentTurnInput } from './agent-input-projector.js';
+import { ProviderCircuitBreaker } from './provider-circuit-breaker.js';
 import { AgentSystemError, TokendanceAgentPolicy } from './tokendance-agent-policy.js';
 import { TokendanceError, type ChatMessage, type TokendanceClient } from './tokendance-client.js';
 
@@ -103,6 +104,22 @@ function speechReply(livingIds: string[], text: string): string {
       reasoningSummary: '暂无强证据',
     },
     text,
+  });
+}
+
+function voteReply(livingIds: string[], targetPlayerId: string, reason = '该玩家的描述与多数方向不一致'): string {
+  const probabilities = livingIds.map((id, index) => ({
+    playerId: id,
+    probability: index === 0 ? 1 : 0,
+  }));
+  return JSON.stringify({
+    belief: {
+      opposingWordCandidates: [{ word: '豆浆', confidence: 0.6, evidence: '偏甜的饮品' }],
+      playerUndercoverProbabilities: probabilities,
+      reasoningSummary: '结合本轮公开发言更新怀疑',
+    },
+    targetPlayerId,
+    reason,
   });
 }
 
@@ -216,6 +233,26 @@ describe('TokendanceAgentPolicy', () => {
     }
   });
 
+  it('永久错误打开断路器后，下一次逻辑调用在出网前失败', async () => {
+    const { input, roleId } = describeInput();
+    const client = new ScriptedClient([new TokendanceError('http', 401)]);
+    const circuitBreaker = new ProviderCircuitBreaker();
+    const policy = new TokendanceAgentPolicy({
+      client: asClient(client),
+      roleModelMap: { [roleId]: 'model-x' },
+      circuitBreaker,
+      sleep: noWait,
+    });
+
+    await expect(policy.act(input, { agentRoleId: roleId })).rejects.toMatchObject({
+      code: 'AUTH_FAILED',
+    });
+    await expect(policy.act(input, { agentRoleId: roleId })).rejects.toMatchObject({
+      code: 'CIRCUIT_OPEN',
+    });
+    expect(client.calls).toHaveLength(1);
+  });
+
   it('通用兼容 provider 只按精确 model ID 注入专属参数', async () => {
     const { input, roleId } = describeInput();
     const livingIds = input.players.filter((player) => player.alive).map((player) => player.playerId);
@@ -274,5 +311,62 @@ describe('TokendanceAgentPolicy', () => {
     expect(output).toHaveProperty('text', '修复字段后的合法发言');
     expect(client.calls).toHaveLength(2);
     expect(JSON.stringify(client.calls[1])).toContain('只返回一个 JSON');
+  });
+
+  it('Schema 失败把脱敏字段原因与完整投票约束带入格式修复', async () => {
+    const { input: describe, roleId } = describeInput();
+    const livingIds = describe.players.filter((player) => player.alive).map((player) => player.playerId);
+    const legalTargets = livingIds.filter((playerId) => playerId !== describe.actor.playerId);
+    const input: AgentTurnInput = {
+      ...describe,
+      actionType: 'vote',
+      legalTargets,
+    };
+    const client = new ScriptedClient([
+      voteReply(livingIds, legalTargets[0]!, '理'.repeat(201)),
+      voteReply(livingIds, legalTargets[0]!),
+    ]);
+    const policy = new TokendanceAgentPolicy({
+      client: asClient(client),
+      roleModelMap: { [roleId]: 'model-x' },
+      sleep: noWait,
+    });
+
+    await expect(policy.act(input, { agentRoleId: roleId })).resolves.toHaveProperty(
+      'targetPlayerId',
+      legalTargets[0],
+    );
+    const repair = client.calls[1]?.at(-1)?.content ?? '';
+    expect(repair).toContain('SCHEMA_INVALID:reason:too_big');
+    expect(repair).toContain('顶层必须且只能包含 belief、targetPlayerId、reason');
+    expect(repair).toContain('reason 是 1 至 200 字符');
+    expect(repair).toContain('这些 playerId 必须各出现一次且不能重复');
+    expect(repair).not.toContain('理'.repeat(201));
+  });
+
+  it('概率超过 1 进入 Schema 格式修复而不是被静默接受', async () => {
+    const { input, roleId } = describeInput();
+    const livingIds = input.players.filter((player) => player.alive).map((player) => player.playerId);
+    const invalid = JSON.parse(speechReply(livingIds, '一句合法描述')) as {
+      belief: { playerUndercoverProbabilities: Array<{ probability: number }> };
+    };
+    invalid.belief.playerUndercoverProbabilities[0]!.probability = 1.1;
+    const client = new ScriptedClient([
+      JSON.stringify(invalid),
+      speechReply(livingIds, '修复后的合法描述'),
+    ]);
+    const policy = new TokendanceAgentPolicy({
+      client: asClient(client),
+      roleModelMap: { [roleId]: 'model-x' },
+      sleep: noWait,
+    });
+
+    await expect(policy.act(input, { agentRoleId: roleId })).resolves.toHaveProperty(
+      'text',
+      '修复后的合法描述',
+    );
+    expect(client.calls[1]?.at(-1)?.content).toContain(
+      'belief.playerUndercoverProbabilities.item.probability:too_big',
+    );
   });
 });

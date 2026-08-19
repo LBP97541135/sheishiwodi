@@ -5,7 +5,8 @@
   "type": "module",
   "packageManager": "pnpm@9.15.9",
   "engines": {
-    "node": ">=20.11.0"
+    "node": "22.x",
+    "pnpm": "9.15.9"
   },
   "scripts": {
     "dev": "pnpm --filter @sheishiwodi/shared build && pnpm --parallel --filter @sheishiwodi/shared --filter @sheishiwodi/server --filter @sheishiwodi/web dev",
