@@ -4,11 +4,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelProfiles } from './ModelProfiles';
 
 const profile = (roleId: string, displayName: string, selectedModelId: string | null) => ({
-  roleId,
+  profileId: roleId,
   displayName,
+  intro: `${displayName} 内置角色`,
   personalityTags: ['标签甲', '标签乙', '标签丙'],
   personalityPrompt: `${displayName}的表达风格。`,
+  source: 'built_in',
+  allowedParticipantKinds: ['agent'],
+  immutable: true,
+  complete: true,
   selectedModelId,
+  assets: {
+    avatar: `builtin:${roleId}:avatar`,
+    idle: `builtin:${roleId}:idle`,
+    thinking: `builtin:${roleId}:thinking`,
+    speaking: `builtin:${roleId}:speaking`,
+    suspected: `builtin:${roleId}:suspected`,
+    eliminated: `builtin:${roleId}:eliminated`,
+  },
+  createdAt: null,
+  updatedAt: null,
 });
 
 const profileList = (overrides: Record<string, unknown> = {}) => ({
@@ -33,7 +48,7 @@ function routeFetch(handlers: {
   put?: (roleId: string) => unknown;
 }) {
   return vi.fn((url: string, init?: RequestInit) => {
-    if (url === '/api/model-profiles') return Promise.resolve(response(successBody(handlers.profiles)));
+    if (url === '/api/character-profiles') return Promise.resolve(response(successBody(handlers.profiles)));
     if (url === '/api/models') return Promise.resolve(response(successBody(handlers.models)));
     if (init?.method === 'PUT') {
       const roleId = url.split('/').pop() ?? '';
@@ -61,7 +76,7 @@ describe('ModelProfiles', () => {
 
     render(<ModelProfiles onBack={() => {}} />);
 
-    expect(await screen.findByRole('heading', { name: '为三位 AI 选择模型' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '角色与模型' })).toBeInTheDocument();
     expect(screen.getByTestId('model-card-deepseek')).toBeInTheDocument();
     expect(screen.getByTestId('model-card-doubao')).toBeInTheDocument();
     expect(screen.getByTestId('model-card-qwen')).toBeInTheDocument();
@@ -72,7 +87,13 @@ describe('ModelProfiles', () => {
     const fetchMock = routeFetch({
       profiles: profileList(),
       models: { providerMode: 'tokendance', models: ['gpt-a', 'gpt-b'] },
-      put: () => profile('doubao', '豆包', 'gpt-b'),
+      put: () => ({
+        roleId: 'doubao',
+        displayName: '豆包',
+        personalityTags: ['标签甲', '标签乙', '标签丙'],
+        personalityPrompt: '豆包的表达风格。',
+        selectedModelId: 'gpt-b',
+      }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -90,7 +111,7 @@ describe('ModelProfiles', () => {
         expect.objectContaining({ method: 'PUT', body: JSON.stringify({ modelId: 'gpt-b' }) }),
       ),
     );
-    expect(await screen.findByText(/已保存 豆包 的模型/)).toBeInTheDocument();
+    expect(await screen.findByText(/已更新 豆包 的模型/)).toBeInTheDocument();
 
     // 负向隔离：绝不出现中转站 URL、Bearer Key 或请求头。
     expect(container.innerHTML).not.toContain('tokendance.space');
@@ -130,7 +151,7 @@ describe('ModelProfiles', () => {
     render(<ModelProfiles onBack={() => {}} />);
     await screen.findByTestId('model-card-deepseek');
 
-    expect(screen.getByText(/对局进行中，暂不能修改模型配置/)).toBeInTheDocument();
+    expect(screen.getByText(/对局进行中，暂不能修改角色或模型配置/)).toBeInTheDocument();
     const input = screen.getByTestId('model-card-deepseek').querySelector('input')!;
     expect(input).toBeDisabled();
   });
@@ -148,7 +169,13 @@ describe('ModelProfiles', () => {
       }),
       // 某些兼容中转站没有 /models；候选列表为空仍必须允许手填。
       models: { providerMode: 'openai-compatible', models: [] },
-      put: () => profile('deepseek', 'DeepSeek', 'vendor/custom-model'),
+      put: () => ({
+        roleId: 'deepseek',
+        displayName: 'DeepSeek',
+        personalityTags: ['标签甲', '标签乙', '标签丙'],
+        personalityPrompt: 'DeepSeek的表达风格。',
+        selectedModelId: 'vendor/custom-model',
+      }),
     });
     vi.stubGlobal('fetch', fetchMock);
 

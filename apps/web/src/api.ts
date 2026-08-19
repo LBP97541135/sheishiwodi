@@ -3,6 +3,8 @@ import {
   apiErrorResponseSchema,
   apiSuccessSchema,
   availableModelListSchema,
+  characterProfileListSchema,
+  characterProfileSchema,
   developerFullRecordClearResultSchema,
   developerFullRecordDetailSchema,
   developerFullRecordListSchema,
@@ -14,6 +16,7 @@ import {
   reviewSummarySchema,
   type AbandonGameRequest,
   type ContinueSpectatingRequest,
+  type UpsertCharacterProfile,
   type CreateGameRequest,
   type HumanGameView,
   type ReviewSummary,
@@ -172,6 +175,57 @@ export async function updateModelSelection(roleId: string, modelId: string) {
     body: JSON.stringify({ modelId }),
   });
   return apiSuccessSchema(modelProfileSchema).parse(body).data;
+}
+
+export async function getCharacterProfiles() {
+  const body = await request('/api/character-profiles');
+  return apiSuccessSchema(characterProfileListSchema).parse(body).data;
+}
+
+export async function createCharacterProfile(input: UpsertCharacterProfile) {
+  const body = await request('/api/character-profiles', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return apiSuccessSchema(characterProfileSchema).parse(body).data;
+}
+
+export async function updateCharacterProfile(profileId: string, input: UpsertCharacterProfile) {
+  const body = await request(`/api/character-profiles/${encodeURIComponent(profileId)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return apiSuccessSchema(characterProfileSchema).parse(body).data;
+}
+
+export async function deleteCharacterProfile(profileId: string) {
+  const response = await fetch(`/api/character-profiles/${encodeURIComponent(profileId)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const parsed = apiErrorResponseSchema.parse(await response.json());
+    throw new ApiClientError(parsed.error.code, parsed.error.message);
+  }
+}
+
+export async function setAutomationMode(gameId: string, mode: 'auto' | 'paused' | 'step') {
+  const body = await request(`/api/games/${gameId}/automation`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+  return apiSuccessSchema(humanGameViewSchema).parse(body).data;
+}
+
+export async function addRequestBudget(gameId: string, amount: number) {
+  const body = await request(`/api/games/${gameId}/request-budget`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ amount }),
+  });
+  return apiSuccessSchema(humanGameViewSchema).parse(body).data;
 }
 
 export async function getDeveloperOverview(gameId?: string) {

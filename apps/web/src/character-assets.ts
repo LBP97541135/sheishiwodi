@@ -106,3 +106,15 @@ export function characterKeyFor(
   }
   return humanSilhouette === 'silhouette_b' ? 'human-female' : 'human-male';
 }
+
+export function characterImageFor(
+  player: { kind: 'human' | 'agent'; displayName: string; agentRoleId?: string | undefined; characterAssetKey?: string | undefined },
+  state: CharacterState,
+  humanSilhouette: 'silhouette_a' | 'silhouette_b',
+) {
+  const assetKey = player.characterAssetKey ?? player.agentRoleId;
+  if (player.kind === 'agent' && assetKey?.startsWith('custom-')) {
+    return `/api/character-assets/${encodeURIComponent(assetKey)}/${state}.webp`;
+  }
+  return characterAssets[characterKeyFor(player, humanSilhouette)][state];
+}

@@ -108,7 +108,7 @@ h1 {
   font-family: KaiTi, STKaiti, serif;
   font-size: clamp(2.7rem, 8vw, 5.8rem);
   font-weight: 700;
-  letter-spacing: -0.06em;
+  letter-spacing: 0;
   line-height: 1;
 }
 
@@ -1520,7 +1520,7 @@ legend {
 /* 列表视图标题无需主页级别的巨大展示字号，收敛到更协调的尺寸。 */
 .model-profiles__header h1 {
   font-size: clamp(1.9rem, 3.4vw, 2.9rem);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   line-height: 1.15;
 }
 
@@ -1632,6 +1632,395 @@ legend {
   color: #555047;
   font-family: Consolas, monospace;
   font-size: 0.85rem;
+}
+
+/* 动态阵容、角色库与纯 Agent 桌面控制 */
+.icon-action,
+.icon-command {
+  display: inline-grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid #26231f;
+  background: #fffdf6;
+  color: #26231f;
+  cursor: pointer;
+  padding: 0;
+}
+
+.icon-action svg,
+.icon-command svg,
+.segmented-control svg,
+.config-section legend svg,
+.automation-panel svg {
+  width: 19px;
+  height: 19px;
+}
+
+.icon-action:hover,
+.icon-command:hover {
+  background: #d6a93a;
+}
+
+.icon-action:disabled,
+.icon-command:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.icon-action--danger {
+  color: #a53228;
+}
+
+.text-action {
+  justify-self: start;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: #274b60;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 2px 0;
+}
+
+.game-config {
+  gap: 22px;
+}
+
+.game-config__header {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.game-config__header h1 {
+  font-size: 2.5rem;
+  line-height: 1.1;
+}
+
+.game-config__grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 1.2fr);
+  gap: 18px 28px;
+  border-block: 2px solid #26231f;
+  padding-block: 20px;
+}
+
+.config-section {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.config-section legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+}
+
+.config-section--roster {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  border: 2px solid #26231f;
+  padding: 4px;
+}
+
+.segmented-control label {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: transparent;
+  font-weight: 800;
+  padding: 8px 10px;
+}
+
+.segmented-control label:has(input:checked) {
+  background: #3e6f8e;
+  color: #fffdf6;
+}
+
+.player-count-control {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(42px, 1fr));
+  gap: 4px;
+}
+
+.player-count-control button {
+  min-height: 42px;
+  border: 2px solid #777066;
+  background: #fffdf6;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.player-count-control button.is-active {
+  border-color: #26231f;
+  background: #d6a93a;
+}
+
+.roster-selects {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.roster-selects label,
+.budget-field,
+.character-editor__fields label {
+  display: grid;
+  gap: 5px;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.roster-selects select,
+.budget-field input,
+.character-editor input,
+.character-editor textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 2px solid #26231f;
+  background: #fffdf6;
+  padding: 8px 10px;
+}
+
+.game-config__start {
+  width: min(100%, 420px);
+  justify-self: center;
+}
+
+.focus-stage {
+  display: grid;
+  min-height: 260px;
+  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr);
+  align-items: end;
+  gap: 24px;
+  border-bottom: 3px solid #26231f;
+  background: rgba(255, 253, 246, 0.72);
+  padding: 0 18px;
+}
+
+.focus-stage > .portrait {
+  width: 100%;
+  height: 250px;
+  aspect-ratio: auto;
+  background: transparent;
+}
+
+.focus-stage > div:last-child {
+  display: grid;
+  align-self: center;
+  gap: 5px;
+}
+
+.focus-stage > div:last-child strong {
+  font-family: KaiTi, STKaiti, serif;
+  font-size: 2.2rem;
+}
+
+.focus-stage__status {
+  color: #b74335;
+  font-weight: 900;
+}
+
+.seats--compact {
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  gap: 7px;
+}
+
+.seats--game.seats--compact .seat {
+  min-height: 88px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-rows: repeat(2, auto);
+  justify-items: start;
+  gap: 0 8px;
+  padding: 6px;
+  text-align: left;
+}
+
+.seats--game.seats--compact .portrait {
+  width: 48px;
+  height: 64px;
+  grid-row: 1 / span 2;
+}
+
+.seats--compact .seat > strong,
+.seats--compact .seat > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-panel {
+  display: grid;
+  gap: 14px;
+  border: 2px solid #26231f;
+  background: #fffdf6;
+  padding: 16px;
+}
+
+.automation-panel__status,
+.automation-panel__actions,
+.automation-budget,
+.automation-panel__hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.automation-panel__status > div {
+  display: grid;
+}
+
+.status-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  background: #3e6f8e;
+  color: white;
+}
+
+.status-icon.is-paused {
+  background: #d6a93a;
+  color: #26231f;
+}
+
+.automation-budget {
+  justify-content: space-between;
+  border-top: 1px dashed #777066;
+  padding-top: 10px;
+}
+
+.automation-budget__warning {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #a53228;
+  font-weight: 900;
+}
+
+.automation-panel__hint {
+  margin: 0;
+  color: #777066;
+  font-size: 0.82rem;
+}
+
+.role-library-grid {
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.role-card__avatar {
+  width: 82px;
+  height: 82px;
+  border: 2px solid #26231f;
+  object-fit: cover;
+}
+
+.role-card__heading,
+.role-card__actions,
+.character-editor > header {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.role-card__heading h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.status-badge {
+  border: 1px solid #9d7410;
+  color: #6b5a1f;
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 2px 7px;
+}
+
+.status-badge.is-ready {
+  border-color: #3e6f8e;
+  color: #274b60;
+}
+
+.character-editor {
+  width: min(100%, 820px);
+  max-height: min(90vh, 820px);
+  overflow-y: auto;
+}
+
+.character-editor__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.character-editor__wide {
+  grid-column: 1 / -1;
+}
+
+.character-editor textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.character-editor__assets {
+  border-top: 2px dashed #777066;
+  padding-top: 12px;
+}
+
+.character-editor__assets > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.character-editor__assets label {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #aaa398;
+  padding: 8px;
+}
+
+.character-editor__assets input {
+  min-height: 0;
+  border: 0;
+  padding: 0;
+  font-size: 0.78rem;
+}
+
+.character-editor__assets b {
+  color: #555047;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .game-config__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .config-section--roster {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .focus-stage {
+    grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  }
 }
 
 /* 赛后复盘页 */

@@ -17,12 +17,15 @@ export const createGameCommandSchema = z
   .object({
     type: z.literal('CreateGame'),
     commandId: identifierSchema,
+    participationMode: z.enum(['human', 'observer']).optional(),
     human: z
       .object({
         displayName: z.string().trim().min(1).max(12).default('玩家'),
         silhouette: silhouetteSchema,
       })
       .strict(),
+    agentRoleIds: z.array(identifierSchema).min(3).max(8).optional(),
+    requestBudget: z.number().int().min(1).max(500).optional(),
     difficulty: difficultySchema,
   })
   .strict();
@@ -92,6 +95,12 @@ export const abandonGameRequestSchema = abandonGameCommandSchema.omit({
   type: true,
   gameId: true,
 });
+export const automationControlRequestSchema = z
+  .object({ mode: z.enum(['auto', 'paused', 'step']) })
+  .strict();
+export const addRequestBudgetSchema = z
+  .object({ amount: z.number().int().min(1).max(500) })
+  .strict();
 
 export const gameCommandSchema = z.discriminatedUnion('type', [
   createGameCommandSchema,
@@ -121,6 +130,8 @@ export type ContinueSpectatingCommand = z.infer<typeof continueSpectatingCommand
 export type ContinueSpectatingRequest = z.infer<typeof continueSpectatingRequestSchema>;
 export type AbandonGameCommand = z.infer<typeof abandonGameCommandSchema>;
 export type AbandonGameRequest = z.infer<typeof abandonGameRequestSchema>;
+export type AutomationControlRequest = z.infer<typeof automationControlRequestSchema>;
+export type AddRequestBudgetRequest = z.infer<typeof addRequestBudgetSchema>;
 export const resolveInterruptedGameRequestSchema = resolveInterruptedGameCommandSchema.omit({
   type: true,
   gameId: true,

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { HumanGameView } from '@sheishiwodi/shared';
@@ -125,11 +125,12 @@ describe('GameScreen 秘密投票', () => {
   it('投票开始时所有存活玩家同步进入思考状态', () => {
     render(<GameScreen game={votingView} {...screenProps} />);
 
-    expect(screen.getByTestId('portrait-human-male')).toHaveAttribute('data-state', 'thinking');
-    expect(screen.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'thinking');
-    expect(screen.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'thinking');
-    expect(screen.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'thinking');
-    expect(screen.getByText('你 · 思考中')).toBeInTheDocument();
+    const seats = within(screen.getByLabelText('本局玩家'));
+    expect(seats.getByTestId('portrait-human-male')).toHaveAttribute('data-state', 'thinking');
+    expect(seats.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'thinking');
+    expect(seats.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'thinking');
+    expect(seats.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'thinking');
+    expect(screen.getAllByText('你 · 思考中')).toHaveLength(2);
     expect(screen.getAllByText('思考中')).toHaveLength(3);
   });
 
@@ -181,10 +182,11 @@ describe('GameScreen 秘密投票', () => {
 
     render(<GameScreen game={view} {...screenProps} />);
 
-    expect(screen.getByTestId('portrait-human-male')).toHaveAttribute('data-state', 'thinking');
-    expect(screen.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'suspected');
-    expect(screen.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'suspected');
-    expect(screen.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'idle');
+    const seats = within(screen.getByLabelText('本局玩家'));
+    expect(seats.getByTestId('portrait-human-male')).toHaveAttribute('data-state', 'thinking');
+    expect(seats.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'suspected');
+    expect(seats.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'suspected');
+    expect(seats.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'idle');
   });
 });
 

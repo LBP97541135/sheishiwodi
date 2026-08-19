@@ -47,6 +47,6 @@ export function projectAgentTurnInput(
     tieCandidates: snapshot.round.tieCandidateIds,
     publicEvents,
     priorOwnBeliefs,
-    personalityPrompt: personalityPromptFor(actor.agentRoleId),
+    personalityPrompt: actor.agentPersonalityPrompt ?? personalityPromptFor(actor.agentRoleId),
   });
 }

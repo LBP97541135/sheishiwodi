@@ -8,6 +8,7 @@ import {
   type IdSource,
   type RandomSource,
   type WordPair,
+  type AgentRoleDefinition,
 } from '../src/index.js';
 
 class SequenceRandom implements RandomSource {
@@ -86,12 +87,81 @@ describe('创建准备对局', () => {
     const view = projectHumanGameView(snapshot);
     const serialized = JSON.stringify(view);
 
-    expect(view.human.ownWordCard).toBe('牛奶');
+    expect(view.human?.ownWordCard).toBe('牛奶');
     expect(serialized).not.toContain('豆浆');
     expect(serialized).not.toContain('"camp"');
     expect(serialized).not.toContain('civilianWord');
     expect(serialized).not.toContain('undercoverWord');
     expect(view).not.toHaveProperty('reveal');
+  });
+
+  it('支持 4 名纯 Agent 对局且观察者视图不包含人类玩家或私有词语', () => {
+    const roles = Object.fromEntries(
+      ['agent-a', 'agent-b', 'agent-c', 'agent-d'].map((roleId) => [
+        roleId,
+        {
+          roleId,
+          displayName: roleId,
+          personalityTags: ['谨慎', '简洁', '观察'] as const,
+          defaultModelId: 'fake-model',
+          personalityPrompt: '保持谨慎，只基于公开信息判断。',
+        } satisfies AgentRoleDefinition,
+      ]),
+    );
+    const { snapshot } = createPreparingGame(
+      {
+        ...createCommand,
+        participationMode: 'observer',
+        agentRoleIds: Object.keys(roles),
+        requestBudget: 60,
+      },
+      pairs,
+      {
+        random: new SequenceRandom([0, 0, 0, 0, 0]),
+        ids: new SequenceIds(),
+        clock,
+        resolveAgentRole: (roleId) => roles[roleId],
+      },
+    );
+
+    expect(snapshot.players).toHaveLength(4);
+    expect(snapshot.players.every((player) => player.kind === 'agent')).toBe(true);
+    expect(snapshot.config).toMatchObject({ participationMode: 'observer', undercoverCount: 1, requestBudget: 60 });
+    const view = projectHumanGameView(snapshot);
+    expect(view.human).toBeNull();
+    expect(JSON.stringify(view)).not.toContain('牛奶');
+    expect(JSON.stringify(view)).not.toContain('豆浆');
+  });
+
+  it('6 至 8 人局固定生成两名互不知情的卧底', () => {
+    const roleIds = Array.from({ length: 5 }, (_, index) => `agent-${index + 1}`);
+    const { snapshot } = createPreparingGame(
+      { ...createCommand, agentRoleIds: roleIds },
+      pairs,
+      {
+        random: new SequenceRandom([0, 0, 0.35, 0, 0, 0, 0, 0]),
+        ids: new SequenceIds(),
+        clock,
+        resolveAgentRole: (roleId) => ({
+          roleId,
+          displayName: roleId,
+          personalityTags: ['谨慎', '简洁', '观察'] as const,
+          defaultModelId: 'fake-model',
+          personalityPrompt: '保持谨慎，只基于公开信息判断。',
+        }),
+      },
+    );
+
+    expect(snapshot.players).toHaveLength(6);
+    expect(snapshot.config.undercoverCount).toBe(2);
+    expect(snapshot.players.filter((player) => player.camp === 'undercover')).toHaveLength(2);
+    for (const player of snapshot.players) {
+      const ownPrivateProjection = {
+        playerId: player.playerId,
+        wordCard: player.wordCard,
+      };
+      expect(ownPrivateProjection).not.toHaveProperty('teammateIds');
+    }
   });
 });
 

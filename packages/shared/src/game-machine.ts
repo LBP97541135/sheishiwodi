@@ -35,7 +35,7 @@ export function continueSpectating(
   if (snapshot.status !== 'awaiting_spectator' || !snapshot.resumeAfterSpectating) {
     throw new Error('INVALID_TRANSITION');
   }
-  if (command.actorId !== snapshot.humanPlayerId) throw new Error('ACTOR_NOT_ALLOWED');
+  if (command.actorId !== (snapshot.controllerId ?? snapshot.humanPlayerId)) throw new Error('ACTOR_NOT_ALLOWED');
   const nextRound = snapshot.resumeAfterSpectating;
   const definitions: EventDefinition[] = [
     ['spectating_started', 'public', { playerId: command.actorId }],
@@ -64,7 +64,7 @@ export function abandonGame(
   if (!['preparing', 'in_progress', 'awaiting_spectator'].includes(snapshot.status)) {
     throw new Error('INVALID_TRANSITION');
   }
-  if (command.actorId !== snapshot.humanPlayerId || command.confirmed !== true) {
+  if (command.actorId !== (snapshot.controllerId ?? snapshot.humanPlayerId) || command.confirmed !== true) {
     throw new Error('ACTOR_NOT_ALLOWED');
   }
   const round = snapshot.round;
@@ -136,7 +136,7 @@ export function declineInterruptedGame(
   if (snapshot.status !== 'in_progress' || command.resolution !== 'start_new') {
     throw new Error('INVALID_TRANSITION');
   }
-  if (command.actorId !== snapshot.humanPlayerId) throw new Error('ACTOR_NOT_ALLOWED');
+  if (command.actorId !== (snapshot.controllerId ?? snapshot.humanPlayerId)) throw new Error('ACTOR_NOT_ALLOWED');
   const result = buildTransition(
     snapshot,
     command.commandId,
@@ -380,21 +380,22 @@ function eliminateResult(
   const players = snapshot.players.map((player) =>
     player.playerId === eliminatedId ? { ...player, alive: false } : player,
   );
-  const eliminated = players.find((player) => player.playerId === eliminatedId)!;
   const living = players.filter((player) => player.alive);
+  const livingUndercoverCount = living.filter((player) => player.camp === 'undercover').length;
+  const livingCivilianCount = living.filter((player) => player.camp === 'civilian').length;
   let terminal: Pick<GameSnapshot, 'status' | 'phase'> &
     Partial<Pick<GameSnapshot, 'winnerCamp' | 'endReason'>> = {
     status: 'in_progress',
     phase: 'speaking',
   };
-  if (eliminated.camp === 'undercover') {
+  if (livingUndercoverCount === 0) {
     terminal = {
       status: 'finished',
       phase: 'ended',
       winnerCamp: 'civilian',
       endReason: terminalReasonOverride ?? 'undercover_eliminated',
     };
-  } else if (living.length === 2 && living.some((player) => player.camp === 'undercover')) {
+  } else if (livingCivilianCount === 0 || (livingUndercoverCount === 1 && livingCivilianCount === 1)) {
     terminal = {
       status: 'finished',
       phase: 'ended',

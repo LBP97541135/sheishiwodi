@@ -25,6 +25,9 @@ export const gamePlayerStateSchema = z
     silhouette: silhouetteSchema.optional(),
     agentRoleId: identifierSchema.optional(),
     agentRoleDisplay: z.string().trim().min(1).max(32).optional(),
+    agentPersonalityPrompt: z.string().trim().min(1).max(1000).optional(),
+    agentModelId: z.string().trim().min(1).max(200).optional(),
+    characterAssetKey: z.string().trim().min(1).max(128).optional(),
   })
   .strict();
 
@@ -59,6 +62,7 @@ export const gameSnapshotSchema = z
     streamSeq: z.number().int().nonnegative(),
     config: gameConfigSchema,
     humanPlayerId: identifierSchema,
+    controllerId: identifierSchema.optional(),
     wordPair: wordPairSnapshotSchema,
     players: z.array(gamePlayerStateSchema).min(1),
     firstSpeakingOrder: z.array(identifierSchema).min(1),

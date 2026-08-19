@@ -9,6 +9,8 @@ import {
   ApiClientError,
   getActiveGameState,
   getGame,
+  setAutomationMode,
+  addRequestBudget,
 } from './api';
 import { DeveloperPanel } from './components/DeveloperPanel';
 import { GameScreen } from './components/GameScreen';
@@ -147,8 +149,10 @@ export function App() {
     setError(null);
     try {
       setGame(await executeTrackedGameCommand(command));
+      return true;
     } catch (commandError) {
       setError(messageForCommand(commandError));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -167,7 +171,7 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
       },
     });
@@ -182,7 +186,7 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
         text,
       },
@@ -198,7 +202,7 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
         text,
       },
@@ -214,7 +218,7 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
         targetPlayerId,
       },
@@ -230,7 +234,7 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
       },
     });
@@ -245,22 +249,52 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
         confirmed: true,
       },
     });
   };
 
+  const handleAutomation = async (mode: 'auto' | 'paused' | 'step') => {
+    if (!game) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setGame(await setAutomationMode(game.gameId, mode));
+    } catch (caught) {
+      setError(messageFor(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddBudget = async (amount: number) => {
+    if (!game) return;
+    setBusy(true);
+    try {
+      setGame(await addRequestBudget(game.gameId, amount));
+    } catch (caught) {
+      setError(messageFor(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleInterruptedGame = async (resolution: 'continue' | 'start_new') => {
     if (!game) return;
-    await runCommand({
+    const succeeded = await runCommand({
       version: 1,
       kind: 'recovery',
       gameId: game.gameId,
       expectedRevision: game.revision,
       request: { commandId: crypto.randomUUID(), resolution },
     });
+    if (succeeded && resolution === 'start_new') {
+      localStorage.removeItem(LAST_GAME_KEY);
+      setGame(null);
+      setTopView('game');
+    }
   };
 
   const handleNewGame = () => {
@@ -340,7 +374,7 @@ export function App() {
             aria-current={topView === 'model-profiles' ? 'page' : undefined}
             onClick={() => setTopView('model-profiles')}
           >
-            模型档案
+            角色库
           </button>
           {isFinished && (
             <button
@@ -404,6 +438,7 @@ export function App() {
         <NewGameForm
           busy={busy}
           onCreate={handleCreate}
+          onOpenRoleLibrary={() => setTopView('model-profiles')}
           onOpenGuessMode={(trigger) => {
             guessModeTriggerRef.current = trigger;
             setGuessModeNoticeOpen(true);
@@ -424,6 +459,8 @@ export function App() {
         onVote={handleVote}
         onSpectate={handleSpectate}
         onAbandon={handleAbandon}
+        onAutomation={handleAutomation}
+        onAddBudget={handleAddBudget}
         onNewGame={handleNewGame}
         onReview={() => setTopView('review')}
       />
@@ -506,6 +543,12 @@ function StatusPage({
 function messageFor(error: unknown) {
   if (error instanceof ApiClientError) return error.message;
   return '无法连接本地服务，请确认 pnpm dev 正在运行';
+}
+
+function controllerIdFor(game: HumanGameView) {
+  const controllerId = game.controllerId ?? game.human?.playerId;
+  if (!controllerId) throw new Error('MISSING_GAME_CONTROLLER');
+  return controllerId;
 }
 
 function messageForCommand(error: unknown) {

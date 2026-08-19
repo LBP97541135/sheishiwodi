@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Flag, Pause, Play, StepForward, TriangleAlert } from 'lucide-react';
 
 import {
   validatePublicSpeech,
@@ -7,7 +8,7 @@ import {
   type Player,
 } from '@sheishiwodi/shared';
 
-import { characterKeyFor, type CharacterState } from '../character-assets';
+import { characterImageFor, characterKeyFor, type CharacterState } from '../character-assets';
 import { CharacterPortrait } from './CharacterPortrait';
 import { ComicTimeline, type TimelineProps } from './ComicTimeline';
 
@@ -20,6 +21,8 @@ interface GameScreenProps {
   onVote(targetPlayerId: string): Promise<void>;
   onSpectate(): Promise<void>;
   onAbandon(): Promise<void>;
+  onAutomation?(mode: 'auto' | 'paused' | 'step'): Promise<void>;
+  onAddBudget?(amount: number): Promise<void>;
   onNewGame(): void;
   onReview(): void;
 }
@@ -40,6 +43,8 @@ export function GameScreen({
   onVote,
   onSpectate,
   onAbandon,
+  onAutomation = async () => undefined,
+  onAddBudget = async () => undefined,
   onNewGame,
   onReview,
 }: GameScreenProps) {
@@ -50,9 +55,9 @@ export function GameScreen({
   }, [game.players]);
 
   const round = game.round;
-  const humanId = game.human.playerId;
-  const humanPlayer = game.players.find((player) => player.playerId === humanId);
-  const humanAlive = humanPlayer?.alive ?? true;
+  const humanId = game.human?.playerId;
+  const humanPlayer = humanId ? game.players.find((player) => player.playerId === humanId) : undefined;
+  const humanAlive = humanPlayer?.alive ?? false;
   const isFinished = game.status === 'finished';
   const isHumanTurn =
     game.status === 'in_progress' && round?.currentActorId === humanId && humanAlive;
@@ -61,6 +66,9 @@ export function GameScreen({
   const actionAreaRef = useRef<HTMLDivElement>(null);
   const previousHumanActionRef = useRef<string | null>(null);
   const currentActorName = nameOf(round?.currentActorId);
+  const focusedPlayer = game.players.find((player) => player.playerId === round?.currentActorId)
+    ?? game.players.find((player) => player.alive)
+    ?? game.players[0];
   const pendingTimelineAction =
     game.status === 'in_progress' &&
     round &&
@@ -102,18 +110,32 @@ export function GameScreen({
         </div>
       </header>
 
-      <div className="seats seats--game" aria-label="本局玩家">
-        {game.players.map((player) => (
-          <article className="seat" key={player.playerId} data-alive={player.alive}>
+      {focusedPlayer && (
+        <div className="focus-stage" aria-live="polite">
+          <CharacterPortrait
+            characterKey={characterKeyFor(focusedPlayer, game.human?.silhouette ?? 'silhouette_a')}
+            src={characterImageFor(focusedPlayer, portraitState(focusedPlayer, game), game.human?.silhouette ?? 'silhouette_a')}
+            label={focusedPlayer.displayName}
+            state={portraitState(focusedPlayer, game)}
+          />
+          <div><span className="focus-stage__status">{seatCaption(focusedPlayer, game)}</span><strong>{focusedPlayer.displayName}</strong></div>
+        </div>
+      )}
+
+      <div className="seats seats--game seats--compact" aria-label="本局玩家">
+        {game.players.map((player) => {
+          const state = portraitState(player, game);
+          return <article className="seat" key={player.playerId} data-alive={player.alive}>
             <CharacterPortrait
-              characterKey={characterKeyFor(player, game.human.silhouette)}
+              characterKey={characterKeyFor(player, game.human?.silhouette ?? 'silhouette_a')}
+              src={characterImageFor(player, state, game.human?.silhouette ?? 'silhouette_a')}
               label={player.displayName}
-              state={portraitState(player, game)}
+              state={state}
             />
             <strong>{player.displayName}</strong>
             <span>{seatCaption(player, game)}</span>
-          </article>
-        ))}
+          </article>;
+        })}
       </div>
 
       <ComicTimeline
@@ -135,6 +157,8 @@ export function GameScreen({
           <SystemTerminatedNotice />
         ) : game.status === 'awaiting_spectator' ? (
           <SpectatorChoice busy={busy} onSpectate={onSpectate} onAbandon={onAbandon} />
+        ) : !game.human ? (
+          <AutomationPanel game={game} busy={busy} currentActorName={currentActorName} onAutomation={onAutomation} onAddBudget={onAddBudget} />
         ) : !humanAlive ? (
           <SpectatorNotice currentActorName={currentActorName} />
         ) : isHumanTurn && isSpeechAction ? (
@@ -194,8 +218,9 @@ function statusLine(game: HumanGameView, isHumanTurn: boolean, currentActorName:
   if (game.phase === 'revoting') {
     return isHumanTurn ? '轮到你秘密重投' : `${currentActorName} 正在重投`;
   }
-  const humanPlayer = game.players.find((player) => player.playerId === game.human.playerId);
-  if (!(humanPlayer?.alive ?? true)) {
+  if (!game.human) return `自动观战 · 当前行动者：${currentActorName}`;
+  const humanPlayer = game.players.find((player) => player.playerId === game.human?.playerId);
+  if (!(humanPlayer?.alive ?? false)) {
     return `你已出局，观战中 · 当前行动者：${currentActorName}`;
   }
   if (isHumanTurn) {
@@ -223,17 +248,52 @@ function portraitState(player: Player, game: HumanGameView): CharacterState {
   return 'idle';
 }
 
+function AutomationPanel({ game, busy, currentActorName, onAutomation, onAddBudget }: {
+  game: HumanGameView;
+  busy: boolean;
+  currentActorName: string;
+  onAutomation(mode: 'auto' | 'paused' | 'step'): Promise<void>;
+  onAddBudget(amount: number): Promise<void>;
+}) {
+  const control = game.automationControl;
+  const paused = control?.mode === 'paused';
+  return (
+    <section className="automation-panel" aria-label="Agent 对局控制">
+      <div className="automation-panel__status">
+        <span className={`status-icon ${paused ? 'is-paused' : ''}`}>{paused ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}</span>
+        <div><strong>{paused ? '已暂停' : '自动进行中'}</strong><span>当前：{currentActorName}</span></div>
+      </div>
+      {control?.requestBudget !== null && control?.requestBudget !== undefined && (
+        <div className="automation-budget">
+          <span>请求 {control.usedRequests}/{control.requestBudget}</span>
+          {control.pauseReason === 'budget_exhausted' && <span className="automation-budget__warning"><TriangleAlert aria-hidden="true" />预算已用完</span>}
+        </div>
+      )}
+      <div className="automation-panel__actions">
+        {paused ? (
+          <button className="icon-command" type="button" title="继续自动运行" aria-label="继续自动运行" disabled={busy} onClick={() => void onAutomation('auto')}><Play aria-hidden="true" /></button>
+        ) : (
+          <button className="icon-command" type="button" title="暂停" aria-label="暂停" disabled={busy} onClick={() => void onAutomation('paused')}><Pause aria-hidden="true" /></button>
+        )}
+        <button className="icon-command" type="button" title="单步执行" aria-label="单步执行" disabled={busy} onClick={() => void onAutomation('step')}><StepForward aria-hidden="true" /></button>
+        {control?.pauseReason === 'budget_exhausted' && <button className="secondary-action" type="button" disabled={busy} onClick={() => void onAddBudget(20)}>追加 20 次</button>}
+      </div>
+      <p className="automation-panel__hint"><Flag aria-hidden="true" />暂停会在当前逻辑行动完成后生效</p>
+    </section>
+  );
+}
+
 function seatCaption(player: Player, game: HumanGameView) {
   if (!player.alive) return '已出局';
   if (game.status === 'in_progress' && isVotingAction(game.round?.actionType)) {
     if (isEligibleVoter(player, game)) {
       const done = game.voteProgress.completedPlayerIds.includes(player.playerId);
-      if (player.playerId === game.human.playerId) return done ? '你 · 已投票' : '你 · 思考中';
+      if (player.playerId === game.human?.playerId) return done ? '你 · 已投票' : '你 · 思考中';
       return done ? '已投票' : '思考中';
     }
     if (game.round?.tieCandidateIds.includes(player.playerId)) return '等待重投';
   }
-  if (player.playerId === game.human.playerId) return '你';
+  if (player.playerId === game.human?.playerId) return '你';
   if (game.voteProgress.completedPlayerIds.includes(player.playerId)) return '已投票';
   if (game.status === 'in_progress' && game.round?.currentActorId === player.playerId) {
     if (game.round.actionType === 'defend') return '辩解中';

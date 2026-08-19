@@ -36,6 +36,13 @@ export class ContextBoundaryViolationError extends Error {
   }
 }
 
+export class AgentRequestBudgetExceededError extends Error {
+  constructor(readonly gameId: string) {
+    super('AGENT_REQUEST_BUDGET_EXHAUSTED');
+    this.name = 'AgentRequestBudgetExceededError';
+  }
+}
+
 export interface AttemptHandle {
   attemptId: string;
   startedAtMs: number;
@@ -328,6 +335,7 @@ export class PersistentAgentObservability implements AgentObservability {
       nowMs?: () => number;
       nextId?: () => string;
       telemetrySink?: TelemetrySink;
+      attemptBudget?: { reserveAttempt(gameId: string, updatedAt: string): boolean };
     } = {},
   ) {}
 
@@ -360,6 +368,10 @@ export class PersistentAgentObservability implements AgentObservability {
     } catch {
       valid = false;
       checks.push('context_boundary_violation');
+    }
+
+    if (valid && this.options.attemptBudget && !this.options.attemptBudget.reserveAttempt(trace.gameId, now.toISOString())) {
+      throw new AgentRequestBudgetExceededError(trace.gameId);
     }
 
     const attemptNumber = this.attempts.begin({

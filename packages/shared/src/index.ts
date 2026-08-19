@@ -3,6 +3,7 @@ export * from './agent-roles.js';
 export * from './api.js';
 export * from './model-profile.js';
 export * from './commands.js';
+export * from './character-profile.js';
 export * from './content-validation.js';
 export * from './developer.js';
 export * from './enums.js';

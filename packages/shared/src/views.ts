@@ -21,7 +21,9 @@ export const playerSchema = z
     kind: playerKindSchema,
     displayName: z.string().trim().min(1).max(12),
     alive: z.boolean(),
+    agentRoleId: identifierSchema.optional(),
     agentRoleDisplay: z.string().trim().min(1).max(32).optional(),
+    characterAssetKey: z.string().trim().min(1).max(128).optional(),
   })
   .strict();
 
@@ -38,6 +40,8 @@ export const gameConfigSchema = z
   .object({
     difficulty: difficultySchema,
     undercoverCount: z.number().int().positive(),
+    participationMode: z.enum(['human', 'observer']).optional(),
+    requestBudget: z.number().int().min(1).max(500).optional(),
   })
   .strict();
 
@@ -124,6 +128,16 @@ export const operationalStatusSchema = z.object({
     .optional(),
 });
 
+export const automationControlSchema = z
+  .object({
+    mode: z.enum(['auto', 'paused', 'step']),
+    usedRequests: z.number().int().nonnegative(),
+    requestBudget: z.number().int().positive().nullable(),
+    remainingRequests: z.number().int().nonnegative().nullable(),
+    pauseReason: z.enum(['user', 'budget_exhausted']).nullable(),
+  })
+  .strict();
+
 export const humanGameViewSchema = z
   .object({
     gameId: identifierSchema,
@@ -132,7 +146,8 @@ export const humanGameViewSchema = z
     revision: z.number().int().nonnegative(),
     eventCursor: z.number().int().nonnegative(),
     config: gameConfigSchema,
-    human: humanProfileSchema,
+    controllerId: identifierSchema.optional(),
+    human: humanProfileSchema.nullable(),
     players: z.array(playerSchema).min(1),
     round: roundViewSchema.nullable(),
     publicTimeline: z.array(publicTimelineItemSchema),
@@ -155,6 +170,7 @@ export const humanGameViewSchema = z
     factReview: factReviewSchema.optional(),
     allowedCommands: z.array(z.string().trim().min(1)),
     operationalStatus: operationalStatusSchema,
+    automationControl: automationControlSchema.optional(),
   })
   .strict()
   .superRefine((view, context) => {
@@ -222,4 +238,5 @@ export type FinaleReveal = z.infer<typeof finaleRevealSchema>;
 export type FinaleAgentAction = z.infer<typeof finaleAgentActionSchema>;
 export type FactReview = z.infer<typeof factReviewSchema>;
 export type OperationalStatus = z.infer<typeof operationalStatusSchema>;
+export type AutomationControl = z.infer<typeof automationControlSchema>;
 export type HumanGameView = z.infer<typeof humanGameViewSchema>;

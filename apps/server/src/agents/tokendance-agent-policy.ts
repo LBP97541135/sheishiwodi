@@ -10,6 +10,7 @@ import {
 
 import type { AgentActContext, AgentPolicy } from './agent-policy.js';
 import {
+  AgentRequestBudgetExceededError,
   ContextBoundaryViolationError,
   noOpAgentObservability,
   type AgentObservability,
@@ -134,7 +135,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     context?: AgentActContext,
   ): Promise<SpeechActionOutput | VoteActionOutput> {
     const roleId = context?.agentRoleId ?? '';
-    const modelId = this.roleModelMap[roleId];
+    const modelId = context?.modelId ?? this.roleModelMap[roleId];
     if (!modelId) {
       throw new AgentSystemError('MODEL_NOT_CONFIGURED', roleId);
     }
@@ -172,6 +173,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
           attemptKind,
         });
       } catch (error) {
+        if (error instanceof AgentRequestBudgetExceededError) throw error;
         if (error instanceof ContextBoundaryViolationError) {
           throw new AgentSystemError('CONTEXT_BOUNDARY_VIOLATION', roleId);
         }

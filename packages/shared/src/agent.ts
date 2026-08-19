@@ -53,6 +53,7 @@ export const agentTurnInputSchema = z
       .object({
         undercoverCount: z.number().int().positive(),
         difficulty: z.enum(['easy', 'hard']),
+        participationMode: z.enum(['human', 'observer']).optional(),
       })
       .strict(),
     players: z.array(

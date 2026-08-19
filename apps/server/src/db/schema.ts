@@ -95,6 +95,27 @@ export const agentActions = sqliteTable('agent_actions', {
   completedAt: text('completed_at').notNull(),
 });
 
+export const gameControls = sqliteTable('game_controls', {
+  gameId: text('game_id').primaryKey(),
+  mode: text('mode').notNull(),
+  requestBudget: integer('request_budget'),
+  usedRequests: integer('used_requests').notNull(),
+  pauseReason: text('pause_reason'),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const characterProfiles = sqliteTable('character_profiles', {
+  profileId: text('profile_id').primaryKey(),
+  displayName: text('display_name').notNull(),
+  intro: text('intro').notNull(),
+  personalityTagsJson: text('personality_tags_json').notNull(),
+  personalityPrompt: text('personality_prompt').notNull(),
+  modelBindingsJson: text('model_bindings_json').notNull(),
+  assetManifestJson: text('asset_manifest_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 export const modelAttempts = sqliteTable(
   'model_attempts',
   {

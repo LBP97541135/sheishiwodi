@@ -2,9 +2,11 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import {
   abandonGameRequestSchema,
+  addRequestBudgetSchema,
   activeGameDataSchema,
   apiErrorResponseSchema,
   apiSuccessSchema,
+  automationControlRequestSchema,
   createGameRequestSchema,
   continueSpectatingRequestSchema,
   humanGameViewSchema,
@@ -168,6 +170,42 @@ export function registerGameRoutes(
             },
           }),
         );
+      } catch (error) {
+        return sendGameError(reply, error);
+      }
+    },
+  );
+
+  server.put<{ Params: { gameId: string } }>(
+    '/api/games/:gameId/automation',
+    async (request, reply) => {
+      const parsed = automationControlRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send(apiErrorResponseSchema.parse({
+          error: { code: 'VALIDATION_ERROR', message: '自动运行控制不合法', details: {} },
+        }));
+      }
+      try {
+        const view = await gameService.setAutomationMode(request.params.gameId, parsed.data.mode);
+        return reply.send(apiSuccessSchema(humanGameViewSchema).parse({ data: view }));
+      } catch (error) {
+        return sendGameError(reply, error);
+      }
+    },
+  );
+
+  server.post<{ Params: { gameId: string } }>(
+    '/api/games/:gameId/request-budget',
+    async (request, reply) => {
+      const parsed = addRequestBudgetSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send(apiErrorResponseSchema.parse({
+          error: { code: 'VALIDATION_ERROR', message: '追加请求预算不合法', details: {} },
+        }));
+      }
+      try {
+        const view = gameService.addRequestBudget(request.params.gameId, parsed.data.amount);
+        return reply.send(apiSuccessSchema(humanGameViewSchema).parse({ data: view }));
       } catch (error) {
         return sendGameError(reply, error);
       }

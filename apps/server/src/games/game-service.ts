@@ -24,6 +24,7 @@ import {
   type MachineTransition,
   type PublicTimelineItem,
   type RandomSource,
+  type AgentRoleDefinition,
   type ResolveInterruptedGameRequest,
   type SpeechActionOutput,
   type StartGameCommand,
@@ -44,6 +45,8 @@ import type { AgentObservability } from '../agents/agent-observability.js';
 import { AgentSystemError } from '../agents/tokendance-agent-policy.js';
 import type { GameRepository, PublicStreamFrame } from './game-repository.js';
 import type { GameRecoveryRepository } from './game-recovery-repository.js';
+import { AgentRequestBudgetExceededError } from '../agents/agent-observability.js';
+import type { GameControlRepository, AutomationMode } from './game-control-repository.js';
 
 export type GameServiceErrorCode =
   | 'ACTIVE_GAME_EXISTS'
@@ -84,6 +87,9 @@ export class GameService {
       /** 对局活动状态变化后唤醒低优先级后台调度。 */
       onGameActivityChanged?: () => void;
       agentObservability?: AgentObservability;
+      gameControls?: GameControlRepository;
+      maxAgentConcurrency?: number;
+      resolveAgentRole?: (roleId: string) => AgentRoleDefinition | undefined;
     },
     private readonly recovery?: GameRecoveryRepository,
   ) {
@@ -100,17 +106,25 @@ export class GameService {
       if (processed.requestHash !== requestHash) {
         throw new GameServiceError('IDEMPOTENCY_CONFLICT');
       }
-      return processed.response;
+      return this.decorateAutomation(processed.response);
     }
     if (this.games.findActiveSnapshot()) {
       throw new GameServiceError('ACTIVE_GAME_EXISTS');
     }
 
-    const transition = createPreparingGame(
-      command,
-      this.wordPairs.listEnabled(command.difficulty),
-      this.dependencies,
-    );
+    let transition: ReturnType<typeof createPreparingGame>;
+    try {
+      transition = createPreparingGame(
+        command,
+        this.wordPairs.listEnabled(command.difficulty),
+        this.dependencies,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === 'UNKNOWN_AGENT_ROLE') {
+        throw new GameServiceError('MODEL_CONFIGURATION_REQUIRED');
+      }
+      throw error;
+    }
     const view = projectHumanGameView(transition.snapshot);
 
     try {
@@ -128,8 +142,16 @@ export class GameService {
       throw error;
     }
 
+    this.dependencies.gameControls?.initialize(
+      transition.snapshot.gameId,
+      transition.snapshot.config.participationMode === 'observer'
+        ? (transition.snapshot.config.requestBudget ?? null)
+        : null,
+      transition.snapshot.updatedAt,
+    );
+
     this.dependencies.onGameActivityChanged?.();
-    return view;
+    return this.decorateAutomation(view);
   }
 
   async startGame(command: StartGameCommand): Promise<HumanGameView> {
@@ -139,7 +161,7 @@ export class GameService {
       if (processed.requestHash !== requestHash) {
         throw new GameServiceError('IDEMPOTENCY_CONFLICT');
       }
-      return processed.response;
+      return this.decorateAutomation(processed.response);
     }
 
     const current = this.games.findSnapshot(command.gameId);
@@ -170,7 +192,7 @@ export class GameService {
     }
 
     await this.settleAdvance(command.gameId, command.commandId);
-    return this.decorateRecovery(this.games.getHumanView(command.gameId)!);
+    return this.decorateAutomation(this.decorateRecovery(this.games.getHumanView(command.gameId)!));
   }
 
   continueSpectating(command: ContinueSpectatingCommand): Promise<HumanGameView> {
@@ -230,7 +252,7 @@ export class GameService {
   getActiveGame() {
     const active = this.games.findActiveSnapshot();
     const view = active ? this.games.getHumanView(active.gameId) : null;
-    return view ? this.decorateRecovery(view) : null;
+    return view ? this.decorateAutomation(this.decorateRecovery(view)) : null;
   }
 
   /** 存在进行中或待观战确认的对局时，禁止修改模型配置。preparing 与无局时允许。 */
@@ -244,7 +266,52 @@ export class GameService {
     if (!view) {
       throw new GameServiceError('GAME_NOT_FOUND');
     }
-    return this.decorateRecovery(view);
+    return this.decorateAutomation(this.decorateRecovery(view));
+  }
+
+  async setAutomationMode(gameId: string, mode: AutomationMode) {
+    const snapshot = this.games.findSnapshot(gameId);
+    const controls = this.dependencies.gameControls;
+    if (!snapshot) throw new GameServiceError('GAME_NOT_FOUND');
+    if (
+      !controls ||
+      snapshot.config.participationMode !== 'observer' ||
+      !['preparing', 'in_progress'].includes(snapshot.status)
+    ) {
+      throw new GameServiceError('INVALID_TRANSITION');
+    }
+    if (!controls.setMode(gameId, mode, this.dependencies.clock.now())) {
+      throw new GameServiceError('INVALID_TRANSITION');
+    }
+    this.games.appendOperationalFrame({
+      gameId,
+      type: 'automation_control_changed',
+      payload: { mode },
+      occurredAt: this.dependencies.clock.now(),
+    });
+    if (snapshot.status === 'in_progress' && mode !== 'paused') {
+      await this.settleAdvance(gameId, `control/${gameId}/${mode}/${snapshot.revision}`);
+    }
+    return this.getGame(gameId);
+  }
+
+  addRequestBudget(gameId: string, amount: number) {
+    const snapshot = this.games.findSnapshot(gameId);
+    const controls = this.dependencies.gameControls;
+    if (!snapshot) throw new GameServiceError('GAME_NOT_FOUND');
+    if (!controls || snapshot.config.participationMode !== 'observer' || snapshot.status !== 'in_progress') {
+      throw new GameServiceError('INVALID_TRANSITION');
+    }
+    if (!controls.addBudget(gameId, amount, this.dependencies.clock.now())) {
+      throw new GameServiceError('INVALID_TRANSITION');
+    }
+    this.games.appendOperationalFrame({
+      gameId,
+      type: 'request_budget_changed',
+      payload: { added: amount },
+      occurredAt: this.dependencies.clock.now(),
+    });
+    return this.getGame(gameId);
   }
 
   async resolveInterruptedGame(
@@ -265,7 +332,7 @@ export class GameService {
       }
       await this.settleAdvance(gameId, request.commandId);
       this.dependencies.onGameActivityChanged?.();
-      return this.decorateRecovery(this.games.getHumanView(gameId)!);
+      return this.decorateAutomation(this.decorateRecovery(this.games.getHumanView(gameId)!));
     }
 
     const transition = declineInterruptedGame(
@@ -295,7 +362,7 @@ export class GameService {
     });
     recovery.resolve(gameId, 'start_new', this.dependencies.clock.now());
     this.dependencies.onGameActivityChanged?.();
-    return view;
+    return this.decorateAutomation(view);
   }
 
   private async applyHumanTransition(
@@ -313,7 +380,7 @@ export class GameService {
       if (processed.requestHash !== requestHash) {
         throw new GameServiceError('IDEMPOTENCY_CONFLICT');
       }
-      return processed.response;
+      return this.decorateAutomation(processed.response);
     }
 
     const current = this.games.findSnapshot(command.gameId);
@@ -349,7 +416,7 @@ export class GameService {
 
     await this.settleAdvance(command.gameId, command.commandId);
     this.dependencies.onGameActivityChanged?.();
-    return this.decorateRecovery(this.games.getHumanView(command.gameId)!);
+    return this.decorateAutomation(this.decorateRecovery(this.games.getHumanView(command.gameId)!));
   }
 
   private decorateRecovery(view: HumanGameView): HumanGameView {
@@ -359,6 +426,11 @@ export class GameService {
       allowedCommands: ['ResolveInterruptedGame'],
       operationalStatus: { state: 'interrupted' },
     };
+  }
+
+  private decorateAutomation(view: HumanGameView): HumanGameView {
+    const control = this.dependencies.gameControls?.get(view.gameId);
+    return control ? { ...view, automationControl: control } : view;
   }
 
   /**
@@ -430,6 +502,7 @@ export class GameService {
     let batchCovers = new Set<string>();
     let voteFailures = new Map<string, unknown>();
     let voteAttemptIds = new Map<string, string>();
+    let stepBoundary: { roundNumber: number; actionType: string } | null = null;
     for (let guard = 0; guard < 500; guard += 1) {
       const snapshot = this.games.findSnapshot(gameId);
       if (!snapshot || snapshot.status !== 'in_progress' || !snapshot.round) {
@@ -441,6 +514,17 @@ export class GameService {
       if (!actor || !actor.alive || actor.kind !== 'agent') {
         this.finalizePendingAttempts(voteAttemptIds);
         return;
+      }
+      const control = this.dependencies.gameControls?.get(gameId);
+      const hasInFlightVoteResult =
+        batchCovers.has(actor.playerId) &&
+        (voteBatch?.has(actor.playerId) === true || voteFailures.has(actor.playerId));
+      if (control?.mode === 'paused' && !hasInFlightVoteResult) {
+        this.finalizePendingAttempts(voteAttemptIds);
+        return;
+      }
+      if (control?.mode === 'step' && !stepBoundary) {
+        stepBoundary = { roundNumber: round.number, actionType: round.actionType };
       }
       if (
         round.actionType !== 'describe' &&
@@ -489,6 +573,16 @@ export class GameService {
       const cached = isVotePhase ? voteBatch?.get(actor.playerId) : undefined;
       const cachedFailure = isVotePhase ? voteFailures.get(actor.playerId) : undefined;
       if (cachedFailure) {
+        if (cachedFailure instanceof AgentRequestBudgetExceededError) {
+          this.games.appendOperationalFrame({
+            gameId,
+            type: 'request_budget_exhausted',
+            payload: { state: 'paused' },
+            occurredAt: this.dependencies.clock.now(),
+          });
+          this.finalizePendingAttempts(voteAttemptIds);
+          return;
+        }
         this.finalizePendingAttempts(voteAttemptIds);
         if (cachedFailure instanceof AgentSystemError) {
           this.terminateForSystemError(gameId, snapshot, commandId, cachedFailure.code, publicEvents);
@@ -507,6 +601,7 @@ export class GameService {
           try {
             output = await policy.act(input, {
               agentRoleId: actor.agentRoleId ?? actor.playerId,
+              ...(actor.agentModelId ? { modelId: actor.agentModelId } : {}),
               ...(contentRetry ? { contentRetry } : {}),
               lifecycle,
               trace: this.agentTrace(
@@ -517,6 +612,15 @@ export class GameService {
               ),
             });
           } catch (error) {
+            if (error instanceof AgentRequestBudgetExceededError) {
+              this.games.appendOperationalFrame({
+                gameId,
+                type: 'request_budget_exhausted',
+                payload: { state: 'paused' },
+                occurredAt: this.dependencies.clock.now(),
+              });
+              return;
+            }
             if (error instanceof AgentSystemError) {
               this.terminateForSystemError(gameId, snapshot, commandId, error.code, publicEvents);
               return;
@@ -671,6 +775,20 @@ export class GameService {
         });
         this.markAttemptStage(validatedAttemptId, 'action_committed');
         this.finalizeAttempt(validatedAttemptId, 'action_committed');
+        if (stepBoundary) {
+          const nextRound = transition.snapshot.round;
+          const voteUnit = stepBoundary.actionType === 'vote' || stepBoundary.actionType === 'revote';
+          const stepCompleted =
+            !voteUnit ||
+            transition.snapshot.status !== 'in_progress' ||
+            !nextRound ||
+            nextRound.number !== stepBoundary.roundNumber ||
+            nextRound.actionType !== stepBoundary.actionType;
+          if (stepCompleted) {
+            this.dependencies.gameControls?.setMode(gameId, 'paused', this.dependencies.clock.now());
+            stepBoundary = null;
+          }
+        }
       } catch (error) {
         if (error instanceof Error && error.message === 'REVISION_CONFLICT') {
           this.finalizeAttempt(validatedAttemptId, 'stale_discarded');
@@ -730,13 +848,16 @@ export class GameService {
     const attemptIds = new Map<string, string>();
     if (run.length < 2) return { batch, covers, failures, attemptIds }; // 单个投票者无需并行，走普通串行路径。
 
-    const settled = await Promise.allSettled(
-      run.map(async (player, index) => {
+    const settled = await allSettledWithConcurrency(
+      run,
+      this.dependencies.maxAgentConcurrency ?? 4,
+      async (player, index) => {
         const { input, provenance } = this.agentContexts.assemble(snapshot, player.playerId);
         const actionId = `auto/${gameId}/${snapshot.revision + index}/${player.playerId}/${round.actionType}`;
         const lifecycle: { validatedAttemptId?: string } = {};
         const output = await policy.act(input, {
           agentRoleId: player.agentRoleId ?? player.playerId,
+          ...(player.agentModelId ? { modelId: player.agentModelId } : {}),
           lifecycle,
           trace: this.agentTrace(
             gameId,
@@ -746,7 +867,7 @@ export class GameService {
           ),
         });
         return { playerId: player.playerId, output, attemptId: lifecycle.validatedAttemptId };
-      }),
+      },
     );
     settled.forEach((entry, index) => {
       if (entry.status === 'fulfilled') {
@@ -922,3 +1043,27 @@ const mapMachineError = (error: unknown): unknown => {
   }
   return error;
 };
+
+async function allSettledWithConcurrency<T, R>(
+  values: readonly T[],
+  requestedLimit: number,
+  worker: (value: T, index: number) => Promise<R>,
+): Promise<Array<PromiseSettledResult<R>>> {
+  const results = new Array<PromiseSettledResult<R>>(values.length);
+  const limit = Math.max(1, Math.min(values.length, Math.trunc(requestedLimit) || 1));
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: limit }, async () => {
+      for (;;) {
+        const index = cursor++;
+        if (index >= values.length) return;
+        try {
+          results[index] = { status: 'fulfilled', value: await worker(values[index]!, index) };
+        } catch (reason) {
+          results[index] = { status: 'rejected', reason };
+        }
+      }
+    }),
+  );
+  return results;
+}

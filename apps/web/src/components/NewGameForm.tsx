@@ -1,215 +1,199 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { ArrowLeft, Bot, Settings2, UserRound, Users } from 'lucide-react';
 
-import type { CreateGameRequest } from '@sheishiwodi/shared';
+import type { CharacterProfileList, CreateGameRequest } from '@sheishiwodi/shared';
 
+import { getCharacterProfiles } from '../api';
 import { characterAssets } from '../character-assets';
 
 interface NewGameFormProps {
   busy: boolean;
   onCreate(input: CreateGameRequest): Promise<void>;
   onOpenGuessMode(trigger: HTMLButtonElement): void;
+  onOpenRoleLibrary(): void;
 }
 
-export function NewGameForm({ busy, onCreate, onOpenGuessMode }: NewGameFormProps) {
+export function NewGameForm({ busy, onCreate, onOpenGuessMode, onOpenRoleLibrary }: NewGameFormProps) {
   const [displayName, setDisplayName] = useState('');
   const [silhouette, setSilhouette] = useState<'silhouette_a' | 'silhouette_b'>('silhouette_a');
   const [difficulty, setDifficulty] = useState<'easy' | 'hard'>('easy');
+  const [participationMode, setParticipationMode] = useState<'human' | 'observer'>('human');
+  const [totalPlayers, setTotalPlayers] = useState(4);
+  const [requestBudget, setRequestBudget] = useState(80);
+  const [profiles, setProfiles] = useState<CharacterProfileList | null>(null);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+  const [configuring, setConfiguring] = useState(false);
   const [validation, setValidation] = useState<string | null>(null);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [silhouetteDraft, setSilhouetteDraft] = useState<'silhouette_a' | 'silhouette_b'>('silhouette_a');
   const nameTriggerRef = useRef<HTMLButtonElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const nameDialogRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    void getCharacterProfiles().then(setProfiles).catch(() => setValidation('角色库暂时无法读取'));
+  }, []);
+
+  const eligibleProfiles = useMemo(
+    () => profiles?.profiles.filter((profile) =>
+      profile.complete &&
+      profile.allowedParticipantKinds.includes('agent') &&
+      (profiles.providerMode === 'fake' || Boolean(profile.selectedModelId))) ?? [],
+    [profiles],
+  );
+  const agentCount = totalPlayers - (participationMode === 'human' ? 1 : 0);
+
+  useEffect(() => {
+    setSelectedRoleIds((current) => {
+      const kept = current.filter((id) => eligibleProfiles.some((profile) => profile.profileId === id));
+      const next = kept.slice(0, agentCount);
+      for (const profile of eligibleProfiles) {
+        if (next.length >= agentCount) break;
+        if (!next.includes(profile.profileId)) next.push(profile.profileId);
+      }
+      return next;
+    });
+    if (profiles?.providerMode !== 'fake' && participationMode === 'observer') {
+      setRequestBudget((current) => Math.max(current, totalPlayers * 20));
+    }
+  }, [agentCount, eligibleProfiles, participationMode, profiles?.providerMode, totalPlayers]);
 
   const closeNameDialog = useCallback(() => {
     setNameDialogOpen(false);
     nameTriggerRef.current?.focus();
   }, []);
 
-  const saveName = useCallback(() => {
-    setDisplayName(nameDraft.trim());
-    setSilhouette(silhouetteDraft);
-    setValidation(null);
-    closeNameDialog();
-  }, [closeNameDialog, nameDraft, silhouetteDraft]);
-
   useEffect(() => {
     if (!nameDialogOpen) return;
     nameInputRef.current?.focus();
-    nameInputRef.current?.select();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeNameDialog();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-
-      const focusable = Array.from(
-        nameDialogRef.current?.querySelectorAll<HTMLElement>('input:not([disabled]), button:not([disabled])') ?? [],
-      );
-      const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
-      const nextIndex = event.shiftKey
-        ? (currentIndex - 1 + focusable.length) % focusable.length
-        : (currentIndex + 1) % focusable.length;
-      event.preventDefault();
-      focusable[nextIndex]?.focus();
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    const escape = (event: KeyboardEvent) => event.key === 'Escape' && closeNameDialog();
+    document.addEventListener('keydown', escape);
+    return () => document.removeEventListener('keydown', escape);
   }, [closeNameDialog, nameDialogOpen]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const trimmedName = displayName.trim();
-    if (trimmedName.length > 12) {
-      setValidation('名称不能超过 12 个字符');
+    if (selectedRoleIds.length !== agentCount) {
+      setValidation(`当前只有 ${eligibleProfiles.length} 个可用 AI 角色，请先补齐角色库`);
       return;
     }
     setValidation(null);
     void onCreate({
       commandId: crypto.randomUUID(),
-      human: {
-        displayName: trimmedName || '玩家',
-        silhouette,
-      },
+      participationMode,
+      human: { displayName: displayName.trim() || '玩家', silhouette },
+      agentRoleIds: selectedRoleIds,
       difficulty,
+      ...(profiles?.providerMode !== 'fake' && participationMode === 'observer' ? { requestBudget } : {}),
     });
   };
 
+  if (configuring) {
+    return (
+      <form className="new-game game-config" onSubmit={submit}>
+        <header className="game-config__header">
+          <button className="icon-action" type="button" title="返回模式选择" aria-label="返回模式选择" onClick={() => setConfiguring(false)}><ArrowLeft aria-hidden="true" /></button>
+          <div><p className="eyebrow">经典模式</p><h1>配置本局阵容</h1></div>
+          <span className="rule-stamp">{totalPlayers >= 6 ? 2 : 1} 名卧底</span>
+        </header>
+
+        <div className="game-config__grid">
+          <fieldset className="config-section">
+            <legend>参与方式</legend>
+            <div className="segmented-control">
+              <label><input type="radio" name="participation" checked={participationMode === 'human'} onChange={() => setParticipationMode('human')} /><UserRound aria-hidden="true" />亲自参与</label>
+              <label><input type="radio" name="participation" checked={participationMode === 'observer'} onChange={() => setParticipationMode('observer')} /><Bot aria-hidden="true" />Agent 对局</label>
+            </div>
+          </fieldset>
+
+          <fieldset className="config-section">
+            <legend>总玩家数</legend>
+            <div className="player-count-control">
+              {[4, 5, 6, 7, 8].map((count) => <button key={count} type="button" className={totalPlayers === count ? 'is-active' : ''} aria-pressed={totalPlayers === count} onClick={() => setTotalPlayers(count)}>{count}</button>)}
+            </div>
+          </fieldset>
+
+          <fieldset className="config-section config-section--roster">
+            <legend><Users aria-hidden="true" />AI 阵容</legend>
+            <div className="roster-selects">
+              {Array.from({ length: agentCount }, (_, index) => (
+                <label key={index}>
+                  <span>席位 {index + 1 + (participationMode === 'human' ? 1 : 0)}</span>
+                  <select value={selectedRoleIds[index] ?? ''} onChange={(event) => setSelectedRoleIds((current) => {
+                    const next = [...current];
+                    next[index] = event.target.value;
+                    return next;
+                  })}>
+                    <option value="">选择角色</option>
+                    {eligibleProfiles.map((profile) => (
+                      <option key={profile.profileId} value={profile.profileId} disabled={selectedRoleIds.some((id, seat) => seat !== index && id === profile.profileId)}>{profile.displayName}{profile.source === 'custom' ? ' · 自建' : ''}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+            {eligibleProfiles.length < agentCount && <button className="text-action" type="button" onClick={onOpenRoleLibrary}>前往角色库补齐角色</button>}
+          </fieldset>
+
+          <fieldset className="config-section">
+            <legend>词语难度</legend>
+            <div className="segmented-control">
+              <label><input type="radio" name="difficulty" checked={difficulty === 'easy'} onChange={() => setDifficulty('easy')} />简单</label>
+              <label><input type="radio" name="difficulty" checked={difficulty === 'hard'} onChange={() => setDifficulty('hard')} />困难</label>
+            </div>
+          </fieldset>
+
+          {profiles?.providerMode !== 'fake' && participationMode === 'observer' && (
+            <label className="config-section budget-field"><span>真实请求预算</span><input type="number" min={1} max={500} value={requestBudget} onChange={(event) => setRequestBudget(Number(event.target.value))} /></label>
+          )}
+        </div>
+        {validation && <p className="form-error" role="alert">{validation}</p>}
+        <button className="primary-action game-config__start" type="submit" disabled={busy || !profiles}>{busy ? '正在创建…' : '创建对局'}</button>
+      </form>
+    );
+  }
+
   return (
-    <form className="new-game" onSubmit={submit}>
+    <section className="new-game">
       <header className="new-game__header">
-        <p className="eyebrow">新对局 · 固定四人阵容</p>
+        <p className="eyebrow">AI 多角色推理对局</p>
         <h1 aria-label="谁是卧底">
-          <button
-            ref={nameTriggerRef}
-            className="title-name-trigger"
-            type="button"
-            aria-haspopup="dialog"
-            aria-label={`编辑玩家身份，当前名称为${displayName.trim() || '玩家'}`}
-            onClick={() => {
-              setNameDraft(displayName);
-              setSilhouetteDraft(silhouette);
-              setNameDialogOpen(true);
-            }}
-          >
-            谁
-          </button>
-          <span>是卧底</span>
+          <button ref={nameTriggerRef} className="title-name-trigger" type="button" aria-haspopup="dialog" aria-label={`编辑玩家身份，当前名称为${displayName.trim() || '玩家'}`} onClick={() => {
+            setNameDraft(displayName);
+            setSilhouetteDraft(silhouette);
+            setNameDialogOpen(true);
+          }}>谁</button><span>是卧底</span>
         </h1>
-        <p className="lede">你只会看到自己的词牌。阵营、其他词牌和 AI 判断在终局前保持隐藏。</p>
       </header>
-
-      {validation && <p className="form-error">{validation}</p>}
       <div className="game-mode-actions" role="group" aria-label="选择游戏模式">
-        <button className="primary-action game-mode-actions__classic" type="submit" disabled={busy}>
-          <strong>{busy ? '正在创建…' : '经典模式'}</strong>
-          {!busy && <span aria-hidden="true">开始游戏</span>}
-        </button>
-        <button
-          className="secondary-action game-mode-actions__guess"
-          type="button"
-          disabled={busy}
-          aria-haspopup="dialog"
-          onClick={(event) => onOpenGuessMode(event.currentTarget)}
-        >
-          猜词模式
-        </button>
-      </div>
-
-      <div className="new-game__setup">
-        <fieldset className="difficulty-field">
-          <legend>词语难度</legend>
-          <div className="choice-grid choice-grid--difficulty">
-            {([
-              ['easy', '简单', '关联更直观'],
-              ['hard', '困难', '更考验措辞'],
-            ] as const).map(([value, label, description]) => (
-              <label className="choice-card choice-card--text" key={value}>
-                <input
-                  type="radio"
-                  name="difficulty"
-                  value={value}
-                  checked={difficulty === value}
-                  onChange={() => setDifficulty(value)}
-                />
-                <strong>{label}</strong>
-                <span>{description}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        <button className="primary-action game-mode-actions__classic" type="button" disabled={busy} onClick={() => setConfiguring(true)}><strong>经典模式</strong><span aria-hidden="true">开始配置</span></button>
+        <button className="secondary-action game-mode-actions__guess" type="button" disabled={busy} onClick={(event) => onOpenGuessMode(event.currentTarget)}>猜词模式</button>
       </div>
 
       {nameDialogOpen && (
-        <div
-          className="coming-soon-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeNameDialog();
-          }}
-        >
-          <section
-            ref={nameDialogRef}
-            className="coming-soon-dialog player-name-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="player-identity-title"
-            aria-describedby="player-identity-description"
-          >
-            <p className="eyebrow">玩家身份</p>
-            <h2 id="player-identity-title">编辑玩家身份</h2>
-            <p id="player-identity-description">可以修改玩家名称和形象，名称留空时将使用“玩家”。</p>
-            <label className="field">
-              <span>玩家名称</span>
-              <input
-                ref={nameInputRef}
-                value={nameDraft}
-                maxLength={12}
-                onChange={(event) => setNameDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter') return;
-                  event.preventDefault();
-                  saveName();
-                }}
-              />
-            </label>
+        <div className="coming-soon-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeNameDialog()}>
+          <section className="coming-soon-dialog player-name-dialog" role="dialog" aria-modal="true" aria-labelledby="player-identity-title">
+            <p className="eyebrow">玩家身份</p><h2 id="player-identity-title">编辑玩家身份</h2>
+            <label className="field"><span>玩家名称</span><input ref={nameInputRef} value={nameDraft} maxLength={12} onChange={(event) => setNameDraft(event.target.value)} /></label>
             <fieldset className="player-name-dialog__appearance">
               <legend>玩家形象</legend>
               <div className="choice-grid choice-grid--silhouette">
-                {([
-                  ['silhouette_a', '男性', characterAssets['human-male'].idle],
-                  ['silhouette_b', '女性', characterAssets['human-female'].idle],
-                ] as const).map(([value, label, image]) => (
-                  <label className="choice-card choice-card--portrait" key={value}>
-                    <input
-                      type="radio"
-                      name="silhouette"
-                      value={value}
-                      checked={silhouetteDraft === value}
-                      onChange={() => setSilhouetteDraft(value)}
-                    />
-                    <img className="choice-portrait" src={image} alt="" />
-                    <strong>{label}</strong>
-                    <span className="choice-state">{silhouetteDraft === value ? '已选择' : '选择此形象'}</span>
-                  </label>
+                {([['silhouette_a', '男性', characterAssets['human-male'].idle], ['silhouette_b', '女性', characterAssets['human-female'].idle]] as const).map(([value, label, image]) => (
+                  <label className="choice-card choice-card--portrait" key={value}><input type="radio" name="silhouette" checked={silhouetteDraft === value} onChange={() => setSilhouetteDraft(value)} /><img className="choice-portrait" src={image} alt="" /><strong>{label}</strong></label>
                 ))}
               </div>
             </fieldset>
             <div className="player-name-dialog__actions">
-              <button className="secondary-action" type="button" onClick={closeNameDialog}>
-                取消
-              </button>
-              <button className="primary-action" type="button" onClick={saveName}>
-                保存身份
-              </button>
+              <button className="secondary-action" type="button" onClick={closeNameDialog}>取消</button>
+              <button className="primary-action" type="button" onClick={() => {
+                setDisplayName(nameDraft.trim());
+                setSilhouette(silhouetteDraft);
+                closeNameDialog();
+              }}><Settings2 aria-hidden="true" />保存身份</button>
             </div>
           </section>
         </div>
       )}
-    </form>
+    </section>
   );
 }

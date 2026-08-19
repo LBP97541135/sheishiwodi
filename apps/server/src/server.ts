@@ -6,6 +6,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 
 import {
+  findAgentRole,
   type Clock,
   type IdSource,
   type RandomSource,
@@ -36,9 +37,13 @@ import { DeveloperService } from './developer/developer-service.js';
 import { registerGameRoutes } from './games/game-routes.js';
 import { registerModelRoutes } from './games/model-routes.js';
 import { registerReviewRoutes } from './games/review-routes.js';
+import { CharacterProfileRepository } from './characters/character-profile-repository.js';
+import { CharacterProfileService } from './characters/character-profile-service.js';
+import { registerCharacterProfileRoutes } from './characters/character-profile-routes.js';
 import { GameRepository } from './games/game-repository.js';
 import { GameService } from './games/game-service.js';
 import { GameRecoveryRepository } from './games/game-recovery-repository.js';
+import { GameControlRepository } from './games/game-control-repository.js';
 import { ReviewService } from './games/review-service.js';
 
 export interface ServerDependencies {
@@ -62,6 +67,9 @@ export interface ServerDependencies {
   developerMode?: boolean;
   contextAudit?: ContextAuditWriter;
   providerCircuitBreaker?: ProviderCircuitBreakerPort;
+  gameControls?: GameControlRepository;
+  maxAgentConcurrency?: number;
+  characterAssetRoot?: string;
 }
 
 export function buildServer(dependencies?: ServerDependencies) {
@@ -93,6 +101,18 @@ export function buildServer(dependencies?: ServerDependencies) {
   });
 
   const gameRepository = new GameRepository(runtime.database);
+  const gameControls = runtime.gameControls ?? new GameControlRepository(runtime.database);
+  const roleModelRepository =
+    runtime.roleModelRepository ?? new AgentRoleModelRepository(runtime.database);
+  const modelProvider: ModelProviderContext =
+    runtime.modelProvider ?? {
+      mode: 'fake',
+      configured: false,
+      client: null,
+      useBuiltInRoleDefaults: true,
+      reviewModelConfigured: true,
+    };
+  const characterProfiles = new CharacterProfileRepository(runtime.database);
   const gameRecoveryRepository = new GameRecoveryRepository(runtime.database);
   const reviewService = new ReviewService(
     gameRepository,
@@ -105,9 +125,24 @@ export function buildServer(dependencies?: ServerDependencies) {
     new WordPairRepository(runtime.database),
     {
       ...runtime,
+      gameControls,
+      resolveAgentRole: (roleId: string) => {
+        const role = findAgentRole(roleId);
+        if (role) {
+          const selectedModelId = roleModelRepository.getSelection(roleId);
+          if (!selectedModelId && !modelProvider.useBuiltInRoleDefaults) return undefined;
+          return {
+            ...role,
+            defaultModelId: selectedModelId ?? role.defaultModelId,
+          };
+        }
+        return characterProfiles.resolveDefinition(roleId, modelProvider.mode);
+      },
       // 正常终局后异步生成复盘（幂等、单飞、失败仅脱敏落库，绝不阻塞主流程）。
       onGameFinished: (gameId: string) => reviewService.enqueue(gameId),
       onGameActivityChanged: () => reviewService.kick(),
+      areRequiredModelsConfigured:
+        runtime.areRequiredModelsConfigured ?? (() => modelProvider.reviewModelConfigured),
     },
     gameRecoveryRepository,
   );
@@ -115,17 +150,17 @@ export function buildServer(dependencies?: ServerDependencies) {
     developerMode: runtime.developerMode === true,
   });
   registerReviewRoutes(server, reviewService);
-
-  const roleModelRepository =
-    runtime.roleModelRepository ?? new AgentRoleModelRepository(runtime.database);
-  const modelProvider: ModelProviderContext =
-    runtime.modelProvider ?? {
-      mode: 'fake',
-      configured: false,
-      client: null,
-      useBuiltInRoleDefaults: true,
-      reviewModelConfigured: true,
-    };
+  registerCharacterProfileRoutes(
+    server,
+    new CharacterProfileService(
+      characterProfiles,
+      roleModelRepository,
+      modelProvider,
+      gameService,
+      runtime.clock,
+      runtime.characterAssetRoot ?? resolve('.local/character-assets'),
+    ),
+  );
   const modelProfileService = new ModelProfileService(
     roleModelRepository,
     modelProvider,
@@ -211,6 +246,7 @@ export function createRuntimeDependencies(): ServerDependencies {
   let randomCursor = 0;
 
   const roleModelRepository = new AgentRoleModelRepository(database);
+  const gameControls = new GameControlRepository(database);
   const contextAudit = new ContextAuditWriter(
     resolve(process.env['AGENT_AUDIT_DIR'] ?? '.local/agent-audit'),
     {
@@ -229,6 +265,7 @@ export function createRuntimeDependencies(): ServerDependencies {
   const observability = new PersistentAgentObservability(
     new ModelAttemptRepository(database),
     contextAudit,
+    { attemptBudget: gameControls },
   );
   const {
     agentPolicyFactory,
@@ -256,7 +293,10 @@ export function createRuntimeDependencies(): ServerDependencies {
     reviewPolicyFactory,
     modelProvider,
     roleModelRepository,
+    gameControls,
     areRequiredModelsConfigured,
+    maxAgentConcurrency: readPositiveInt(process.env['AGENT_MAX_CONCURRENCY'], 4),
+    characterAssetRoot: resolve(process.env['CHARACTER_ASSET_DIR'] ?? '.local/character-assets'),
     // 运行时后台推进：开始与人类操作立即返回，AI 回合异步推进并经 SSE 实时下发。
     backgroundAdvance: true,
     agentObservability: observability,

@@ -106,7 +106,7 @@ export function ReviewScreen({ game, onBack }: ReviewScreenProps) {
               key={entry.playerId}
               entry={entry}
               player={playerById.get(entry.playerId)}
-              humanSilhouette={game.human.silhouette}
+              humanSilhouette={game.human?.silhouette ?? 'silhouette_a'}
               nameOf={nameOf}
             />
           ))}
@@ -344,7 +344,7 @@ function IdentityCard({
 }: {
   entry: RevealPlayer;
   player: Player | undefined;
-  humanSilhouette: HumanGameView['human']['silhouette'];
+  humanSilhouette: NonNullable<HumanGameView['human']>['silhouette'];
   nameOf: (playerId: string | null | undefined) => string;
 }) {
   const isUndercover = entry.camp === 'undercover';
