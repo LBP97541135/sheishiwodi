@@ -12,7 +12,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { buildServer, type ServerDependencies } from '../server.js';
 import { createTestEnvironment } from '../test-environment.js';
-import type { AgentPolicy } from '../agents/agent-policy.js';
+import type { AgentActContext, AgentPolicy } from '../agents/agent-policy.js';
 
 const GENERIC_DESCRIBE = '这是一个很普通的东西';
 
@@ -578,6 +578,18 @@ describe('切片三 正常描述与投票闭环', () => {
     expect(revoting.legalVoteTargetIds).toEqual(['player-3', 'player-4']);
     expect(policy.actionTypes.filter((type) => type === 'defend')).toEqual(['defend', 'defend']);
     expect(policy.actionTypes.filter((type) => type === 'revote')).toEqual([]);
+    const voteCalls = policy.calls.filter((call) => call.actionType === 'vote');
+    const persistedVoteActionIds = environment.dependencies.database.sqlite
+      .prepare(
+        `SELECT action_id FROM agent_actions
+         WHERE game_id = ? AND action_type = 'vote' ORDER BY action_id`,
+      )
+      .all(created.gameId) as Array<{ action_id: string }>;
+    expect(voteCalls).toHaveLength(3);
+    expect(voteCalls.every((call) => call.context?.trace?.commandId === 'human-vote-tie')).toBe(true);
+    expect(voteCalls.map((call) => call.context?.trace?.actionId).sort()).toEqual(
+      persistedVoteActionIds.map((row) => row.action_id).sort(),
+    );
 
     const { data } = await readEvents(server, created.gameId);
     const defenseFrames = data.frames.filter(
@@ -908,6 +920,11 @@ async function assertPublicIsolation(
 
 class TiePolicy implements AgentPolicy {
   readonly actionTypes: AgentTurnInput['actionType'][] = [];
+  readonly calls: Array<{
+    playerId: string;
+    actionType: AgentTurnInput['actionType'];
+    context: AgentActContext | undefined;
+  }> = [];
   private readonly voteMap: Record<string, string>;
   private readonly revoteMap: Record<string, string>;
 
@@ -920,8 +937,16 @@ class TiePolicy implements AgentPolicy {
     this.revoteMap = options.revoteMap ?? {};
   }
 
-  async act(input: AgentTurnInput): Promise<SpeechActionOutput | VoteActionOutput> {
+  async act(
+    input: AgentTurnInput,
+    context?: AgentActContext,
+  ): Promise<SpeechActionOutput | VoteActionOutput> {
     this.actionTypes.push(input.actionType);
+    this.calls.push({
+      playerId: input.actor.playerId,
+      actionType: input.actionType,
+      context,
+    });
     const belief = this.belief(input);
     if (input.actionType === 'describe') {
       return { belief, text: GENERIC_DESCRIBE };

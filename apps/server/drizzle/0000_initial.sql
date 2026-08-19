@@ -85,3 +85,24 @@ CREATE TABLE IF NOT EXISTS agent_actions (
   output_json TEXT NOT NULL,
   completed_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS model_attempts (
+  attempt_id TEXT PRIMARY KEY,
+  game_id TEXT NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+  command_id TEXT NOT NULL,
+  action_id TEXT NOT NULL,
+  player_id TEXT,
+  role_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  action_type TEXT NOT NULL,
+  attempt_number INTEGER NOT NULL,
+  attempt_kind TEXT NOT NULL,
+  result_code TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  duration_ms INTEGER,
+  UNIQUE (action_id, attempt_number)
+);
+
+CREATE INDEX IF NOT EXISTS model_attempts_game_started
+ON model_attempts (game_id, started_at);

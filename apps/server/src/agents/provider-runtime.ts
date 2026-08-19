@@ -8,6 +8,10 @@ import type { ReviewPolicy } from './review-policy.js';
 import { TokendanceReviewPolicy } from './review-agent-policy.js';
 import { TokendanceAgentPolicy } from './tokendance-agent-policy.js';
 import { TokendanceClient } from './tokendance-client.js';
+import {
+  noOpAgentObservability,
+  type AgentObservability,
+} from './agent-observability.js';
 
 export interface RoleModelSelectionSource {
   listSelections(): Record<string, string>;
@@ -32,13 +36,14 @@ export function resolveAgentProvider(
   roleModels: RoleModelSelectionSource,
   fakeScenario: FakeAgentScenario,
   env: ProviderEnvironment = process.env,
+  observability: AgentObservability = noOpAgentObservability,
 ): ResolvedAgentProvider {
   const provider = (env['AGENT_PROVIDER'] ?? 'fake').trim();
   if (provider === 'tokendance') {
-    return resolveTokendance(roleModels, fakeScenario, env);
+    return resolveTokendance(roleModels, fakeScenario, env, observability);
   }
   if (provider === 'openai-compatible') {
-    return resolveOpenAiCompatible(roleModels, fakeScenario, env);
+    return resolveOpenAiCompatible(roleModels, fakeScenario, env, observability);
   }
   return fakeProvider(fakeScenario, 'fake', true, true);
 }
@@ -47,6 +52,7 @@ function resolveTokendance(
   roleModels: RoleModelSelectionSource,
   fakeScenario: FakeAgentScenario,
   env: ProviderEnvironment,
+  observability: AgentObservability,
 ): ResolvedAgentProvider {
   const baseUrl = valueOf(env, 'TOKENDANCE_BASE_URL');
   const apiKey = valueOf(env, 'TOKENDANCE_API_KEY');
@@ -86,6 +92,7 @@ function resolveTokendance(
     debug: valueOf(env, 'AGENT_DEBUG_TIMING') === '1',
     modelExtraBodies: {},
     areRequiredModelsConfigured: () => true,
+    observability,
   });
 }
 
@@ -93,6 +100,7 @@ function resolveOpenAiCompatible(
   roleModels: RoleModelSelectionSource,
   fakeScenario: FakeAgentScenario,
   env: ProviderEnvironment,
+  observability: AgentObservability,
 ): ResolvedAgentProvider {
   const baseUrl = valueOf(env, 'OPENAI_COMPATIBLE_BASE_URL');
   const apiKey = valueOf(env, 'OPENAI_COMPATIBLE_API_KEY');
@@ -126,6 +134,7 @@ function resolveOpenAiCompatible(
     debug: valueOf(env, 'AGENT_DEBUG_TIMING') === '1',
     modelExtraBodies: parseModelExtraBodyMap(env['OPENAI_COMPATIBLE_MODEL_EXTRA_BODY']),
     areRequiredModelsConfigured,
+    observability,
   });
 }
 
@@ -141,6 +150,7 @@ function realProvider(options: {
   debug: boolean;
   modelExtraBodies: ModelExtraBodyMap;
   areRequiredModelsConfigured: () => boolean;
+  observability: AgentObservability;
 }): ResolvedAgentProvider {
   return {
     agentPolicyFactory: () =>
@@ -152,6 +162,7 @@ function realProvider(options: {
         debug: options.debug,
         reasoningHints: options.reasoningHints,
         extraBodyForModel: (modelId) => extraBodyForModel(options.modelExtraBodies, modelId),
+        observability: options.observability,
       }),
     reviewPolicyFactory: () =>
       new TokendanceReviewPolicy({
@@ -161,6 +172,7 @@ function realProvider(options: {
         retryDelayMs: options.retryDelayMs,
         reasoningHints: options.reasoningHints,
         extraBodyForModel: (modelId) => extraBodyForModel(options.modelExtraBodies, modelId),
+        observability: options.observability,
       }),
     modelProvider: {
       mode: options.mode,

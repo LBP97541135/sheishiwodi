@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import type {
+  AgentObservability,
+  AttemptHandle,
+  ModelAttemptKind,
+} from './agent-observability.js';
 import type { ReviewInput } from './review-policy.js';
 import { TokendanceReviewPolicy } from './review-agent-policy.js';
 import type { ChatMessage, TokendanceClient } from './tokendance-client.js';
@@ -23,6 +28,39 @@ class CapturingClient {
       })),
       overall: '平民通过第一轮描述差异快速形成交叉验证，统一投票成为胜负手；关键转折是卧底没有及时修正过度宽泛的表达，若其第二次发言能贴近公共语义，局势仍有机会延后。',
     });
+  }
+}
+
+class CapturingObservability implements AgentObservability {
+  readonly reviewAttempts: Array<{
+    commandId: string;
+    actionId: string;
+    modelId: string;
+    attemptKind: ModelAttemptKind;
+  }> = [];
+  readonly results: string[] = [];
+
+  beginPlayerAttempt(): AttemptHandle {
+    throw new Error('Unexpected player attempt');
+  }
+
+  beginReviewAttempt(input: {
+    commandId: string;
+    actionId: string;
+    modelId: string;
+    attemptKind: ModelAttemptKind;
+  }): AttemptHandle {
+    this.reviewAttempts.push({
+      commandId: input.commandId,
+      actionId: input.actionId,
+      modelId: input.modelId,
+      attemptKind: input.attemptKind,
+    });
+    return { attemptId: `review-attempt-${this.reviewAttempts.length}`, startedAtMs: 0 };
+  }
+
+  finishAttempt(_handle: AttemptHandle, resultCode: string): void {
+    this.results.push(resultCode);
   }
 }
 
@@ -84,5 +122,30 @@ describe('TokendanceReviewPolicy prompt', () => {
 
     await policy.generate(input);
     expect(client.extraBodies[0]).toEqual({ enable_thinking: false });
+  });
+
+  it('将复盘调用关联到命令、动作和独立 attempt', async () => {
+    const client = new CapturingClient();
+    const observability = new CapturingObservability();
+    const policy = new TokendanceReviewPolicy({
+      client: client as unknown as TokendanceClient,
+      modelId: 'review-model',
+      observability,
+    });
+
+    await policy.generate(input, {
+      commandId: 'review/game-review-prompt',
+      actionId: 'review/game-review-prompt',
+    });
+
+    expect(observability.reviewAttempts).toEqual([
+      {
+        commandId: 'review/game-review-prompt',
+        actionId: 'review/game-review-prompt',
+        modelId: 'review-model',
+        attemptKind: 'initial',
+      },
+    ]);
+    expect(observability.results).toEqual(['success']);
   });
 });

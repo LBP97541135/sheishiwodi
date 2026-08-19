@@ -155,7 +155,7 @@ export class GameService {
       throw mapMachineError(error);
     }
 
-    await this.settleAdvance(command.gameId);
+    await this.settleAdvance(command.gameId, command.commandId);
     return this.games.getHumanView(command.gameId)!;
   }
 
@@ -192,12 +192,16 @@ export class GameService {
   async resumeActiveGame() {
     const active = this.games.findActiveSnapshot();
     if (active?.status === 'in_progress') {
-      await this.advanceUntilHumanOrStop(active.gameId);
+      await this.advanceUntilHumanOrStop(
+        active.gameId,
+        `resume/${active.gameId}/${active.revision}`,
+      );
     }
   }
 
   async resumeGame(gameId: string) {
-    await this.advanceUntilHumanOrStop(gameId);
+    const snapshot = this.games.findSnapshot(gameId);
+    await this.advanceUntilHumanOrStop(gameId, `resume/${gameId}/${snapshot?.revision ?? 0}`);
   }
 
   getEvents(gameId: string, after: number): { frames: PublicStreamFrame[]; eventCursor: number } {
@@ -276,7 +280,7 @@ export class GameService {
       throw mapMachineError(error);
     }
 
-    await this.settleAdvance(command.gameId);
+    await this.settleAdvance(command.gameId, command.commandId);
     return this.games.getHumanView(command.gameId)!;
   }
 
@@ -284,27 +288,27 @@ export class GameService {
    * 提交命令后驱动 AI 回合：运行时后台推进（立即返回，AI 回合异步跑、经 SSE 下发），
    * 测试同步 await（断言可确定读到已推进状态）。后台失败仅脱敏记日志，绝不外泄 Key/URL。
    */
-  private async settleAdvance(gameId: string) {
+  private async settleAdvance(gameId: string, rootCommandId: string) {
     if (this.backgroundAdvance) {
-      void this.advanceUntilHumanOrStop(gameId).catch((error: unknown) => {
+      void this.advanceUntilHumanOrStop(gameId, rootCommandId).catch((error: unknown) => {
         console.error('[advance] 后台推进失败：', error instanceof Error ? error.name : 'unknown');
       });
       return;
     }
-    await this.advanceUntilHumanOrStop(gameId);
+    await this.advanceUntilHumanOrStop(gameId, rootCommandId);
   }
 
-  private async advanceUntilHumanOrStop(gameId: string) {
+  private async advanceUntilHumanOrStop(gameId: string, rootCommandId: string) {
     if (this.advancingGames.has(gameId)) return;
     this.advancingGames.add(gameId);
     try {
-      await this.runAdvanceLoop(gameId);
+      await this.runAdvanceLoop(gameId, rootCommandId);
     } finally {
       this.advancingGames.delete(gameId);
     }
   }
 
-  private async runAdvanceLoop(gameId: string) {
+  private async runAdvanceLoop(gameId: string, rootCommandId: string) {
     const policy = this.agentPolicyFactory();
     // 投票/重投阶段的并行预取批次：描述必须串行，但同一阶段各票互不可见、互不依赖，
     // 可把“当前起、到第一个人类为止的连续 AI 投票者”的模型调用并行预取，再按机器顺序逐个提交。
@@ -347,7 +351,13 @@ export class GameService {
         voteFailures = new Map();
       }
       if (isVotePhase && !batchCovers.has(actor.playerId)) {
-        const prefetched = await this.prefetchVoteBatch(gameId, snapshot, round, policy);
+        const prefetched = await this.prefetchVoteBatch(
+          gameId,
+          snapshot,
+          round,
+          policy,
+          rootCommandId,
+        );
         voteBatch = prefetched.batch;
         batchCovers = prefetched.covers;
         voteFailures = prefetched.failures;
@@ -375,6 +385,13 @@ export class GameService {
             output = await policy.act(input, {
               agentRoleId: actor.agentRoleId ?? actor.playerId,
               ...(contentRetry ? { contentRetry } : {}),
+              trace: this.agentTrace(
+                gameId,
+                rootCommandId,
+                commandId,
+                actor.playerId,
+                publicEvents,
+              ),
             });
           } catch (error) {
             if (error instanceof AgentSystemError) {
@@ -545,6 +562,7 @@ export class GameService {
     snapshot: GameSnapshot,
     round: NonNullable<GameSnapshot['round']>,
     policy: AgentPolicy,
+    rootCommandId: string,
   ): Promise<{
     batch: Map<string, VoteActionOutput>;
     covers: Set<string>;
@@ -572,10 +590,20 @@ export class GameService {
 
     const publicEvents = this.games.listPublicTimeline(gameId);
     const settled = await Promise.allSettled(
-      run.map(async (player) => {
+      run.map(async (player, index) => {
         const priorBeliefs = this.games.listAgentBeliefs(gameId, player.playerId);
         const input = projectAgentTurnInput(snapshot, player.playerId, publicEvents, priorBeliefs);
-        const output = await policy.act(input, { agentRoleId: player.agentRoleId ?? player.playerId });
+        const actionId = `auto/${gameId}/${snapshot.revision + index}/${player.playerId}/${round.actionType}`;
+        const output = await policy.act(input, {
+          agentRoleId: player.agentRoleId ?? player.playerId,
+          trace: this.agentTrace(
+            gameId,
+            rootCommandId,
+            actionId,
+            player.playerId,
+            publicEvents,
+          ),
+        });
         return { playerId: player.playerId, output };
       }),
     );
@@ -587,6 +615,22 @@ export class GameService {
       }
     });
     return { batch, covers, failures };
+  }
+
+  private agentTrace(
+    gameId: string,
+    commandId: string,
+    actionId: string,
+    playerId: string,
+    publicEvents: readonly PublicTimelineItem[],
+  ) {
+    return {
+      gameId,
+      commandId,
+      actionId,
+      priorBeliefOwnerId: playerId,
+      publicEventCursor: publicEvents.at(-1)?.eventSeq ?? 0,
+    };
   }
 
   private disqualifyForWordLeak(

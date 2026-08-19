@@ -1,6 +1,6 @@
 # API 与事件流规格
 
-- 状态：首个里程碑基线与模型档案路由已实现；真实模型错误事件端点部分待实现
+- 状态：首个里程碑、模型档案与单局复盘路由已实现；DEC-092～096 的恢复、诊断与 Agent 调试接口待实现
 - 适用范围：本机单用户 REST + SSE
 
 ## 1. 总则
@@ -51,6 +51,7 @@
 | 409 | `IDEMPOTENCY_CONFLICT` | 相同命令 ID 携带不同请求语义 |
 | 422 | `CONTENT_REJECTED` | 原词泄露等内容规则拒绝；不回显违规原文 |
 | 503 | `MODEL_ACTION_FAILED` | 预留给后续真实模型重试；当前假模型链路的未分类策略异常返回安全 `INTERNAL_ERROR` |
+| 503 | `LOCAL_DATA_UNAVAILABLE` | 数据库繁忙等待耗尽或服务处于受限诊断状态；不返回文件路径或 SQL |
 | 500 | `INTERNAL_ERROR` | 未分类服务错误；不得泄露堆栈或敏感配置 |
 
 错误详情只能包含安全的字段名、允许值、修订号、错误类别和重试进度。
@@ -83,12 +84,14 @@ operationalStatus: 当前安全状态与重试进度
 
 | 方法与路径 | 用途 | 响应 |
 | --- | --- | --- |
-| `GET /api/health` | 本地服务存活检查 | 服务状态，不包含配置值 |
+| `GET /api/health` | 本地服务存活检查 | 服务状态；后续增加正常/受限诊断标记，不包含路径、SQL 或配置值 |
 | `GET /api/games/active` | 查询唯一未完成对局 | `{ game: HumanGameView | null }` |
 | `GET /api/games/:gameId` | 获取当前人类视图 | `HumanGameView` |
 | `GET /api/games/:gameId/events?after=<streamSeq>` | SSE 失败时补取安全公开帧 | `PublicStreamEntry[]` 与当前游标 |
 
 “未完成”包括 `preparing`、`in_progress` 和 `awaiting_spectator`，不包括三个终局状态。
+
+下一阶段中，`GET /api/games/active` 对“中断后等待玩家确认”的进行中对局返回安全恢复状态与允许命令。继续上一局和开始新局均为带稳定 `commandId`、`expectedRevision` 的显式命令；具体路由与共享 Schema 在 TASK-074 实现时固化。开始新局必须先原子地把旧局记为无胜者“中断后未继续”，不能复用主动放弃或模型失败端点。
 
 ### 4.2 创建与开始
 
@@ -185,6 +188,12 @@ confirmed: true
 - 存在活动局（`in_progress` / `awaiting_spectator`）时 `PUT` 返回 409 拒绝改配置；未知 `roleId` 返回 404。
 - `POST /api/games/:gameId/start` 在通用模式三角色或评测 model 未配齐时返回 409 `MODEL_CONFIGURATION_REQUIRED`；消息不包含 Base URL、Key 或具体环境变量值。
 
+### 4.7 本地 Agent 诊断（规划）
+
+只有服务端 `AGENT_DEVELOPER_MODE=true` 时才注册专用诊断路由并向前端返回安全的“诊断能力可用”布尔值；默认和普通模式不注册路由、不返回记录，直接构造 URL 也不能读取诊断数据。
+
+脱敏诊断投影供 Agent 面板查询调用链、上下文清单结果、模型尝试、熔断和复盘队列状态。面板内可切换当前服务会话的完整上下文记录；该状态只保存在服务端内存，重启自动关闭。完整 Prompt/响应只能按单条记录、再次确认后读取，并继续过滤 Base URL、Key、请求头和本地文件路径。所有诊断接口均不得推进游戏、修改队列、删除长期审计或重新发起模型调用；清除完整调试文件使用独立确认操作。
+
 
 
 `GET /api/games/:gameId/stream`
@@ -228,6 +237,8 @@ data: <PublicStreamPayload JSON>
 
 `heartbeat` 可以不持久化；它不得推进业务游标。运行状态在重连后以 `HumanGameView.operationalStatus` 恢复。
 
+客户端对一次待确认人类命令必须复用原 `commandId`：网络响应丢失后先读取 `HumanGameView`/命令结果判断是否已经提交，只有确认未提交时才重发相同语义。`REVISION_CONFLICT` 触发权威视图刷新，不得归类为模型失败。
+
 ## 6. 公开投影规则
 
 ### 6.1 对局进行中
@@ -261,4 +272,4 @@ data: <PublicStreamPayload JSON>
 ## 8. 来源
 
 - 需求：[`../acceptance/REQUIREMENTS.md`](../acceptance/REQUIREMENTS.md) 第 102–125、139–145、163–192 条。
-- 决策：DEC-027 至 DEC-032、DEC-037 至 DEC-040、DEC-045 至 DEC-052、DEC-063、DEC-069 至 DEC-080。
+- 决策：DEC-027 至 DEC-032、DEC-037 至 DEC-040、DEC-045 至 DEC-052、DEC-063、DEC-069 至 DEC-080、DEC-092 至 DEC-096。

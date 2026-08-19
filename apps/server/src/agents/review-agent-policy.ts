@@ -6,6 +6,12 @@ import {
 } from '@sheishiwodi/shared';
 
 import { reasoningDisableBodyFor } from './model-reasoning.js';
+import {
+  ContextBoundaryViolationError,
+  noOpAgentObservability,
+  type AgentObservability,
+  type ModelAttemptKind,
+} from './agent-observability.js';
 import type { ReviewInput, ReviewPolicy } from './review-policy.js';
 import { TokendanceError, type ChatMessage, type TokendanceClient } from './tokendance-client.js';
 
@@ -29,6 +35,7 @@ export interface TokendanceReviewPolicyOptions {
   reasoningHints?: boolean;
   /** 按评测模型的精确 model ID 返回专属请求参数。 */
   extraBodyForModel?: (modelId: string) => Record<string, unknown>;
+  observability?: AgentObservability;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -45,6 +52,7 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly reasoningHints: boolean;
   private readonly extraBodyForModel: (modelId: string) => Record<string, unknown>;
+  private readonly observability: AgentObservability;
 
   constructor(options: TokendanceReviewPolicyOptions) {
     this.client = options.client;
@@ -54,9 +62,16 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
     this.sleep = options.sleep ?? defaultSleep;
     this.reasoningHints = options.reasoningHints ?? true;
     this.extraBodyForModel = options.extraBodyForModel ?? (() => ({}));
+    this.observability = options.observability ?? noOpAgentObservability;
   }
 
-  async generate(input: ReviewInput): Promise<ReviewGeneration> {
+  async generate(
+    input: ReviewInput,
+    context: { commandId: string; actionId: string } = {
+      commandId: `review/${input.gameId}`,
+      actionId: `review/${input.gameId}`,
+    },
+  ): Promise<ReviewGeneration> {
     if (!this.modelId) throw new ReviewSystemError('MODEL_NOT_CONFIGURED');
 
     const baseMessages = buildReviewMessages(input);
@@ -72,13 +87,31 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
     let repairUsed = false;
     let systemAttempts = 0;
     let lastSystemCode: ReviewErrorCode = 'INTERNAL_ERROR';
+    let attemptKind: ModelAttemptKind = 'initial';
 
     for (;;) {
       let content: string;
+      let attempt;
+      try {
+        attempt = this.observability.beginReviewAttempt({
+          reviewInput: input,
+          commandId: context.commandId,
+          actionId: context.actionId,
+          modelId: this.modelId,
+          messages,
+          attemptKind,
+        });
+      } catch (error) {
+        if (error instanceof ContextBoundaryViolationError) {
+          throw new ReviewSystemError('INTERNAL_ERROR');
+        }
+        throw new ReviewSystemError('INTERNAL_ERROR');
+      }
       try {
         content = await this.client.chatCompletion({ modelId: this.modelId, messages, extraBody });
       } catch (error) {
         const classified = classifyClientError(error);
+        this.observability.finishAttempt(attempt, classified.code.toLowerCase());
         lastSystemCode = classified.code;
         if (!classified.retryable) throw new ReviewSystemError(classified.code);
         systemAttempts += 1;
@@ -86,15 +119,23 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
         await this.sleep(this.retryDelayMs);
         messages = baseMessages;
         repairUsed = false;
+        attemptKind = 'system_retry';
         continue;
       }
 
       try {
-        return buildReviewOutput(extractJson(content), agentIds);
+        const output = buildReviewOutput(extractJson(content), agentIds);
+        this.observability.finishAttempt(attempt, 'success', { rawResponse: content });
+        return output;
       } catch (error) {
-        if (!(error instanceof ReviewFormatError)) throw error;
+        if (!(error instanceof ReviewFormatError)) {
+          this.observability.finishAttempt(attempt, 'internal_error', { rawResponse: content });
+          throw error;
+        }
+        this.observability.finishAttempt(attempt, 'invalid_format', { rawResponse: content });
         if (!repairUsed) {
           repairUsed = true;
+          attemptKind = 'format_repair';
           messages = [
             ...baseMessages,
             { role: 'assistant', content },
@@ -107,6 +148,7 @@ export class TokendanceReviewPolicy implements ReviewPolicy {
         await this.sleep(this.retryDelayMs);
         messages = baseMessages;
         repairUsed = false;
+        attemptKind = 'system_retry';
       }
     }
   }

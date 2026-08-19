@@ -9,6 +9,12 @@ import {
 } from '@sheishiwodi/shared';
 
 import type { AgentActContext, AgentPolicy } from './agent-policy.js';
+import {
+  ContextBoundaryViolationError,
+  noOpAgentObservability,
+  type AgentObservability,
+  type ModelAttemptKind,
+} from './agent-observability.js';
 import { reasoningDisableBodyFor } from './model-reasoning.js';
 import { TokendanceError, type ChatMessage, type TokendanceClient } from './tokendance-client.js';
 
@@ -26,6 +32,7 @@ export type AgentSystemErrorCode =
   | 'BAD_RESPONSE'
   | 'FORMAT_INVALID'
   | 'CONTENT_INVALID'
+  | 'CONTEXT_BOUNDARY_VIOLATION'
   | 'INTERNAL_ERROR';
 
 export class AgentSystemError extends Error {
@@ -52,6 +59,7 @@ export interface TokendanceAgentPolicyOptions {
   extraBodyForModel?: (modelId: string) => Record<string, unknown>;
   /** 开启后打印脱敏计时日志（角色/model/耗时/是否修复重试），绝不含 Key/URL/响应正文。 */
   debug?: boolean;
+  observability?: AgentObservability;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -65,6 +73,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
   private readonly debug: boolean;
   private readonly reasoningHints: boolean;
   private readonly extraBodyForModel: (modelId: string) => Record<string, unknown>;
+  private readonly observability: AgentObservability;
   private readonly beliefHistory = new Map<string, BeliefSnapshot[]>();
 
   constructor(options: TokendanceAgentPolicyOptions) {
@@ -76,6 +85,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     this.debug = options.debug ?? false;
     this.reasoningHints = options.reasoningHints ?? true;
     this.extraBodyForModel = options.extraBodyForModel ?? (() => ({}));
+    this.observability = options.observability ?? noOpAgentObservability;
   }
 
   priorBeliefs(playerId: string): readonly BeliefSnapshot[] {
@@ -102,16 +112,35 @@ export class TokendanceAgentPolicy implements AgentPolicy {
     let repairUsed = false;
     let systemAttempts = 0;
     let lastSystemCode: AgentSystemErrorCode = 'INTERNAL_ERROR';
+    let attemptKind: ModelAttemptKind = context?.contentRetry
+      ? 'content_regeneration'
+      : 'initial';
 
     for (;;) {
       let content: string;
       const startedAt = Date.now();
+      let attempt;
+      try {
+        attempt = this.observability.beginPlayerAttempt({
+          agentInput: input,
+          context: context ?? { agentRoleId: roleId },
+          modelId,
+          messages,
+          attemptKind,
+        });
+      } catch (error) {
+        if (error instanceof ContextBoundaryViolationError) {
+          throw new AgentSystemError('CONTEXT_BOUNDARY_VIOLATION', roleId);
+        }
+        throw new AgentSystemError('INTERNAL_ERROR', roleId);
+      }
       try {
         content = await this.client.chatCompletion({ modelId, messages, extraBody });
         this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'ok');
       } catch (error) {
         this.logTiming(roleId, modelId, input.actionType, startedAt, repairUsed, 'fail');
         const classified = classifyClientError(error);
+        this.observability.finishAttempt(attempt, classified.code.toLowerCase());
         lastSystemCode = classified.code;
         if (!classified.retryable) {
           throw new AgentSystemError(classified.code, roleId);
@@ -123,17 +152,24 @@ export class TokendanceAgentPolicy implements AgentPolicy {
         await this.sleep(this.retryDelayMs);
         messages = baseMessages;
         repairUsed = false;
+        attemptKind = 'system_retry';
         continue;
       }
 
       try {
         const output = buildOutput(extractJson(content), input);
+        this.observability.finishAttempt(attempt, 'success', { rawResponse: content });
         this.record(input.actor.playerId, output.belief);
         return output;
       } catch (error) {
-        if (!(error instanceof AgentFormatError)) throw error;
+        if (!(error instanceof AgentFormatError)) {
+          this.observability.finishAttempt(attempt, 'internal_error', { rawResponse: content });
+          throw error;
+        }
+        this.observability.finishAttempt(attempt, 'invalid_format', { rawResponse: content });
         if (!repairUsed) {
           repairUsed = true;
+          attemptKind = 'format_repair';
           messages = [
             ...baseMessages,
             { role: 'assistant', content },
@@ -148,6 +184,7 @@ export class TokendanceAgentPolicy implements AgentPolicy {
         await this.sleep(this.retryDelayMs);
         messages = baseMessages;
         repairUsed = false;
+        attemptKind = 'system_retry';
       }
     }
   }

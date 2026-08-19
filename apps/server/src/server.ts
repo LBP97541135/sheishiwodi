@@ -15,6 +15,7 @@ import { createDatabase, type AppDatabase } from './db/client.js';
 import { migrateDatabase } from './db/migrate.js';
 import { WordPairRepository } from './db/word-pair-repository.js';
 import { AgentRoleModelRepository } from './db/agent-role-model-repository.js';
+import { ModelAttemptRepository } from './db/model-attempt-repository.js';
 import type { FakeAgentScenario } from './agents/fake-agent-policy.js';
 import {
   ModelProfileService,
@@ -24,6 +25,10 @@ import { resolveAgentProvider } from './agents/provider-runtime.js';
 import type { AgentPolicy } from './agents/agent-policy.js';
 import type { ReviewPolicy } from './agents/review-policy.js';
 import { FakeReviewPolicy } from './agents/fake-review-policy.js';
+import {
+  ContextAuditWriter,
+  PersistentAgentObservability,
+} from './agents/agent-observability.js';
 import { registerGameRoutes } from './games/game-routes.js';
 import { registerModelRoutes } from './games/model-routes.js';
 import { registerReviewRoutes } from './games/review-routes.js';
@@ -121,6 +126,10 @@ export function createRuntimeDependencies(): ServerDependencies {
 
   const clock: Clock = { now: () => new Date().toISOString() };
   const roleModelRepository = new AgentRoleModelRepository(database);
+  const observability = new PersistentAgentObservability(
+    new ModelAttemptRepository(database),
+    new ContextAuditWriter(resolve(process.env['AGENT_AUDIT_DIR'] ?? '.local/agent-audit')),
+  );
   const {
     agentPolicyFactory,
     reviewPolicyFactory,
@@ -129,6 +138,8 @@ export function createRuntimeDependencies(): ServerDependencies {
   } = resolveAgentProvider(
     roleModelRepository,
     fakeScenario,
+    process.env,
+    observability,
   );
 
   return {

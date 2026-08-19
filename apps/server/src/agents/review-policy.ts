@@ -25,7 +25,10 @@ export interface ReviewInput {
 export interface ReviewPolicy {
   /** 本策略使用的复盘模型 ID（脱敏可公开）。 */
   readonly modelId: string;
-  generate(input: ReviewInput): Promise<ReviewGeneration>;
+  generate(
+    input: ReviewInput,
+    context?: { commandId: string; actionId: string },
+  ): Promise<ReviewGeneration>;
 }
 
 /** 从终局视图组装复盘输入；非正常终局（无 reveal/factReview/winnerCamp）返回 null。 */

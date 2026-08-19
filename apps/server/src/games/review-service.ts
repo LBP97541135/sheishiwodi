@@ -121,7 +121,10 @@ export class ReviewService {
         return;
       }
 
-      const generation = await policy.generate(input);
+      const generation = await policy.generate(input, {
+        commandId: `review/${gameId}`,
+        actionId: `review/${gameId}`,
+      });
       this.games.upsertReviewSummary(
         {
           gameId,

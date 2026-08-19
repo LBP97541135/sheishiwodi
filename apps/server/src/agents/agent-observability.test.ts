@@ -1,0 +1,252 @@
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
+
+import {
+  createPreparingGame,
+  startPreparingGame,
+  type AgentTurnInput,
+  type Clock,
+  type IdSource,
+  type RandomSource,
+  type WordPair,
+} from '@sheishiwodi/shared';
+
+import type { ModelAttemptRow } from '../db/model-attempt-repository.js';
+import {
+  ContextAuditWriter,
+  PersistentAgentObservability,
+  type ModelAttemptStore,
+} from './agent-observability.js';
+import { projectAgentTurnInput } from './agent-input-projector.js';
+import { TokendanceAgentPolicy } from './tokendance-agent-policy.js';
+import type { ChatMessage, TokendanceClient } from './tokendance-client.js';
+
+class Ids implements IdSource {
+  private value = 0;
+  nextId(kind: 'game' | 'player' | 'event') {
+    this.value += 1;
+    return `${kind}-${this.value}`;
+  }
+}
+
+class MemoryAttemptStore implements ModelAttemptStore {
+  readonly rows: ModelAttemptRow[] = [];
+
+  begin(
+    input: Omit<
+      ModelAttemptRow,
+      'attemptNumber' | 'resultCode' | 'finishedAt' | 'durationMs'
+    >,
+  ) {
+    const attemptNumber = this.rows.filter((row) => row.actionId === input.actionId).length + 1;
+    this.rows.push({ ...input, attemptNumber, resultCode: 'started' });
+    return attemptNumber;
+  }
+
+  finish(
+    attemptId: string,
+    input: { resultCode: string; finishedAt: string; durationMs: number },
+  ) {
+    const row = this.rows.find((entry) => entry.attemptId === attemptId);
+    if (row) Object.assign(row, input);
+  }
+}
+
+class ScriptedClient {
+  calls: ChatMessage[][] = [];
+  constructor(private readonly replies: string[]) {}
+  async chatCompletion(params: { messages: ChatMessage[] }) {
+    this.calls.push(params.messages);
+    return this.replies[this.calls.length - 1] ?? '';
+  }
+}
+
+const directories: string[] = [];
+afterEach(() => {
+  for (const directory of directories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+describe('Agent observability', () => {
+  it('每次真实请求记录链路与脱敏上下文清单，格式修复使用新的 attemptId', async () => {
+    const { input, roleId } = describeInput();
+    const store = new MemoryAttemptStore();
+    const directory = temporaryDirectory();
+    let id = 0;
+    const observer = new PersistentAgentObservability(
+      store,
+      new ContextAuditWriter(directory),
+      {
+        now: () => new Date('2026-08-19T05:00:00.000Z'),
+        nowMs: () => id * 10,
+        nextId: () => `attempt-${++id}`,
+      },
+    );
+    const livingIds = input.players.filter((player) => player.alive).map((player) => player.playerId);
+    const client = new ScriptedClient(['not-json', speechReply(livingIds)]);
+    const actionId = `auto/${input.gameId}/${input.baseRevision}/${input.actor.playerId}/describe`;
+    const policy = new TokendanceAgentPolicy({
+      client: client as unknown as TokendanceClient,
+      roleModelMap: { [roleId]: 'model-x' },
+      observability: observer,
+      sleep: async () => undefined,
+    });
+
+    await policy.act(input, {
+      agentRoleId: roleId,
+      trace: {
+        gameId: input.gameId,
+        commandId: 'start-command',
+        actionId,
+        priorBeliefOwnerId: input.actor.playerId,
+        publicEventCursor: 0,
+      },
+    });
+
+    expect(store.rows).toMatchObject([
+      {
+        attemptId: 'attempt-1',
+        commandId: 'start-command',
+        actionId,
+        attemptNumber: 1,
+        attemptKind: 'initial',
+        resultCode: 'invalid_format',
+      },
+      {
+        attemptId: 'attempt-2',
+        commandId: 'start-command',
+        actionId,
+        attemptNumber: 2,
+        attemptKind: 'format_repair',
+        resultCode: 'success',
+      },
+    ]);
+    const manifests = readManifests(directory);
+    expect(manifests).toHaveLength(2);
+    expect(manifests[0]).toMatchObject({
+      commandId: 'start-command',
+      actionId,
+      templateVersion: 'player-agent-v1',
+      validation: { status: 'passed' },
+    });
+    expect(manifests[0]?.promptHash).toMatch(/^[a-f0-9]{64}$/);
+    const persistedText = manifests.map((entry) => JSON.stringify(entry)).join('\n');
+    expect(persistedText).not.toContain(input.actor.ownWordCard);
+    expect(persistedText).not.toContain('只返回一个 JSON');
+  });
+
+  it('严格输入出现额外私有字段时在客户端调用前阻断并记录失败', async () => {
+    const { input, roleId } = describeInput();
+    const unsafeInput = {
+      ...input,
+      players: input.players.map((player, index) =>
+        index === 1 ? { ...player, wordCard: '其他玩家词牌哨兵' } : player,
+      ),
+    } as unknown as AgentTurnInput;
+    const store = new MemoryAttemptStore();
+    const directory = temporaryDirectory();
+    const observer = new PersistentAgentObservability(
+      store,
+      new ContextAuditWriter(directory),
+      { nextId: () => 'blocked-attempt' },
+    );
+    const client = new ScriptedClient([]);
+    const policy = new TokendanceAgentPolicy({
+      client: client as unknown as TokendanceClient,
+      roleModelMap: { [roleId]: 'model-x' },
+      observability: observer,
+      sleep: async () => undefined,
+    });
+
+    await expect(
+      policy.act(unsafeInput, {
+        agentRoleId: roleId,
+        trace: {
+          gameId: input.gameId,
+          commandId: 'root',
+          actionId: 'action',
+          priorBeliefOwnerId: input.actor.playerId,
+          publicEventCursor: 0,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'CONTEXT_BOUNDARY_VIOLATION' });
+    expect(client.calls).toHaveLength(0);
+    expect(store.rows).toMatchObject([{ resultCode: 'context_boundary_violation' }]);
+    expect(readManifests(directory)[0]).toMatchObject({ validation: { status: 'failed' } });
+  });
+});
+
+function describeInput() {
+  const clock: Clock = { now: () => '2026-08-19T05:00:00.000Z' };
+  const random: RandomSource = { next: () => 0 };
+  const pair: WordPair = {
+    id: 'pair',
+    civilianWord: '牛奶',
+    undercoverWord: '豆浆',
+    category: '饮品',
+    difficulty: 'easy',
+    enabled: true,
+  };
+  const ids = new Ids();
+  const created = createPreparingGame(
+    {
+      type: 'CreateGame',
+      commandId: 'create',
+      human: { displayName: '玩家', silhouette: 'silhouette_a' },
+      difficulty: 'easy',
+    },
+    [pair],
+    { ids, clock, random },
+  );
+  const started = startPreparingGame(
+    created.snapshot,
+    {
+      type: 'StartGame',
+      commandId: 'start',
+      gameId: created.snapshot.gameId,
+      actorId: created.snapshot.humanPlayerId,
+      expectedRevision: 0,
+    },
+    { ids, clock },
+  );
+  const agent = started.snapshot.players.find((player) => player.kind === 'agent')!;
+  const snapshot = {
+    ...started.snapshot,
+    round: { ...started.snapshot.round!, currentActorId: agent.playerId },
+  };
+  return {
+    input: projectAgentTurnInput(snapshot, agent.playerId, [], []),
+    roleId: agent.agentRoleId ?? agent.playerId,
+  };
+}
+
+function speechReply(livingIds: string[]) {
+  return JSON.stringify({
+    belief: {
+      opposingWordCandidates: [{ word: '豆浆', confidence: 0.6, evidence: '饮品线索' }],
+      playerUndercoverProbabilities: livingIds.map((playerId, index) => ({
+        playerId,
+        probability: index === 0 ? 1 : 0,
+      })),
+      reasoningSummary: '暂无强证据',
+    },
+    text: '早餐常见的白色饮品',
+  });
+}
+
+function temporaryDirectory() {
+  const directory = mkdtempSync(join(tmpdir(), 'agent-audit-'));
+  directories.push(directory);
+  return directory;
+}
+
+function readManifests(directory: string): Array<Record<string, unknown>> {
+  const gameDirectory = join(directory, readdirSync(directory)[0]!);
+  return readdirSync(gameDirectory)
+    .sort()
+    .map((file) => JSON.parse(readFileSync(join(gameDirectory, file), 'utf8')) as Record<string, unknown>);
+}
