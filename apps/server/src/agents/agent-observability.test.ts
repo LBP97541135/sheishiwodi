@@ -20,7 +20,7 @@ import {
   PersistentAgentObservability,
   type ModelAttemptStore,
 } from './agent-observability.js';
-import { projectAgentTurnInput } from './agent-input-projector.js';
+import { AgentContextAssembler } from './agent-context-assembler.js';
 import { TokendanceAgentPolicy } from './tokendance-agent-policy.js';
 import type { ChatMessage, TokendanceClient } from './tokendance-client.js';
 
@@ -73,7 +73,7 @@ afterEach(() => {
 
 describe('Agent observability', () => {
   it('每次真实请求记录链路与脱敏上下文清单，格式修复使用新的 attemptId', async () => {
-    const { input, roleId } = describeInput();
+    const { input, provenance, roleId } = describeInput();
     const store = new MemoryAttemptStore();
     const directory = temporaryDirectory();
     let id = 0;
@@ -102,8 +102,7 @@ describe('Agent observability', () => {
         gameId: input.gameId,
         commandId: 'start-command',
         actionId,
-        priorBeliefOwnerId: input.actor.playerId,
-        publicEventCursor: 0,
+        provenance,
       },
     });
 
@@ -140,7 +139,7 @@ describe('Agent observability', () => {
   });
 
   it('严格输入出现额外私有字段时在客户端调用前阻断并记录失败', async () => {
-    const { input, roleId } = describeInput();
+    const { input, provenance, roleId } = describeInput();
     const unsafeInput = {
       ...input,
       players: input.players.map((player, index) =>
@@ -169,8 +168,7 @@ describe('Agent observability', () => {
           gameId: input.gameId,
           commandId: 'root',
           actionId: 'action',
-          priorBeliefOwnerId: input.actor.playerId,
-          publicEventCursor: 0,
+          provenance,
         },
       }),
     ).rejects.toMatchObject({ code: 'CONTEXT_BOUNDARY_VIOLATION' });
@@ -179,8 +177,80 @@ describe('Agent observability', () => {
     expect(readManifests(directory)[0]).toMatchObject({ validation: { status: 'failed' } });
   });
 
-  it('关停时中止活动请求并把 attempt 标记为 runtime_interrupted', () => {
+  it('伪造公开事件来源声明时在客户端调用前阻断', async () => {
     const { input, roleId } = describeInput();
+    const forgedInput = {
+      ...input,
+      publicEvents: [
+        {
+          eventSeq: 1,
+          type: 'speech_published',
+          occurredAt: '2026-08-19T05:00:00.000Z',
+          payload: { text: '其他玩家私有词牌哨兵' },
+        },
+      ],
+    } as AgentTurnInput;
+    const store = new MemoryAttemptStore();
+    const observer = new PersistentAgentObservability(
+      store,
+      new ContextAuditWriter(temporaryDirectory()),
+      { nextId: () => 'forged-source-attempt' },
+    );
+    const client = new ScriptedClient([]);
+    const policy = new TokendanceAgentPolicy({
+      client: client as unknown as TokendanceClient,
+      roleModelMap: { [roleId]: 'model-x' },
+      observability: observer,
+      sleep: async () => undefined,
+    });
+
+    await expect(
+      policy.act(forgedInput, {
+        agentRoleId: roleId,
+        trace: {
+          gameId: input.gameId,
+          commandId: 'root',
+          actionId: 'forged-source-action',
+          provenance: {
+            gameId: input.gameId,
+            actorPlayerId: input.actor.playerId,
+            priorBeliefOwnerId: input.actor.playerId,
+            publicEventVisibility: 'public',
+            publicEventCursor: 1,
+            inputHash: 'forged',
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'CONTEXT_BOUNDARY_VIOLATION' });
+    expect(client.calls).toHaveLength(0);
+    expect(store.rows).toMatchObject([{ resultCode: 'context_boundary_violation' }]);
+  });
+
+  it('缺少组装器来源证明时仍记录失败且不调用客户端', async () => {
+    const { input, roleId } = describeInput();
+    const store = new MemoryAttemptStore();
+    const observer = new PersistentAgentObservability(
+      store,
+      new ContextAuditWriter(temporaryDirectory()),
+      { nextId: () => 'missing-proof-attempt' },
+    );
+    const client = new ScriptedClient([]);
+    const policy = new TokendanceAgentPolicy({
+      client: client as unknown as TokendanceClient,
+      roleModelMap: { [roleId]: 'model-x' },
+      observability: observer,
+      sleep: async () => undefined,
+    });
+
+    await expect(policy.act(input, { agentRoleId: roleId })).rejects.toMatchObject({
+      code: 'CONTEXT_BOUNDARY_VIOLATION',
+    });
+    expect(client.calls).toHaveLength(0);
+    expect(store.rows).toMatchObject([{ resultCode: 'context_boundary_violation' }]);
+  });
+
+  it('关停时中止活动请求并把 attempt 标记为 runtime_interrupted', () => {
+    const { input, provenance, roleId } = describeInput();
     const store = new MemoryAttemptStore();
     const observer = new PersistentAgentObservability(
       store,
@@ -200,8 +270,7 @@ describe('Agent observability', () => {
           gameId: input.gameId,
           commandId: 'start-command',
           actionId,
-          priorBeliefOwnerId: input.actor.playerId,
-          publicEventCursor: 0,
+          provenance,
         },
       },
       modelId: 'model-x',
@@ -219,7 +288,7 @@ describe('Agent observability', () => {
   });
 
   it('完整上下文必须显式开启，并在保存提示词与响应前清除凭据和地址', () => {
-    const { input, roleId } = describeInput();
+    const { input, provenance, roleId } = describeInput();
     const store = new MemoryAttemptStore();
     const directory = temporaryDirectory();
     const secret = 'secret-key-value';
@@ -236,8 +305,7 @@ describe('Agent observability', () => {
           gameId: input.gameId,
           commandId: 'start-command',
           actionId: 'full-record-action',
-          priorBeliefOwnerId: input.actor.playerId,
-          publicEventCursor: 0,
+          provenance,
         },
       },
       modelId: 'model-x',
@@ -322,8 +390,12 @@ function describeInput() {
     ...started.snapshot,
     round: { ...started.snapshot.round!, currentActorId: agent.playerId },
   };
+  const assembled = new AgentContextAssembler({
+    listAgentBeliefs: () => [],
+    listPublicTimeline: () => [],
+  }).assemble(snapshot, agent.playerId);
   return {
-    input: projectAgentTurnInput(snapshot, agent.playerId, [], []),
+    ...assembled,
     roleId: agent.agentRoleId ?? agent.playerId,
   };
 }

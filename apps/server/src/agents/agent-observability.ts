@@ -18,6 +18,7 @@ import type {
   ModelAttemptKind,
   ModelAttemptRow,
 } from '../db/model-attempt-repository.js';
+import { verifyAgentContextProvenance } from './agent-context-assembler.js';
 import type { AgentActContext } from './agent-policy.js';
 import type { ReviewInput } from './review-policy.js';
 import type { ChatMessage } from './tokendance-client.js';
@@ -376,7 +377,7 @@ export class PersistentAgentObservability implements AgentObservability {
         modelId: input.modelId,
         actionType: input.agentInput.actionType,
         baseRevision: input.agentInput.baseRevision,
-        publicEventCursor: trace.publicEventCursor,
+        publicEventCursor: trace.provenance.publicEventCursor,
         templateVersion: playerPromptTemplateVersion,
         promptHash: hashPrompt(input.messages),
         sources: playerSources(input.agentInput),
@@ -556,8 +557,12 @@ function validatePlayerBoundary(
   agentTurnInputSchema.parse(input);
   if (
     trace.gameId !== input.gameId ||
-    trace.priorBeliefOwnerId !== input.actor.playerId ||
-    trace.publicEventCursor !== (input.publicEvents.at(-1)?.eventSeq ?? 0)
+    trace.provenance.gameId !== input.gameId ||
+    trace.provenance.actorPlayerId !== input.actor.playerId ||
+    trace.provenance.priorBeliefOwnerId !== input.actor.playerId ||
+    trace.provenance.publicEventVisibility !== 'public' ||
+    trace.provenance.publicEventCursor !== (input.publicEvents.at(-1)?.eventSeq ?? 0) ||
+    !verifyAgentContextProvenance(trace.provenance, input)
   ) {
     throw new ContextBoundaryViolationError();
   }
@@ -576,13 +581,19 @@ function validatePlayerBoundary(
 }
 
 function fallbackPlayerTrace(input: AgentTurnInput): NonNullable<AgentActContext['trace']> {
-  const actionId = `unscoped/${input.gameId}/${input.baseRevision}/${input.actor.playerId}/${input.actionType}`;
+  const actionId = `untrusted/${input.gameId}/${input.baseRevision}/${input.actor.playerId}/${input.actionType}`;
   return {
     gameId: input.gameId,
     commandId: actionId,
     actionId,
-    priorBeliefOwnerId: input.actor.playerId,
-    publicEventCursor: input.publicEvents.at(-1)?.eventSeq ?? 0,
+    provenance: {
+      gameId: input.gameId,
+      actorPlayerId: input.actor.playerId,
+      priorBeliefOwnerId: input.actor.playerId,
+      publicEventVisibility: 'public',
+      publicEventCursor: input.publicEvents.at(-1)?.eventSeq ?? 0,
+      inputHash: '',
+    },
   };
 }
 

@@ -154,7 +154,7 @@ describe('Agent 公开内容自动恢复', () => {
           context?.trace?.gameId === view.gameId &&
           context.trace.commandId.startsWith('start-') &&
           context.trace.actionId.startsWith(`auto/${view.gameId}/`) &&
-          context.trace.priorBeliefOwnerId.length > 0,
+          context.trace.provenance.priorBeliefOwnerId.length > 0,
       ),
     ).toBe(true);
     expect(JSON.stringify(frames.data)).not.toContain(policy.leakedWord);

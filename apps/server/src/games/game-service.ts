@@ -34,8 +34,11 @@ import {
 } from '@sheishiwodi/shared';
 
 import type { WordPairRepository } from '../db/word-pair-repository.js';
+import {
+  AgentContextAssembler,
+  type AgentContextProvenance,
+} from '../agents/agent-context-assembler.js';
 import { FakeAgentPolicy } from '../agents/fake-agent-policy.js';
-import { projectAgentTurnInput } from '../agents/agent-input-projector.js';
 import type { AgentPolicy } from '../agents/agent-policy.js';
 import { AgentSystemError } from '../agents/tokendance-agent-policy.js';
 import type { GameRepository, PublicStreamFrame } from './game-repository.js';
@@ -62,6 +65,7 @@ export class GameService {
   private readonly advancingGames = new Set<string>();
   private readonly backgroundAdvance: boolean;
   private readonly areRequiredModelsConfigured: () => boolean;
+  private readonly agentContexts: AgentContextAssembler;
 
   constructor(
     private readonly games: GameRepository,
@@ -84,6 +88,7 @@ export class GameService {
     this.agentPolicyFactory = dependencies.agentPolicyFactory ?? (() => new FakeAgentPolicy());
     this.backgroundAdvance = dependencies.backgroundAdvance ?? false;
     this.areRequiredModelsConfigured = dependencies.areRequiredModelsConfigured ?? (() => true);
+    this.agentContexts = new AgentContextAssembler(games);
   }
 
   createGame(command: CreateGameCommand): HumanGameView {
@@ -408,9 +413,8 @@ export class GameService {
         return;
       }
 
-      const priorBeliefs = this.games.listAgentBeliefs(gameId, actor.playerId);
       const publicEvents = this.games.listPublicTimeline(gameId);
-      const input = projectAgentTurnInput(snapshot, actor.playerId, publicEvents, priorBeliefs);
+      const { input, provenance } = this.agentContexts.assemble(snapshot, actor.playerId);
 
       const isVotePhase = round.actionType === 'vote' || round.actionType === 'revote';
       if (isVotePhase && round.completedVoterIds.length === 0) {
@@ -458,8 +462,7 @@ export class GameService {
                 gameId,
                 rootCommandId,
                 commandId,
-                actor.playerId,
-                publicEvents,
+                provenance,
               ),
             });
           } catch (error) {
@@ -657,11 +660,9 @@ export class GameService {
     const failures = new Map<string, unknown>();
     if (run.length < 2) return { batch, covers, failures }; // 单个投票者无需并行，走普通串行路径。
 
-    const publicEvents = this.games.listPublicTimeline(gameId);
     const settled = await Promise.allSettled(
       run.map(async (player, index) => {
-        const priorBeliefs = this.games.listAgentBeliefs(gameId, player.playerId);
-        const input = projectAgentTurnInput(snapshot, player.playerId, publicEvents, priorBeliefs);
+        const { input, provenance } = this.agentContexts.assemble(snapshot, player.playerId);
         const actionId = `auto/${gameId}/${snapshot.revision + index}/${player.playerId}/${round.actionType}`;
         const output = await policy.act(input, {
           agentRoleId: player.agentRoleId ?? player.playerId,
@@ -669,8 +670,7 @@ export class GameService {
             gameId,
             rootCommandId,
             actionId,
-            player.playerId,
-            publicEvents,
+            provenance,
           ),
         });
         return { playerId: player.playerId, output };
@@ -690,15 +690,13 @@ export class GameService {
     gameId: string,
     commandId: string,
     actionId: string,
-    playerId: string,
-    publicEvents: readonly PublicTimelineItem[],
+    provenance: AgentContextProvenance,
   ) {
     return {
       gameId,
       commandId,
       actionId,
-      priorBeliefOwnerId: playerId,
-      publicEventCursor: publicEvents.at(-1)?.eventSeq ?? 0,
+      provenance,
     };
   }
 

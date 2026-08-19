@@ -210,7 +210,7 @@
 
 | 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
 | --- | --- | --- | --- | --- |
-| TASK-078 强化 Agent 上下文来源证明 | 进行中 | 由唯一组装器从权威仓库读取自有信念和公开事件；来源证明绑定 game/actor/owner/visibility/cursor 与具体输入；伪造或篡改输入在出网前阻断 | DEC-097、SPEC agent-runtime §12.5、TEST §2.8 | 待产出：实现、负向哨兵测试、Server typecheck/test、独立 commit |
+| TASK-078 强化 Agent 上下文来源证明 | 已完成 | 由唯一组装器从权威仓库读取自有信念和公开事件；来源证明绑定 game/actor/owner/visibility/cursor 与具体输入；伪造或篡改输入在出网前阻断 | DEC-097、SPEC agent-runtime §12.5、TEST §2.8 | `AgentContextAssembler` 成为 GameService 唯一组装入口；来源证明使用进程内签发身份与输入 SHA-256 双重绑定；缺失证明、伪造证明、篡改公开事件均在出网前记录 `context_boundary_violation`。Node 22 Server 定向 28/28、typecheck 通过 |
 | TASK-079 拒绝重复玩家标识 | 待办 | 信念概率与复盘逐 Agent 评价拒绝重复 `playerId`，同时保持完整覆盖校验 | DEC-097、TEST §2.8 | 待产出：Shared/Server Schema 与负向测试、独立 commit |
 | TASK-080 对齐复盘 Prompt 与 Schema | 待办 | 统一结论、关键片段、总体评价和评分字段的字数、数量与必填约束 | DEC-097、SPEC agent-runtime、TEST §2.8 | 待产出：契约调整、策略测试、独立 commit |
 | TASK-081 恢复后台未分类异常 | 待办 | 后台推进未分类异常立即持久化运行中断状态并由玩家确认恢复；不记模型失败、不消耗模型重试 | DEC-092/097、TEST §2.8 | 待产出：故障注入与恢复测试、独立 commit |

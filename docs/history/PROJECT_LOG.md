@@ -1445,3 +1445,11 @@
 - 负责人明确接受零宽字符绕过直接词面匹配的残余风险，本轮不处理；同时保持既有真实模型超时、并行和重试策略，不新增统一动作总预算。
 - 实施遵循文档先行和逐项提交：TASK-078～083 每完成一个问题，先运行与风险相称的零付费验证，再形成独立 Git commit；未经额外指令不推送远端。
 - 当前仅建立决策、需求、规格、测试与任务基线；各任务的实现结果和验证证据在对应提交前追加记录。
+
+## 2026-08-19 强化 Agent 上下文来源证明（TASK-078）
+
+- 新增服务端唯一 `AgentContextAssembler`，由它直接按当前 `gameId + actorPlayerId` 从 `GameRepository` 读取该 Agent 自有信念和 `visibility=public` 的公开时间线，再调用既有严格投影器生成 `AgentTurnInput`。
+- 组装器为输入签发进程内不可伪造的来源对象，并把 game、actor、信念所有者、公开可见性、公开游标和输入 SHA-256 绑定在一起；`PersistentAgentObservability` 在任何模型客户端请求前验证签发身份与哈希。
+- 删除 GameService 中分散的信念/时间线手工组装路径，串行描述/辩解和并行投票均消费同一入口；不改变 Prompt 内容、模型参数、并行方式或重试次数。
+- 新增缺少证明与伪造公开事件来源的负向测试；额外私有字段测试改为使用真实签发证明，证明输入被篡改后仍会失效。所有失败均记录 `context_boundary_violation`，客户端调用数保持 0。
+- 使用项目内 Node 22 直接运行 Agent 观测、公开内容恢复与完整 GameService 流程定向测试，共 28/28 通过；Server typecheck 通过。测试仅使用 fake/scripted client，没有读取真实 Key、联网或产生费用。
