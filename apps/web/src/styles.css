@@ -890,6 +890,90 @@ legend {
   line-height: 1.45;
 }
 
+.guess-action {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed #b74335;
+  background: #fff8f2;
+  color: #7c2c24;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 8px 14px;
+}
+
+.guess-action svg,
+.guess-panel svg,
+.guess-used svg {
+  width: 18px;
+  height: 18px;
+}
+
+.guess-panel {
+  display: grid;
+  gap: 12px;
+  border: 2px solid #b74335;
+  background: #fff8f2;
+  padding: 14px;
+}
+
+.guess-panel header,
+.guess-panel header strong,
+.guess-panel label,
+.guess-used {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.guess-panel header {
+  justify-content: space-between;
+}
+
+.guess-panel label {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.guess-panel select,
+.guess-panel input {
+  min-height: 44px;
+  border: 2px solid #26231f;
+  background: #fffdf6;
+  padding: 8px 10px;
+}
+
+.guess-panel__risk {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: #7c2c24;
+  line-height: 1.5;
+}
+
+.guess-panel__risk svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.guess-panel__confirm {
+  display: grid;
+  gap: 10px;
+}
+
+.guess-panel__confirm p,
+.guess-used {
+  margin: 0;
+}
+
+.guess-used {
+  color: #777066;
+  font-weight: 700;
+}
+
 .form-error--inline {
   border-left: 0;
   padding: 0;
@@ -942,6 +1026,10 @@ legend {
 
 .finale-stamp--undercover {
   color: #b74335;
+}
+
+.finale-stamp--draw {
+  color: #777066;
 }
 
 .finale-reason {

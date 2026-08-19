@@ -1,6 +1,6 @@
 # Agent 运行时规格
 
-- 状态：假模型、真实模型运行时、调用台账、结构化上下文审计、出网前边界门禁、完整调试记录、开发者面板与轻量熔断已实现
+- 状态：假/真模型运行时、动态 Agent 阵容、猜词联合行动、调用台账、上下文门禁、调试记录、开发者面板与轻量熔断已实现
 - 适用范围：`FakeAgentPolicy` 与 OpenAI Chat Completions 兼容策略（由 `AGENT_PROVIDER` 切换）
 
 ## 1. 目标
@@ -56,7 +56,7 @@ personalityPrompt
 modelId（服务端权威；可在"模型档案"界面选择并持久化，仅下发 model ID，见 DEC-085）
 ```
 
-首版固定 DeepSeek、豆包、千问三个显示角色。三者共享完全相同的规则、输入字段、输出 Schema、校验和调用参数基线，只增加简短轻人格提示。人格提示不得：
+DeepSeek、豆包、千问是不可删除的内置显示角色；完整自建角色也可加入 4～8 人阵容。所有角色共享完全相同的规则、输入字段、输出 Schema、校验和调用参数基线，只增加简短轻人格提示。人格提示不得：
 
 - 改变可见信息或规则。
 - 要求额外私有字段。
@@ -72,12 +72,14 @@ modelId（服务端权威；可在"模型档案"界面选择并持久化，仅�
 ```text
 gameId 的临时调用引用
 actor: playerId, displayName, ownWordCard
-publicConfig: undercoverCount, difficulty
+ownCamp: civilian | undercover
+publicConfig: undercoverCount, difficulty, participationMode?, gameMode?
 players: playerId, displayName, alive, seatIndex
 roundNumber
 actionType: describe | vote | defend | revote
 legalTargets[]（描述/辩解时为空）
 tieCandidates[]（仅相关阶段）
+guessAvailable（猜词模式中当前行动是否仍可猜）
 publicEvents[]（只到本次 baseRevision 的公开上界）
 priorOwnBeliefs[]（仅该 Agent 自己的历史快照，按代码策略裁剪）
 personalityPrompt
@@ -88,7 +90,7 @@ outputContract
 
 严禁进入输入：
 
-- 任意玩家的真实阵营，包括 Agent 自己。
+- 其他玩家的真实阵营；Agent 只知道自己的 `ownCamp`，多卧底时也不知道队友。
 - 其他玩家的词牌或完整词库映射。
 - 其他 Agent 的信念、候选词、投票理由和原始输出。
 - 本阶段尚未统一揭晓的选票目标。
@@ -144,6 +146,24 @@ VoteActionOutput
 - 普通投票目标必须属于 `legalTargets`。
 - 重投目标必须属于 `tieCandidates` 和 `legalTargets`。
 - `reason` 和 `belief` 在统一揭晓前及整个进行中对局保持私有。
+
+### 6.3 猜词联合输出
+
+猜词模式的普通描述和初始投票允许策略返回原动作或一次猜词提案：
+
+```text
+GuessActionOutput
+  action: guess
+  belief: BeliefSnapshot
+  targetPlayerId: string
+  guessedWord: string
+  reason: string
+```
+
+- 只有 `guessAvailable=true` 时允许该分支；辩解和重投仍只能返回原动作。
+- 目标必须属于 `legalTargets`，猜测词 1～40 字；模型不提交目标阵营，也不返回思维链。
+- 描述阶段猜词立即提交状态机。初始投票阶段所有 Agent 和人类从同一 `baseRevision`/公开游标独立决策，结果先暂存后原子结算，任何 Agent 都看不到本批次其他人的选择。
+- 完整目标、猜测词、理由和信念保持私有；对局公开事件只包含 `actorId` 与 `success`，正常终局事实复盘才读取完整猜词记录。
 
 模型响应必须只提供约定 JSON。原生 JSON Schema 响应模式可以作为单模型优化，但统一中转接入不能依赖其存在。
 

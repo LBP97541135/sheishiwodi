@@ -200,8 +200,15 @@ describe('App', () => {
     expect(fetchMock.mock.calls.some(([path]) => String(path).includes('/api/developer/'))).toBe(false);
   });
 
-  it('仅保留猜词模式二期入口，复用 deta 版本提示并把焦点返回自身', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ data: { game: null } })));
+  it('猜词模式进入阵容配置并以 guess 模式创建对局', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: string) => {
+      if (input === '/api/games/active') return response({ data: { game: null } });
+      if (input === '/api/character-profiles') return response({ data: characterProfiles });
+      if (input === '/api/games') return response(successBody(preparingGame));
+      throw new Error(`unexpected request: ${input}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('crypto', { randomUUID: () => 'command-guess-create' });
 
     render(<App />);
 
@@ -210,11 +217,16 @@ describe('App', () => {
     expect(within(modeGroup).getByRole('button', { name: '经典模式' })).toBeInTheDocument();
     const trigger = within(modeGroup).getByRole('button', { name: '猜词模式' });
     fireEvent.click(trigger);
-    expect(screen.getByRole('dialog', { name: '猜词模式暂未开放' })).toBeInTheDocument();
-    expect(screen.getByText('当前为deta版本，正式上线后即可畅玩')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '知道了' }));
+    expect(await screen.findByText('猜词模式')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '配置本局阵容' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: '猜词模式暂未开放' })).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
+
+    fireEvent.click(screen.getByRole('button', { name: '创建对局' }));
+    await screen.findByRole('heading', { name: '记住你的词牌' });
+    expect(JSON.parse(String((fetchMock.mock.lastCall?.[1] as RequestInit).body))).toMatchObject({
+      commandId: 'command-guess-create',
+      gameMode: 'guess',
+    });
   });
 
   it('无活动对局时显示创建表单并提交配置', async () => {
@@ -246,6 +258,7 @@ describe('App', () => {
         method: 'POST',
         body: JSON.stringify({
           commandId: 'command-create',
+          gameMode: 'classic',
           participationMode: 'human',
           human: { displayName: '小祎', silhouette: 'silhouette_b' },
           agentRoleIds: ['deepseek', 'doubao', 'qwen'],
@@ -523,7 +536,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('button', { name: '经典模式' })).toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([path]) => path === '/api/games/game-1')).toHaveLength(1);
-    expect(fetchMock).toHaveBeenCalledWith('/api/character-profiles', undefined);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/character-profiles', undefined));
     expect(sessionStorage.getItem('sheishiwodi:pending-game-command')).toBeNull();
   });
 });

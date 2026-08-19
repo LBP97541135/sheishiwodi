@@ -26,6 +26,8 @@ export const gameEventTypeSchema = z.enum([
   'speech_published',
   'vote_cast',
   'vote_progressed',
+  'guess_resolved',
+  'guess_recorded',
   'votes_revealed',
   'tie_declared',
   'revote_started',

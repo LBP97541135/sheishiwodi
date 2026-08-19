@@ -24,6 +24,7 @@ import {
   type StartGameRequest,
   type SubmitDefenseRequest,
   type SubmitDescriptionRequest,
+  type SubmitGuessRequest,
   type SubmitVoteRequest,
 } from '@sheishiwodi/shared';
 
@@ -118,6 +119,15 @@ export async function continueSpectating(gameId: string, input: ContinueSpectati
 
 export async function abandonGame(gameId: string, input: AbandonGameRequest) {
   const body = await request(`/api/games/${gameId}/abandon`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return apiSuccessSchema(humanGameViewSchema).parse(body).data;
+}
+
+export async function submitGuess(gameId: string, input: SubmitGuessRequest) {
+  const body = await request(`/api/games/${gameId}/guesses`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),

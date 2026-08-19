@@ -85,6 +85,7 @@ export function createPreparingGame(
           wordCard: selectedPair.civilianWord,
           silhouette: human.silhouette,
           characterAssetKey: human.silhouette === 'silhouette_b' ? 'human-female' : 'human-male',
+          guessUsed: false,
         }]
       : []),
     ...selectedRoles.map((role, roleIndex) => ({
@@ -100,6 +101,7 @@ export function createPreparingGame(
       agentPersonalityPrompt: role.personalityPrompt,
       agentModelId: role.defaultModelId,
       characterAssetKey: role.roleId,
+      guessUsed: false,
     })),
   ];
 
@@ -132,6 +134,7 @@ export function createPreparingGame(
     streamSeq: 1,
     config: {
       difficulty: command.difficulty,
+      gameMode: command.gameMode ?? 'classic',
       undercoverCount,
       participationMode,
       ...(command.requestBudget ? { requestBudget: command.requestBudget } : {}),
@@ -146,6 +149,7 @@ export function createPreparingGame(
       difficulty: selectedPair.difficulty,
     },
     players,
+    guessHistory: [],
     firstSpeakingOrder,
     round: null,
     createdAt: now,
@@ -203,6 +207,7 @@ export function startPreparingGame(
       completedSpeakerIds: [],
       completedVoterIds: [],
       votes: [],
+      guesses: [],
       tieCandidateIds: [],
     },
     updatedAt: now,

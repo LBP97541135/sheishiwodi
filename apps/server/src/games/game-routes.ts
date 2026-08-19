@@ -14,6 +14,7 @@ import {
   startGameRequestSchema,
   submitDefenseRequestSchema,
   submitDescriptionRequestSchema,
+  submitGuessRequestSchema,
   submitVoteRequestSchema,
 } from '@sheishiwodi/shared';
 
@@ -274,6 +275,33 @@ export function registerGameRoutes(
             meta: { gameId: view.gameId, revision: view.revision, eventCursor: view.eventCursor },
           }),
         );
+      } catch (error) {
+        return sendGameError(reply, error);
+      }
+    },
+  );
+
+  server.post<{ Params: { gameId: string } }>(
+    '/api/games/:gameId/guesses',
+    async (request, reply) => {
+      const parsed = submitGuessRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send(apiErrorResponseSchema.parse({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: '猜词命令不合法',
+            details: { fields: parsed.error.issues.map((issue) => issue.path.join('.')) },
+          },
+        }));
+      }
+      try {
+        const view = await gameService.submitGuess({
+          type: 'SubmitGuess', gameId: request.params.gameId, ...parsed.data,
+        });
+        return reply.send(apiSuccessSchema(humanGameViewSchema).parse({
+          data: view,
+          meta: { gameId: view.gameId, revision: view.revision, eventCursor: view.eventCursor },
+        }));
       } catch (error) {
         return sendGameError(reply, error);
       }

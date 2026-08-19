@@ -69,6 +69,7 @@ export function ReviewScreen({ game, onBack }: ReviewScreenProps) {
   }
 
   const civilianWin = game.winnerCamp === 'civilian';
+  const draw = game.winnerCamp === 'draw';
   const identityRows = [...reveal.players].sort((a, b) => a.seatIndex - b.seatIndex);
 
   return (
@@ -77,9 +78,9 @@ export function ReviewScreen({ game, onBack }: ReviewScreenProps) {
 
       <div className="review-reveal">
         <span
-          className={`finale-stamp ${civilianWin ? 'finale-stamp--civilian' : 'finale-stamp--undercover'}`}
+          className={`finale-stamp ${draw ? 'finale-stamp--draw' : civilianWin ? 'finale-stamp--civilian' : 'finale-stamp--undercover'}`}
         >
-          {civilianWin ? '平民胜利' : '卧底胜利'}
+          {draw ? '本局平局' : civilianWin ? '平民胜利' : '卧底胜利'}
         </span>
         <p className="finale-reason">{finaleReason(game.endReason)}</p>
         <dl className="review-wordpair">
@@ -112,6 +113,19 @@ export function ReviewScreen({ game, onBack }: ReviewScreenProps) {
           ))}
         </ol>
       </section>
+
+      {(factReview.guesses?.length ?? 0) > 0 && (
+        <section className="review-identities" aria-label="猜词记录">
+          <h2>猜词记录</h2>
+          <ol className="guess-review-list">
+            {factReview.guesses?.map((guess, index) => (
+              <li key={`${guess.actorId}-${guess.roundNumber}-${index}`}>
+                第 {guess.roundNumber} 轮 · {nameOf(guess.actorId)} 猜测 {nameOf(guess.targetPlayerId)} 的词为“{guess.guessedWord}” · {guess.success ? '成功' : '失败'}，{nameOf(guess.eliminatedPlayerId)} 出局
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       <AiReviewSection gameId={game.gameId} nameOf={nameOf} />
 
@@ -630,5 +644,6 @@ function finaleReason(endReason: HumanGameView['endReason']) {
   if (endReason === 'undercover_eliminated') return '卧底被票出，平民阵营获胜。';
   if (endReason === 'undercover_survived_to_two') return '卧底存活到只剩两人，卧底阵营获胜。';
   if (endReason === 'player_rule_violation') return '有玩家因重复违反发言规则退出，系统已重新判定胜负。';
+  if (endReason === 'all_players_eliminated') return '批次猜词同时结算后无人存活，本局平局。';
   return '对局已结束。';
 }

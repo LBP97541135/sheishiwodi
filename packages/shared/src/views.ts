@@ -5,10 +5,12 @@ import {
   actionTypeSchema,
   campSchema,
   difficultySchema,
+  gameModeSchema,
   gamePhaseSchema,
   gameStatusSchema,
   playerKindSchema,
   silhouetteSchema,
+  winnerCampSchema,
 } from './enums.js';
 import { publicTimelineItemSchema } from './events.js';
 
@@ -33,12 +35,14 @@ export const humanProfileSchema = z
     displayName: z.string().trim().min(1).max(12),
     silhouette: silhouetteSchema,
     ownWordCard: z.string().trim().min(1),
+    guessUsed: z.boolean().optional(),
   })
   .strict();
 
 export const gameConfigSchema = z
   .object({
     difficulty: difficultySchema,
+    gameMode: gameModeSchema.optional(),
     undercoverCount: z.number().int().positive(),
     participationMode: z.enum(['human', 'observer']).optional(),
     requestBudget: z.number().int().min(1).max(500).optional(),
@@ -113,6 +117,19 @@ export const finaleAgentActionSchema = z
 export const factReviewSchema = z
   .object({
     agentActions: z.array(finaleAgentActionSchema),
+    guesses: z.array(
+      z
+        .object({
+          actorId: identifierSchema,
+          targetPlayerId: identifierSchema,
+          guessedWord: z.string().trim().min(1).max(40),
+          roundNumber: z.number().int().positive(),
+          phase: z.enum(['describe', 'vote']),
+          success: z.boolean(),
+          eliminatedPlayerId: identifierSchema,
+        })
+        .strict(),
+    ).optional(),
   })
   .strict();
 
@@ -155,7 +172,7 @@ export const humanGameViewSchema = z
       completedPlayerIds: z.array(identifierSchema),
     }),
     legalVoteTargetIds: z.array(identifierSchema),
-    winnerCamp: z.enum(['civilian', 'undercover']).optional(),
+    winnerCamp: winnerCampSchema.optional(),
     endReason: z
       .enum([
         'undercover_eliminated',
@@ -164,6 +181,7 @@ export const humanGameViewSchema = z
         'abandoned_by_human',
         'model_failure_limit',
         'interrupted_not_resumed',
+        'all_players_eliminated',
       ])
       .optional(),
     reveal: finaleRevealSchema.optional(),

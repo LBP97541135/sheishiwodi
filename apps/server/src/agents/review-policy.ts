@@ -9,7 +9,7 @@ import type {
 /** 复盘生成的输入：全部来自终局事实投影（reveal + factReview + 公开时间线），只读。 */
 export interface ReviewInput {
   gameId: string;
-  winnerCamp: 'civilian' | 'undercover';
+  winnerCamp: 'civilian' | 'undercover' | 'draw';
   endReason: string;
   reveal: FinaleReveal;
   /** 参与玩家的公开信息（用于把 playerId 映射到显示名 / 区分人机）。 */

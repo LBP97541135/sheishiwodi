@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Flag, Pause, Play, StepForward, TriangleAlert } from 'lucide-react';
+import { Crosshair, Flag, Pause, Play, StepForward, TriangleAlert, X } from 'lucide-react';
 
 import {
   validatePublicSpeech,
@@ -19,6 +19,7 @@ interface GameScreenProps {
   onDescribe(text: string): Promise<void>;
   onDefense(text: string): Promise<void>;
   onVote(targetPlayerId: string): Promise<void>;
+  onGuess?(targetPlayerId: string, guessedWord: string): Promise<void>;
   onSpectate(): Promise<void>;
   onAbandon(): Promise<void>;
   onAutomation?(mode: 'auto' | 'paused' | 'step'): Promise<void>;
@@ -41,6 +42,7 @@ export function GameScreen({
   onDescribe,
   onDefense,
   onVote,
+  onGuess = async () => undefined,
   onSpectate,
   onAbandon,
   onAutomation = async () => undefined,
@@ -63,6 +65,13 @@ export function GameScreen({
     game.status === 'in_progress' && round?.currentActorId === humanId && humanAlive;
   const isSpeechAction = round?.actionType === 'describe' || round?.actionType === 'defend';
   const isVoteAction = round?.actionType === 'vote' || round?.actionType === 'revote';
+  const guessAvailable =
+    game.config.gameMode === 'guess' &&
+    game.allowedCommands.includes('SubmitGuess') &&
+    game.human?.guessUsed !== true;
+  const guessTargets = game.players
+    .filter((player) => player.alive && player.playerId !== humanId)
+    .map((player) => player.playerId);
   const actionAreaRef = useRef<HTMLDivElement>(null);
   const previousHumanActionRef = useRef<string | null>(null);
   const currentActorName = nameOf(round?.currentActorId);
@@ -167,6 +176,9 @@ export function GameScreen({
             ownWordCard={game.human.ownWordCard}
             busy={busy}
             onSubmit={round?.actionType === 'defend' ? onDefense : onDescribe}
+            {...(guessAvailable && round?.actionType === 'describe'
+              ? { guessTargets, nameOf, onGuess }
+              : {})}
           />
         ) : isHumanTurn && isVoteAction ? (
           <VotePanel
@@ -175,6 +187,9 @@ export function GameScreen({
             nameOf={nameOf}
             busy={busy}
             onSubmit={onVote}
+            {...(guessAvailable && round?.actionType === 'vote'
+              ? { guessTargets, onGuess }
+              : {})}
           />
         ) : pendingTimelineAction ? null : (
           <WaitingNotice currentActorName={currentActorName} actionType={round?.actionType} />
@@ -210,6 +225,7 @@ function statusLine(game: HumanGameView, isHumanTurn: boolean, currentActorName:
     return '你已出局，请选择继续观战或放弃本局';
   }
   if (game.status === 'finished') {
+    if (game.winnerCamp === 'draw') return '双方同时出局，本局平局';
     return game.winnerCamp === 'civilian' ? '平民阵营获胜' : '卧底阵营获胜';
   }
   if (game.phase === 'tie_defense') {
@@ -274,6 +290,9 @@ function AutomationPanel({ game, busy, currentActorName, onAutomation, onAddBudg
           <button className="icon-command" type="button" title="继续自动运行" aria-label="继续自动运行" disabled={busy} onClick={() => void onAutomation('auto')}><Play aria-hidden="true" /></button>
         ) : (
           <button className="icon-command" type="button" title="暂停" aria-label="暂停" disabled={busy} onClick={() => void onAutomation('paused')}><Pause aria-hidden="true" /></button>
+        )}
+        {game.config.gameMode === 'guess' && game.human?.guessUsed && game.status === 'in_progress' && (
+          <p className="guess-used"><Crosshair aria-hidden="true" />本局猜词机会已使用</p>
         )}
         <button className="icon-command" type="button" title="单步执行" aria-label="单步执行" disabled={busy} onClick={() => void onAutomation('step')}><StepForward aria-hidden="true" /></button>
         {control?.pauseReason === 'budget_exhausted' && <button className="secondary-action" type="button" disabled={busy} onClick={() => void onAddBudget(20)}>追加 20 次</button>}
@@ -344,11 +363,17 @@ function SpeechInput({
   ownWordCard,
   busy,
   onSubmit,
+  guessTargets,
+  nameOf,
+  onGuess,
 }: {
   mode: 'describe' | 'defend';
   ownWordCard: string;
   busy: boolean;
   onSubmit(text: string): Promise<void>;
+  guessTargets?: string[];
+  nameOf?: TimelineProps['nameOf'];
+  onGuess?(targetPlayerId: string, guessedWord: string): Promise<void>;
 }) {
   const [text, setText] = useState('');
   const trimmed = text.trim();
@@ -398,6 +423,9 @@ function SpeechInput({
       <button className="primary-action" type="button" disabled={!canSubmit} onClick={submit}>
         {busy ? '提交中…' : `提交${actionLabel}`}
       </button>
+      {guessTargets && nameOf && onGuess && (
+        <GuessLauncher targets={guessTargets} nameOf={nameOf} busy={busy} onSubmit={onGuess} />
+      )}
     </div>
   );
 }
@@ -408,12 +436,16 @@ function VotePanel({
   nameOf,
   busy,
   onSubmit,
+  guessTargets,
+  onGuess,
 }: {
   mode: 'vote' | 'revote';
   targets: string[];
   nameOf: TimelineProps['nameOf'];
   busy: boolean;
   onSubmit(targetPlayerId: string): Promise<void>;
+  guessTargets?: string[];
+  onGuess?(targetPlayerId: string, guessedWord: string): Promise<void>;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -447,7 +479,54 @@ function VotePanel({
       >
         {busy ? '提交中…' : mode === 'revote' ? '确认重投' : '确认投票'}
       </button>
+      {guessTargets && onGuess && (
+        <GuessLauncher targets={guessTargets} nameOf={nameOf} busy={busy} onSubmit={onGuess} />
+      )}
     </div>
+  );
+}
+
+function GuessLauncher({
+  targets,
+  nameOf,
+  busy,
+  onSubmit,
+}: {
+  targets: string[];
+  nameOf: TimelineProps['nameOf'];
+  busy: boolean;
+  onSubmit(targetPlayerId: string, guessedWord: string): Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [targetPlayerId, setTargetPlayerId] = useState('');
+  const [guessedWord, setGuessedWord] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const valid = targetPlayerId.length > 0 && guessedWord.trim().length > 0;
+  const close = () => {
+    setOpen(false);
+    setConfirmed(false);
+  };
+
+  if (!open) {
+    return (
+      <button className="guess-action" type="button" disabled={busy} onClick={() => setOpen(true)}>
+        <Crosshair aria-hidden="true" />发起猜测
+      </button>
+    );
+  }
+
+  return (
+    <section className="guess-panel" role="dialog" aria-label="发起猜测">
+      <header><strong><Crosshair aria-hidden="true" />猜身份与词语</strong><button className="icon-action" type="button" aria-label="取消猜测" title="取消" onClick={close}><X aria-hidden="true" /></button></header>
+      <label><span>目标玩家</span><select value={targetPlayerId} onChange={(event) => { setTargetPlayerId(event.target.value); setConfirmed(false); }}><option value="">选择目标</option>{targets.map((target) => <option key={target} value={target}>{nameOf(target)}</option>)}</select></label>
+      <label><span>目标的精确词语</span><input value={guessedWord} maxLength={40} onChange={(event) => { setGuessedWord(event.target.value); setConfirmed(false); }} /></label>
+      <p className="guess-panel__risk"><TriangleAlert aria-hidden="true" />猜中会淘汰目标；身份或词语任一错误，你将立即出局。本局只能猜一次。</p>
+      {!confirmed ? (
+        <button className="secondary-action" type="button" disabled={!valid || busy} onClick={() => setConfirmed(true)}>核对猜测</button>
+      ) : (
+        <div className="guess-panel__confirm"><p>确认猜测 {nameOf(targetPlayerId)} 的词是“{guessedWord.trim()}”？</p><div className="action-row"><button className="danger-action" type="button" disabled={busy} onClick={() => void onSubmit(targetPlayerId, guessedWord.trim())}>{busy ? '提交中…' : '确认并提交'}</button><button className="secondary-action" type="button" disabled={busy} onClick={() => setConfirmed(false)}>返回修改</button></div></div>
+      )}
+    </section>
   );
 }
 
@@ -461,6 +540,7 @@ function Finale({
   onReview(): void;
 }) {
   const civilianWin = game.winnerCamp === 'civilian';
+  const draw = game.winnerCamp === 'draw';
   const revealPlayers = game.reveal?.players ?? [];
   const [revealedCount, setRevealedCount] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -488,9 +568,9 @@ function Finale({
   return (
     <div className="finale">
       <span
-        className={`finale-stamp ${civilianWin ? 'finale-stamp--civilian' : 'finale-stamp--undercover'}`}
+        className={`finale-stamp ${draw ? 'finale-stamp--draw' : civilianWin ? 'finale-stamp--civilian' : 'finale-stamp--undercover'}`}
       >
-        {civilianWin ? '平民胜利' : '卧底胜利'}
+        {draw ? '本局平局' : civilianWin ? '平民胜利' : '卧底胜利'}
       </span>
       <p className="finale-reason">{finaleReason(game.endReason)}</p>
       <ol className="finale-cards" aria-label="终局身份揭晓" aria-live="polite">
@@ -525,6 +605,15 @@ function Finale({
         <section className="fact-review" aria-label="确定性事实复盘">
           <h2>确定性事实复盘</h2>
           <p>完整公开时间线共 {game.publicTimeline.length} 条，AI 私有行动共 {game.factReview.agentActions.length} 条。</p>
+          {(game.factReview.guesses?.length ?? 0) > 0 && (
+            <ol className="guess-review-list">
+              {game.factReview.guesses?.map((guess, index) => (
+                <li key={`${guess.actorId}-${guess.roundNumber}-${index}`}>
+                  第 {guess.roundNumber} 轮 · {nameOf(guess.actorId)} 猜测 {nameOf(guess.targetPlayerId)} 的词为“{guess.guessedWord}” · {guess.success ? '成功' : '失败'}
+                </li>
+              ))}
+            </ol>
+          )}
           <ol>
             {game.factReview.agentActions.map((action) => (
               <li key={action.actionId}>
@@ -552,6 +641,7 @@ function finaleReason(endReason: HumanGameView['endReason']) {
   if (endReason === 'undercover_eliminated') return '卧底被票出，平民阵营获胜。';
   if (endReason === 'undercover_survived_to_two') return '卧底存活到只剩两人，卧底阵营获胜。';
   if (endReason === 'player_rule_violation') return '有玩家因重复违反发言规则退出，系统已重新判定胜负。';
+  if (endReason === 'all_players_eliminated') return '批次猜词同时结算后无人存活，本局平局。';
   return '对局已结束。';
 }
 

@@ -23,15 +23,20 @@ export function projectHumanGameView(
   const isHumanTurn = Boolean(human && snapshot.round?.currentActorId === human.playerId);
   const actionType = snapshot.round?.actionType;
   const isVoteAction = actionType === 'vote' || actionType === 'revote';
+  const canHumanGuess =
+    snapshot.config.gameMode === 'guess' &&
+    Boolean(human?.alive) &&
+    !human?.guessUsed &&
+    (actionType === 'describe' || actionType === 'vote');
   const allowedCommands =
     snapshot.status === 'preparing'
       ? ['StartGame', 'AbandonGame']
       : snapshot.status === 'in_progress' && isHumanTurn && actionType === 'describe'
-        ? ['SubmitDescription', 'AbandonGame']
+        ? ['SubmitDescription', ...(canHumanGuess ? ['SubmitGuess'] : []), 'AbandonGame']
         : snapshot.status === 'in_progress' && isHumanTurn && actionType === 'defend'
           ? ['SubmitDefense', 'AbandonGame']
           : snapshot.status === 'in_progress' && isHumanTurn && isVoteAction
-            ? ['SubmitVote', 'AbandonGame']
+            ? ['SubmitVote', ...(canHumanGuess && actionType === 'vote' ? ['SubmitGuess'] : []), 'AbandonGame']
             : snapshot.status === 'in_progress'
               ? ['AbandonGame']
               : snapshot.status === 'awaiting_spectator'
@@ -52,6 +57,7 @@ export function projectHumanGameView(
           displayName: human.displayName,
           silhouette: human.silhouette!,
           ownWordCard: human.wordCard,
+          guessUsed: human.guessUsed ?? false,
         }
       : null,
     players: snapshot.players.map((player) => ({
@@ -102,7 +108,10 @@ export function projectHumanGameView(
                 wordCard: player.wordCard,
               })),
           },
-          factReview: factReview ?? { agentActions: [] },
+          factReview: {
+            agentActions: factReview?.agentActions ?? [],
+            guesses: snapshot.guessHistory ?? factReview?.guesses ?? [],
+          },
         }
       : {}),
     allowedCommands,

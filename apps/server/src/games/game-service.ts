@@ -10,6 +10,7 @@ import {
   startPreparingGame,
   submitDefense as submitDefenseMachine,
   submitDescription as submitDescriptionMachine,
+  submitGuess as submitGuessMachine,
   submitVote as submitVoteMachine,
   terminateForSystemError as terminateForSystemErrorMachine,
   validatePublicSpeech,
@@ -30,6 +31,7 @@ import {
   type StartGameCommand,
   type SubmitDefenseCommand,
   type SubmitDescriptionCommand,
+  type SubmitGuessCommand,
   type SubmitVoteCommand,
   type VoteActionOutput,
 } from '@sheishiwodi/shared';
@@ -225,6 +227,12 @@ export class GameService {
     );
   }
 
+  submitGuess(command: SubmitGuessCommand): Promise<HumanGameView> {
+    return this.applyHumanTransition(command, (snapshot) =>
+      submitGuessMachine(snapshot, command, this.machineDeps()),
+    );
+  }
+
   async resumeActiveGame() {
     const active = this.games.findActiveSnapshot();
     if (active?.status === 'in_progress' && !this.recovery?.getAwaiting(active.gameId)) {
@@ -371,7 +379,8 @@ export class GameService {
       | ContinueSpectatingCommand
       | SubmitDescriptionCommand
       | SubmitDefenseCommand
-      | SubmitVoteCommand,
+      | SubmitVoteCommand
+      | SubmitGuessCommand,
     produce: (snapshot: GameSnapshot) => MachineTransition,
   ): Promise<HumanGameView> {
     const requestHash = hashCommand(command);
@@ -510,12 +519,34 @@ export class GameService {
         return;
       }
       const round = snapshot.round;
-      const actor = snapshot.players.find((player) => player.playerId === round.currentActorId);
+      let actor = snapshot.players.find((player) => player.playerId === round.currentActorId);
+      const guessVotePhase = snapshot.config.gameMode === 'guess' && round.actionType === 'vote';
+      const control = this.dependencies.gameControls?.get(gameId);
+      if (control?.mode === 'paused' && voteBatch === null) {
+        this.finalizePendingAttempts(voteAttemptIds);
+        return;
+      }
+      if (guessVotePhase && voteBatch === null) {
+        const prefetched = await this.prefetchVoteBatch(gameId, snapshot, round, policy, rootCommandId);
+        voteBatch = prefetched.batch;
+        batchCovers = prefetched.covers;
+        voteFailures = prefetched.failures;
+        voteAttemptIds = prefetched.attemptIds;
+      }
+      if (guessVotePhase) {
+        const prefetchedActor = snapshot.players.find(
+          (player) =>
+            player.alive &&
+            player.kind === 'agent' &&
+            !round.completedVoterIds.includes(player.playerId) &&
+            batchCovers.has(player.playerId),
+        );
+        if (prefetchedActor) actor = prefetchedActor;
+      }
       if (!actor || !actor.alive || actor.kind !== 'agent') {
         this.finalizePendingAttempts(voteAttemptIds);
         return;
       }
-      const control = this.dependencies.gameControls?.get(gameId);
       const hasInFlightVoteResult =
         batchCovers.has(actor.playerId) &&
         (voteBatch?.has(actor.playerId) === true || voteFailures.has(actor.playerId));
@@ -546,7 +577,7 @@ export class GameService {
       const { input, provenance } = this.agentContexts.assemble(snapshot, actor.playerId);
 
       const isVotePhase = round.actionType === 'vote' || round.actionType === 'revote';
-      if (isVotePhase && round.completedVoterIds.length === 0) {
+      if (isVotePhase && !guessVotePhase && round.completedVoterIds.length === 0) {
         // 新一轮投票阶段开始，丢弃上一阶段可能残留的预取批次。
         voteBatch = null;
         batchCovers = new Set();
@@ -636,7 +667,8 @@ export class GameService {
             !latest ||
             latest.status !== 'in_progress' ||
             latest.revision !== snapshot.revision ||
-            latest.round?.currentActorId !== actor.playerId ||
+            !latest.round ||
+            (!guessVotePhase && latest.round?.currentActorId !== actor.playerId) ||
             latest.round.actionType !== round.actionType
           ) {
             // 模型调用期间人类可能放弃或状态已由其他执行者推进；旧结果直接作废。
@@ -647,6 +679,7 @@ export class GameService {
 
           if (round.actionType !== 'describe' && round.actionType !== 'defend') break;
           const speech = output as SpeechActionOutput;
+          if (!('text' in speech)) break;
           const validation = validatePublicSpeech(speech.text, actor.wordCard);
           if (validation.valid) break;
 
@@ -678,7 +711,8 @@ export class GameService {
         !latestBeforeCommit ||
         latestBeforeCommit.status !== 'in_progress' ||
         latestBeforeCommit.revision !== snapshot.revision ||
-        latestBeforeCommit.round?.currentActorId !== actor.playerId ||
+        !latestBeforeCommit.round ||
+        (!guessVotePhase && latestBeforeCommit.round?.currentActorId !== actor.playerId) ||
         latestBeforeCommit.round.actionType !== round.actionType
       ) {
         this.finalizeAttempt(validatedAttemptId, 'stale_discarded');
@@ -692,7 +726,18 @@ export class GameService {
       try {
         if (round.actionType === 'describe' || round.actionType === 'defend') {
           const speech = output as SpeechActionOutput;
-          if (round.actionType === 'describe') {
+          if (!('text' in speech)) {
+            if (round.actionType !== 'describe') throw new Error('INVALID_TRANSITION');
+            transition = submitGuessMachine(snapshot, {
+              type: 'SubmitGuess', commandId, gameId, actorId: actor.playerId,
+              expectedRevision: snapshot.revision,
+              targetPlayerId: speech.targetPlayerId, guessedWord: speech.guessedWord,
+            }, this.machineDeps());
+            outputRecord = {
+              action: 'guess', targetPlayerId: speech.targetPlayerId,
+              guessedWord: speech.guessedWord, reason: speech.reason,
+            };
+          } else if (round.actionType === 'describe') {
             transition = submitDescriptionMachine(
               snapshot,
               {
@@ -705,6 +750,7 @@ export class GameService {
               },
               this.machineDeps(),
             );
+            outputRecord = { text: speech.text };
           } else {
             transition = submitDefenseMachine(
               snapshot,
@@ -718,23 +764,27 @@ export class GameService {
               },
               this.machineDeps(),
             );
+            outputRecord = { text: speech.text };
           }
-          outputRecord = { text: speech.text };
         } else {
           const vote = output as VoteActionOutput;
-          transition = submitVoteMachine(
-            snapshot,
-            {
-              type: 'SubmitVote',
-              commandId,
-              gameId,
-              actorId: actor.playerId,
+          if ('guessedWord' in vote) {
+            transition = submitGuessMachine(snapshot, {
+              type: 'SubmitGuess', commandId, gameId, actorId: actor.playerId,
               expectedRevision: snapshot.revision,
-              targetPlayerId: vote.targetPlayerId,
-            },
-            this.machineDeps(),
-          );
-          outputRecord = { targetPlayerId: vote.targetPlayerId, reason: vote.reason };
+              targetPlayerId: vote.targetPlayerId, guessedWord: vote.guessedWord,
+            }, this.machineDeps());
+            outputRecord = {
+              action: 'guess', targetPlayerId: vote.targetPlayerId,
+              guessedWord: vote.guessedWord, reason: vote.reason,
+            };
+          } else {
+            transition = submitVoteMachine(snapshot, {
+              type: 'SubmitVote', commandId, gameId, actorId: actor.playerId,
+              expectedRevision: snapshot.revision, targetPlayerId: vote.targetPlayerId,
+            }, this.machineDeps());
+            outputRecord = { targetPlayerId: vote.targetPlayerId, reason: vote.reason };
+          }
         }
       } catch (error) {
         this.finalizeAttempt(validatedAttemptId, 'domain_rejected');
@@ -760,7 +810,10 @@ export class GameService {
         transition.snapshot,
         timeline,
         persistedFactReview
-          ? { agentActions: [...persistedFactReview.agentActions, privateAction] }
+          ? {
+              agentActions: [...persistedFactReview.agentActions, privateAction],
+              guesses: transition.snapshot.guessHistory ?? persistedFactReview.guesses ?? [],
+            }
           : undefined,
       );
       try {
@@ -775,6 +828,7 @@ export class GameService {
         });
         this.markAttemptStage(validatedAttemptId, 'action_committed');
         this.finalizeAttempt(validatedAttemptId, 'action_committed');
+        voteAttemptIds.delete(actor.playerId);
         if (stepBoundary) {
           const nextRound = transition.snapshot.round;
           const voteUnit = stepBoundary.actionType === 'vote' || stepBoundary.actionType === 'revote';
@@ -834,7 +888,11 @@ export class GameService {
       : living;
     const startIdx = eligible.findIndex((player) => player.playerId === round.currentActorId);
     const run: typeof eligible = [];
-    if (startIdx >= 0) {
+    if (snapshot.config.gameMode === 'guess' && round.actionType === 'vote') {
+      run.push(...eligible.filter(
+        (player) => player.kind === 'agent' && !round.completedVoterIds.includes(player.playerId),
+      ));
+    } else if (startIdx >= 0) {
       for (let index = startIdx; index < eligible.length; index += 1) {
         const player = eligible[index]!;
         if (round.completedVoterIds.includes(player.playerId)) continue;
@@ -846,7 +904,9 @@ export class GameService {
     const batch = new Map<string, VoteActionOutput>();
     const failures = new Map<string, unknown>();
     const attemptIds = new Map<string, string>();
-    if (run.length < 2) return { batch, covers, failures, attemptIds }; // 单个投票者无需并行，走普通串行路径。
+    if (run.length < 2 && snapshot.config.gameMode !== 'guess') {
+      return { batch, covers, failures, attemptIds };
+    }
 
     const settled = await allSettledWithConcurrency(
       run,

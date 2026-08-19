@@ -37,6 +37,8 @@
 
 2026-08-19 Agent 工程补强后的零付费回归：Node 22 下 Shared 55/55、Server 112/112、Web 67/67，共 234/234；三 workspace typecheck、全仓 ESLint 与生产构建通过。Playwright 使用隔离端口与现有开发服务并行，normal 4/4、spectator 4/4、tie 2/2，共 10/10。仓库新增固定 Node 22.14.0 的 `.node-version` 和假模型 GitHub CI；工作流契约静态检查确认包含 typecheck、lint、test、build、E2E，显式清空真实 Provider 凭据且不含 `test:live*`。本段证明本地门禁与工作流配置，不冒充尚未发生的远端 Actions 运行。
 
+2026-08-20 三个扩展方向完成后的零付费回归：发布素材已压缩并可复现检查；动态阵容支持 4～8 人、0/1 名人类、多卧底、本地角色库与纯 Agent 控制；全阵营猜词支持描述即时结算和投票冻结快照批次结算。Node 22 下 Shared 63/63、Server 117/117、Web 66/66，共 246/246，三 workspace typecheck、全仓 ESLint 和生产构建通过。1440px Chromium 完成猜词模式整局：人类猜错出局后继续观战，AI 推进到卧底胜利并进入事实复盘；进行中公开事件精确为 `actorId + success`，终局前无目标/猜测词，图片 0 破损、无横向溢出、控制台 0 error。共享测试另覆盖人类在投票猜词批次出局后暂停并恢复到已结算阶段。该浏览器验证使用隔离 fake API 和一次性脚本，没有读取真实 Key、联网调用模型或产生费用；猜词模式的真实 Provider 付费整局尚未执行。
+
 ## 3. 真实模型策略级验收
 
 2026-08-17T04:30:32Z 使用 Tokendance OpenAI 兼容中转执行 3 个角色 × 2 种动作，共 6 次真实调用：

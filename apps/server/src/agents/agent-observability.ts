@@ -650,6 +650,12 @@ function playerSources(input: AgentTurnInput): ContextSource[] {
       itemCount: 1,
       ownerPlayerId: input.actor.playerId,
     },
+    {
+      kind: 'actor_identity',
+      visibility: 'actor_private',
+      itemCount: 1,
+      ownerPlayerId: input.actor.playerId,
+    },
     { kind: 'public_events', visibility: 'public', itemCount: input.publicEvents.length },
     {
       kind: 'prior_own_beliefs',

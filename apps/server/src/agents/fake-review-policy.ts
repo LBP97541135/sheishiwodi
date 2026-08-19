@@ -55,7 +55,7 @@ export class FakeReviewPolicy implements ReviewPolicy {
       };
     });
 
-    const winner = input.winnerCamp === 'civilian' ? '平民阵营' : '卧底阵营';
+    const winner = input.winnerCamp === 'draw' ? '平局' : input.winnerCamp === 'civilian' ? '平民阵营' : '卧底阵营';
     const overall = fitText(
       `本局由${winner}获胜（${input.endReason}）。公开时间线共 ${input.publicTimeline.length} 条事件，AI 私有行动 ${input.factReview.agentActions.length} 条。离线复盘只用于验证确定性事实、展示结构和恢复流程；真实评价仍由显式配置的复盘模型生成。`,
       100,

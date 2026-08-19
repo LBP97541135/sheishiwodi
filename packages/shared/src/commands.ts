@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { difficultySchema, silhouetteSchema } from './enums.js';
+import { difficultySchema, gameModeSchema, silhouetteSchema } from './enums.js';
 
 const identifierSchema = z.string().trim().min(1).max(128);
 
@@ -17,6 +17,7 @@ export const createGameCommandSchema = z
   .object({
     type: z.literal('CreateGame'),
     commandId: identifierSchema,
+    gameMode: gameModeSchema.optional(),
     participationMode: z.enum(['human', 'observer']).optional(),
     human: z
       .object({
@@ -47,6 +48,12 @@ export const submitDefenseCommandSchema = commandEnvelopeSchema.extend({
 export const submitVoteCommandSchema = commandEnvelopeSchema.extend({
   type: z.literal('SubmitVote'),
   targetPlayerId: identifierSchema,
+});
+
+export const submitGuessCommandSchema = commandEnvelopeSchema.extend({
+  type: z.literal('SubmitGuess'),
+  targetPlayerId: identifierSchema,
+  guessedWord: z.string().trim().min(1).max(40),
 });
 
 export const continueSpectatingCommandSchema = commandEnvelopeSchema.extend({
@@ -87,6 +94,7 @@ export const submitDefenseRequestSchema = submitDefenseCommandSchema.omit({
   gameId: true,
 });
 export const submitVoteRequestSchema = submitVoteCommandSchema.omit({ type: true, gameId: true });
+export const submitGuessRequestSchema = submitGuessCommandSchema.omit({ type: true, gameId: true });
 export const continueSpectatingRequestSchema = continueSpectatingCommandSchema.omit({
   type: true,
   gameId: true,
@@ -108,6 +116,7 @@ export const gameCommandSchema = z.discriminatedUnion('type', [
   submitDescriptionCommandSchema,
   submitDefenseCommandSchema,
   submitVoteCommandSchema,
+  submitGuessCommandSchema,
   continueSpectatingCommandSchema,
   abandonGameCommandSchema,
   resolveInterruptedGameCommandSchema,
@@ -126,6 +135,8 @@ export type SubmitDefenseCommand = z.infer<typeof submitDefenseCommandSchema>;
 export type SubmitDefenseRequest = z.infer<typeof submitDefenseRequestSchema>;
 export type SubmitVoteCommand = z.infer<typeof submitVoteCommandSchema>;
 export type SubmitVoteRequest = z.infer<typeof submitVoteRequestSchema>;
+export type SubmitGuessCommand = z.infer<typeof submitGuessCommandSchema>;
+export type SubmitGuessRequest = z.infer<typeof submitGuessRequestSchema>;
 export type ContinueSpectatingCommand = z.infer<typeof continueSpectatingCommandSchema>;
 export type ContinueSpectatingRequest = z.infer<typeof continueSpectatingRequestSchema>;
 export type AbandonGameCommand = z.infer<typeof abandonGameCommandSchema>;

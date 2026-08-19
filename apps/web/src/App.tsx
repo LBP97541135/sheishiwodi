@@ -39,7 +39,6 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [topView, setTopView] = useState<TopView>('game');
-  const [guessModeNoticeOpen, setGuessModeNoticeOpen] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [developerAvailable, setDeveloperAvailable] = useState(false);
   const [developerEnabled, setDeveloperEnabled] = useState(() =>
@@ -52,7 +51,6 @@ export function App() {
   );
   const gameRef = useRef<HumanGameView | null>(null);
   const eventCursorRef = useRef(0);
-  const guessModeTriggerRef = useRef<HTMLButtonElement | null>(null);
   // 背景音乐在整个应用（含主页、模型档案）持续播放，由顶部开关与浏览器自动播放解锁控制。
   const shouldPlayBgm = true;
   const experience = useExperienceSettings(shouldPlayBgm);
@@ -225,6 +223,23 @@ export function App() {
     });
   };
 
+  const handleGuess = async (targetPlayerId: string, guessedWord: string) => {
+    if (!game) return;
+    await runCommand({
+      version: 1,
+      kind: 'guess',
+      gameId: game.gameId,
+      expectedRevision: game.revision,
+      request: {
+        commandId: crypto.randomUUID(),
+        actorId: controllerIdFor(game),
+        expectedRevision: game.revision,
+        targetPlayerId,
+        guessedWord,
+      },
+    });
+  };
+
   const handleSpectate = async () => {
     if (!game) return;
     await runCommand({
@@ -303,11 +318,6 @@ export function App() {
     setGame(null);
     setTopView('game');
   };
-
-  const closeGuessModeNotice = useCallback(() => {
-    setGuessModeNoticeOpen(false);
-    guessModeTriggerRef.current?.focus();
-  }, []);
 
   const isFinished = game?.status === 'finished';
   // 复盘页依赖终局事实；一旦离开终局（新局/放弃）自动退回对局页，避免空态残留。
@@ -409,7 +419,6 @@ export function App() {
         />
       </div>
       {stream.showRecovery && <ConnectionNotice onRetry={stream.retryNow} />}
-      <GuessModeNotice open={guessModeNoticeOpen} onClose={closeGuessModeNotice} />
       {game?.operationalStatus.state === 'interrupted' && (
         <InterruptedGameDialog busy={busy} onResolve={handleInterruptedGame} />
       )}
@@ -439,10 +448,6 @@ export function App() {
           busy={busy}
           onCreate={handleCreate}
           onOpenRoleLibrary={() => setTopView('model-profiles')}
-          onOpenGuessMode={(trigger) => {
-            guessModeTriggerRef.current = trigger;
-            setGuessModeNoticeOpen(true);
-          }}
         />
       );
     }
@@ -457,6 +462,7 @@ export function App() {
         onDescribe={handleDescribe}
         onDefense={handleDefense}
         onVote={handleVote}
+        onGuess={handleGuess}
         onSpectate={handleSpectate}
         onAbandon={handleAbandon}
         onAutomation={handleAutomation}
@@ -466,51 +472,6 @@ export function App() {
       />
     );
   }
-}
-
-function GuessModeNotice({ open, onClose }: { open: boolean; onClose(): void }) {
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    closeButtonRef.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        closeButtonRef.current?.focus();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      className="coming-soon-backdrop"
-      data-testid="coming-soon-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        className="coming-soon-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="coming-soon-title"
-        aria-describedby="coming-soon-description"
-      >
-        <p className="eyebrow">二期功能</p>
-        <h2 id="coming-soon-title">猜词模式暂未开放</h2>
-        <p id="coming-soon-description">当前为deta版本，正式上线后即可畅玩</p>
-        <button ref={closeButtonRef} type="button" className="primary-action" onClick={onClose}>
-          知道了
-        </button>
-      </section>
-    </div>
-  );
 }
 
 function StatusPage({

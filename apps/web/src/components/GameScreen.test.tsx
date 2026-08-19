@@ -94,6 +94,37 @@ describe('GameScreen 描述输入', () => {
     fireEvent.click(screen.getByRole('button', { name: '提交描述' }));
     expect(onDescribe).toHaveBeenCalledWith('一种常见的白色饮品');
   });
+
+  it('猜词模式在本人发言时经过风险确认提交一次精确猜测', () => {
+    const onGuess = vi.fn().mockResolvedValue(undefined);
+    render(
+      <GameScreen
+        game={makeView({
+          config: { difficulty: 'easy', undercoverCount: 1, gameMode: 'guess' },
+          human: {
+            playerId: 'human-1',
+            displayName: '玩家',
+            silhouette: 'silhouette_a',
+            ownWordCard: '牛奶',
+            guessUsed: false,
+          },
+          allowedCommands: ['SubmitDescription', 'SubmitGuess'],
+        })}
+        {...screenProps}
+        onGuess={onGuess}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '发起猜测' }));
+    const dialog = screen.getByRole('dialog', { name: '发起猜测' });
+    expect(within(dialog).getByText(/身份或词语任一错误/)).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('目标玩家'), { target: { value: 'agent-2' } });
+    fireEvent.change(within(dialog).getByLabelText('目标的精确词语'), { target: { value: '  豆浆  ' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '核对猜测' }));
+    expect(within(dialog).getByText('确认猜测 豆包 的词是“豆浆”？')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认并提交' }));
+    expect(onGuess).toHaveBeenCalledWith('agent-2', '豆浆');
+  });
 });
 
 describe('GameScreen 秘密投票', () => {

@@ -9,17 +9,17 @@ import { characterAssets } from '../character-assets';
 interface NewGameFormProps {
   busy: boolean;
   onCreate(input: CreateGameRequest): Promise<void>;
-  onOpenGuessMode(trigger: HTMLButtonElement): void;
   onOpenRoleLibrary(): void;
 }
 
-export function NewGameForm({ busy, onCreate, onOpenGuessMode, onOpenRoleLibrary }: NewGameFormProps) {
+export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormProps) {
   const [displayName, setDisplayName] = useState('');
   const [silhouette, setSilhouette] = useState<'silhouette_a' | 'silhouette_b'>('silhouette_a');
   const [difficulty, setDifficulty] = useState<'easy' | 'hard'>('easy');
   const [participationMode, setParticipationMode] = useState<'human' | 'observer'>('human');
   const [totalPlayers, setTotalPlayers] = useState(4);
   const [requestBudget, setRequestBudget] = useState(80);
+  const [gameMode, setGameMode] = useState<'classic' | 'guess'>('classic');
   const [profiles, setProfiles] = useState<CharacterProfileList | null>(null);
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [configuring, setConfiguring] = useState(false);
@@ -80,6 +80,7 @@ export function NewGameForm({ busy, onCreate, onOpenGuessMode, onOpenRoleLibrary
     setValidation(null);
     void onCreate({
       commandId: crypto.randomUUID(),
+      gameMode,
       participationMode,
       human: { displayName: displayName.trim() || '玩家', silhouette },
       agentRoleIds: selectedRoleIds,
@@ -93,7 +94,7 @@ export function NewGameForm({ busy, onCreate, onOpenGuessMode, onOpenRoleLibrary
       <form className="new-game game-config" onSubmit={submit}>
         <header className="game-config__header">
           <button className="icon-action" type="button" title="返回模式选择" aria-label="返回模式选择" onClick={() => setConfiguring(false)}><ArrowLeft aria-hidden="true" /></button>
-          <div><p className="eyebrow">经典模式</p><h1>配置本局阵容</h1></div>
+          <div><p className="eyebrow">{gameMode === 'guess' ? '猜词模式' : '经典模式'}</p><h1>配置本局阵容</h1></div>
           <span className="rule-stamp">{totalPlayers >= 6 ? 2 : 1} 名卧底</span>
         </header>
 
@@ -166,8 +167,8 @@ export function NewGameForm({ busy, onCreate, onOpenGuessMode, onOpenRoleLibrary
         </h1>
       </header>
       <div className="game-mode-actions" role="group" aria-label="选择游戏模式">
-        <button className="primary-action game-mode-actions__classic" type="button" disabled={busy} onClick={() => setConfiguring(true)}><strong>经典模式</strong><span aria-hidden="true">开始配置</span></button>
-        <button className="secondary-action game-mode-actions__guess" type="button" disabled={busy} onClick={(event) => onOpenGuessMode(event.currentTarget)}>猜词模式</button>
+        <button className="primary-action game-mode-actions__classic" type="button" disabled={busy} onClick={() => { setGameMode('classic'); setConfiguring(true); }}><strong>经典模式</strong><span aria-hidden="true">开始配置</span></button>
+        <button className="secondary-action game-mode-actions__guess" type="button" disabled={busy} onClick={() => { setGameMode('guess'); setConfiguring(true); }}>猜词模式</button>
       </div>
 
       {nameDialogOpen && (

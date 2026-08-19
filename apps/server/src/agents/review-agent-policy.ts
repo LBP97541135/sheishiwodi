@@ -249,7 +249,11 @@ function buildReviewMessages(input: ReviewInput): ChatMessage[] {
         .map((entry) => `「${entry.word}」${Math.round(entry.confidence * 100)}%`)
         .join('，');
       let outputText: string;
-      if (action.actionType === 'describe' || action.actionType === 'defend') {
+      if (action.output['action'] === 'guess') {
+        const target = typeof action.output['targetPlayerId'] === 'string' ? nameOf(action.output['targetPlayerId']) : '未知';
+        const word = typeof action.output['guessedWord'] === 'string' ? action.output['guessedWord'] : '';
+        outputText = `猜测 ${target} 的词为「${word}」`;
+      } else if (action.actionType === 'describe' || action.actionType === 'defend') {
         const text = typeof action.output['text'] === 'string' ? action.output['text'] : '';
         outputText = `${action.actionType === 'defend' ? '辩解' : '描述'}「${text}」`;
       } else {
@@ -267,13 +271,18 @@ function buildReviewMessages(input: ReviewInput): ChatMessage[] {
     })
     .join('\n');
 
-  const winner = input.winnerCamp === 'civilian' ? '平民阵营获胜' : '卧底阵营获胜';
+  const resolvedGuessLines = (input.factReview.guesses ?? [])
+    .map((guess) => `· 第${guess.roundNumber}轮 ${nameOf(guess.actorId)} 猜 ${nameOf(guess.targetPlayerId)} 的词为「${guess.guessedWord}」：${guess.success ? '成功' : '失败'}，${nameOf(guess.eliminatedPlayerId)} 出局`)
+    .join('\n');
+
+  const winner = input.winnerCamp === 'draw' ? '双方平局' : input.winnerCamp === 'civilian' ? '平民阵营获胜' : '卧底阵营获胜';
   const user =
     `【词对】类别：${input.reveal.wordPair.category}；平民词：${input.reveal.wordPair.civilianWord}；卧底词：${input.reveal.wordPair.undercoverWord}\n` +
     `【结果】${winner}（结束原因：${input.endReason}）\n` +
     `【真实身份与词牌】\n${identityLines}\n` +
     `【公开时间线】\n${renderTimeline(input.publicTimeline, nameOf)}\n` +
     `【各 AI 每步私有心理活动】\n${beliefLines || '（无）'}\n` +
+    `【猜词完整记录】\n${resolvedGuessLines || '（无）'}\n` +
     `请据以上事实，仅返回约定的 JSON。`;
 
   return [

@@ -29,8 +29,9 @@ export function assertReviewMarkdownClean(markdown: string): void {
 }
 
 const WIN_CAMP_TEXT: Record<ReviewInput['winnerCamp'], string> = {
-  civilian: '平民阵营',
-  undercover: '卧底阵营',
+      civilian: '平民阵营',
+      undercover: '卧底阵营',
+      draw: '平局',
 };
 
 const END_REASON_TEXT: Record<string, string> = {
@@ -178,6 +179,13 @@ export function buildReviewMarkdown(params: {
 
   // —— 5. AI 心理活动（信念） ——
   lines.push('## AI 心理活动（信念）', '');
+  if ((factReview.guesses?.length ?? 0) > 0) {
+    lines.push('### 猜词完整记录', '');
+    for (const guess of factReview.guesses ?? []) {
+      lines.push(`- 第 ${guess.roundNumber} 轮：${cell(nameOf(guess.actorId))} 猜 ${cell(nameOf(guess.targetPlayerId))} 的词为「${cell(guess.guessedWord)}」，${guess.success ? '成功' : '失败'}，${cell(nameOf(guess.eliminatedPlayerId))} 出局`);
+    }
+    lines.push('');
+  }
   if (factReview.agentActions.length === 0) {
     lines.push('（本局无 AI 私有行动记录）', '');
   }
@@ -202,7 +210,9 @@ export function buildReviewMarkdown(params: {
     }
 
     // 实际输出：描述/辩解看文本，投票看目标 + 理由。
-    if (action.actionType === 'vote' || action.actionType === 'revote') {
+    if (action.output.action === 'guess') {
+      lines.push(`- 实际猜词：猜 ${cell(nameOf(asString(action.output.targetPlayerId)))} 的词为「${cell(asString(action.output.guessedWord))}」`);
+    } else if (action.actionType === 'vote' || action.actionType === 'revote') {
       const target = nameOf(asString(action.output.targetPlayerId));
       const reason = asString(action.output.reason);
       lines.push(`- 实际投票：投给 ${cell(target)}${reason ? `，理由：${cell(reason)}` : ''}`);

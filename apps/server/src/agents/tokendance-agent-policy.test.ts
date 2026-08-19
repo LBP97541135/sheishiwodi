@@ -215,6 +215,37 @@ describe('TokendanceAgentPolicy', () => {
     expect(client.calls).toHaveLength(4);
   });
 
+  it('猜词模式只接受合法目标的严格猜词动作，并明确一次性风险与自身阵营', async () => {
+    const base = describeInput();
+    const targetPlayerId = base.input.players.find((player) => player.playerId !== base.input.actor.playerId)!.playerId;
+    const input: AgentTurnInput = {
+      ...base.input,
+      publicConfig: { ...base.input.publicConfig, gameMode: 'guess' },
+      guessAvailable: true,
+      legalTargets: [targetPlayerId],
+    };
+    const livingIds = input.players.filter((player) => player.alive).map((player) => player.playerId);
+    const probabilities = livingIds.map((playerId, index) => ({ playerId, probability: index === 0 ? 1 : 0 }));
+    const client = new ScriptedClient([JSON.stringify({
+      belief: {
+        opposingWordCandidates: [{ word: '豆浆', confidence: 0.8, evidence: '公开描述方向' }],
+        playerUndercoverProbabilities: probabilities,
+        reasoningSummary: '基于公开内容进行高风险猜测',
+      },
+      action: 'guess', targetPlayerId, guessedWord: ' 豆浆 ', reason: '目标线索与己方阵营不一致',
+    })]);
+    const policy = new TokendanceAgentPolicy({
+      client: asClient(client), roleModelMap: { [base.roleId]: 'model-x' }, sleep: noWait,
+    });
+
+    const output = await policy.act(input, { agentRoleId: base.roleId });
+    expect(output).toMatchObject({ action: 'guess', targetPlayerId, guessedWord: '豆浆' });
+    const prompt = client.calls[0]!.map((message) => message.content).join('\n');
+    expect(prompt).toContain('每局仅一次');
+    expect(prompt).toContain('同一冻结快照');
+    expect(prompt).toContain(`你的阵营：${input.actor.ownCamp === 'undercover' ? '卧底' : '平民'}`);
+  });
+
   it('认证与模型不存在属于永久错误，不执行无意义重试', async () => {
     for (const status of [401, 403, 404]) {
       const { input, roleId } = describeInput();

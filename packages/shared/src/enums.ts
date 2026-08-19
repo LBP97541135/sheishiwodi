@@ -25,6 +25,7 @@ export const endReasonSchema = z.enum([
   'abandoned_by_human',
   'model_failure_limit',
   'interrupted_not_resumed',
+  'all_players_eliminated',
 ]);
 
 export const campSchema = z.enum(['civilian', 'undercover']);
@@ -32,6 +33,8 @@ export const difficultySchema = z.enum(['easy', 'hard']);
 export const playerKindSchema = z.enum(['human', 'agent']);
 export const silhouetteSchema = z.enum(['silhouette_a', 'silhouette_b']);
 export const actionTypeSchema = z.enum(['describe', 'vote', 'defend', 'revote']);
+export const gameModeSchema = z.enum(['classic', 'guess']);
+export const winnerCampSchema = z.enum(['civilian', 'undercover', 'draw']);
 
 export type GameStatus = z.infer<typeof gameStatusSchema>;
 export type GamePhase = z.infer<typeof gamePhaseSchema>;
@@ -41,3 +44,5 @@ export type Difficulty = z.infer<typeof difficultySchema>;
 export type PlayerKind = z.infer<typeof playerKindSchema>;
 export type Silhouette = z.infer<typeof silhouetteSchema>;
 export type ActionType = z.infer<typeof actionTypeSchema>;
+export type GameMode = z.infer<typeof gameModeSchema>;
+export type WinnerCamp = z.infer<typeof winnerCampSchema>;
