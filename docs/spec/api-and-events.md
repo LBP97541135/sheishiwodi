@@ -1,6 +1,6 @@
 # API 与事件流规格
 
-- 状态：首个里程碑、模型档案、单局复盘与服务端中断恢复路由已实现；浏览器恢复和 Agent 开发者诊断接口待实现
+- 状态：首个里程碑、模型档案、单局复盘、服务端中断恢复路由与浏览器恢复已实现；Agent 开发者诊断接口待实现
 - 适用范围：本机单用户 REST + SSE
 
 ## 1. 总则
@@ -91,7 +91,7 @@ operationalStatus: 当前安全状态与重试进度
 
 “未完成”包括 `preparing`、`in_progress` 和 `awaiting_spectator`，不包括三个终局状态。
 
-`GET /api/games/active` 对“中断后等待玩家确认”的进行中对局返回 `operationalStatus.state=interrupted`，且 `allowedCommands` 只包含 `ResolveInterruptedGame`。`POST /api/games/:gameId/recovery` 接收稳定 `commandId` 与 `resolution=continue|start_new`：继续时解除门禁并重新执行当前动作；开始新局时先把旧局原子记为无胜者“中断后未继续”，不能复用主动放弃或模型失败端点。浏览器端待确认命令的 `sessionStorage` 恢复仍属于 TASK-075 第三阶段。
+`GET /api/games/active` 对“中断后等待玩家确认”的进行中对局返回 `operationalStatus.state=interrupted`，且 `allowedCommands` 只包含 `ResolveInterruptedGame`。`POST /api/games/:gameId/recovery` 接收稳定 `commandId` 与 `resolution=continue|start_new`：继续时解除门禁并重新执行当前动作；开始新局时先把旧局原子记为无胜者“中断后未继续”，不能复用主动放弃或模型失败端点。浏览器已经使用 `sessionStorage` 保存待确认命令，并在重载时按同一恢复协议处理。
 
 ### 4.2 创建与开始
 

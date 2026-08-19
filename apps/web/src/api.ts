@@ -12,6 +12,7 @@ import {
   type CreateGameRequest,
   type HumanGameView,
   type ReviewSummary,
+  type ResolveInterruptedGameRequest,
   type StartGameRequest,
   type SubmitDefenseRequest,
   type SubmitDescriptionRequest,
@@ -105,6 +106,18 @@ export async function continueSpectating(gameId: string, input: ContinueSpectati
 
 export async function abandonGame(gameId: string, input: AbandonGameRequest) {
   const body = await request(`/api/games/${gameId}/abandon`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return apiSuccessSchema(humanGameViewSchema).parse(body).data;
+}
+
+export async function resolveInterruptedGame(
+  gameId: string,
+  input: ResolveInterruptedGameRequest,
+) {
+  const body = await request(`/api/games/${gameId}/recovery`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),

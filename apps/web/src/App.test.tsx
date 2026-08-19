@@ -61,6 +61,7 @@ const response = (body: unknown, ok = true) => ({ ok, json: async () => body });
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -294,4 +295,112 @@ describe('App', () => {
     listeners.get('round_started')?.();
     expect(await screen.findByRole('heading', { name: '第 2 轮' })).toBeInTheDocument();
   });
+
+  it('服务中断恢复视图要求玩家选择，并使用恢复端点继续当前动作', async () => {
+    const interrupted = interruptedGame();
+    const continued = {
+      ...interrupted,
+      operationalStatus: { state: 'agent_working', actorId: 'agent-1' },
+      allowedCommands: ['AbandonGame'],
+    } as const;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ data: { game: interrupted } }))
+      .mockResolvedValueOnce(response(successBody(continued)));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('crypto', { randomUUID: () => 'recovery-command' });
+
+    render(<App />);
+    const dialog = await screen.findByRole('dialog', { name: '上一局在模型行动时中断' });
+    expect(within(dialog).getByRole('button', { name: '继续上一局' })).toHaveFocus();
+    fireEvent.click(within(dialog).getByRole('button', { name: '继续上一局' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/games/game-1/recovery',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ commandId: 'recovery-command', resolution: 'continue' }),
+      }),
+    );
+    expect(sessionStorage.getItem('sheishiwodi:pending-game-command')).toBeNull();
+  });
+
+  it('中断恢复选择开始新局后回到经典模式入口', async () => {
+    const interrupted = interruptedGame();
+    const abandoned = {
+      ...interrupted,
+      status: 'abandoned',
+      phase: 'ended',
+      revision: 4,
+      round: null,
+      endReason: 'interrupted_not_resumed',
+      allowedCommands: [],
+      operationalStatus: { state: 'idle' },
+    } as const;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ data: { game: interrupted } }))
+      .mockResolvedValueOnce(response(successBody(abandoned)));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('crypto', { randomUUID: () => 'new-game-command' });
+
+    render(<App />);
+    const dialog = await screen.findByRole('dialog', { name: '上一局在模型行动时中断' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '开始新对局' }));
+
+    expect(await screen.findByRole('button', { name: '经典模式' })).toBeInTheDocument();
+    expect(localStorage.getItem('sheishiwodi:last-game-id')).toBeNull();
+  });
+
+  it('刷新后确认开始新局时不重新打开刚结束的旧局', async () => {
+    const abandoned = {
+      ...interruptedGame(),
+      status: 'abandoned',
+      phase: 'ended',
+      revision: 4,
+      round: null,
+      endReason: 'interrupted_not_resumed',
+      allowedCommands: [],
+      operationalStatus: { state: 'idle' },
+    } as const;
+    localStorage.setItem('sheishiwodi:last-game-id', abandoned.gameId);
+    sessionStorage.setItem(
+      'sheishiwodi:pending-game-command',
+      JSON.stringify({
+        version: 1,
+        kind: 'recovery',
+        gameId: abandoned.gameId,
+        expectedRevision: 3,
+        request: { commandId: 'lost-start-new-response', resolution: 'start_new' },
+      }),
+    );
+    const fetchMock = vi.fn().mockResolvedValue(response(successBody(abandoned)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole('button', { name: '经典模式' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem('sheishiwodi:pending-game-command')).toBeNull();
+  });
 });
+
+function interruptedGame() {
+  return {
+    ...preparingGame,
+    status: 'in_progress',
+    phase: 'speaking',
+    revision: 3,
+    eventCursor: 8,
+    round: {
+      number: 1,
+      speakingOrder: ['agent-1', 'human-1', 'agent-2', 'agent-3'],
+      currentActorId: 'agent-1',
+      actionType: 'describe',
+      tieCandidateIds: [],
+    },
+    allowedCommands: ['ResolveInterruptedGame'],
+    operationalStatus: { state: 'interrupted' },
+  } as const;
+}

@@ -112,7 +112,7 @@ TASK-074～077 实现时至少补充：
 - [x] 模型调用中断不消耗常规重试预算；继续旧局只恢复中断动作，开始新局产生独立无胜者原因。
 - [x] 活动局阻止新复盘启动、在途复盘允许完成、全局复盘并发为 1，重启后恢复持久化队列顺序。
 - [x] SQLite 繁忙只等待事务且模型调用次数不增加；完整性异常进入仅健康检查可用的受限诊断模式；迁移前备份可恢复。
-- SSE 中断提示、持续重连、立即重试和权威视图校准；人类命令响应丢失后复用原 `commandId`，刷新或重试不产生重复领域事件。
+- [x] SSE 中断提示、持续重连、立即重试和权威视图校准；人类命令响应丢失后复用原 `commandId`，刷新或重试不产生重复领域事件。
 - [x] `model_attempts` 完整关联 `gameId/commandId/actionId/attemptId`，格式修复、内容重生成和系统重试均可追踪，且表中不存在 Prompt、响应、Key 或 Base URL 字段。
 - [x] 严格 `AgentTurnInput`、上下文所有者/公开游标/合法目标门禁在出网前执行；额外私有字段哨兵会被阻止且记录 `context_boundary_violation`。
 - 完整 Prompt/响应审计默认关闭；显式调试模式的文件位于 Git 忽略目录且不含 Key、Base URL 和请求头。
@@ -186,7 +186,8 @@ TASK-074～077 实现时至少补充：
 | Server | `no-live-in-default.test.ts` | 默认假模型完整对局零 fetch 调用、零真实模型实例化 |
 | Server | `agent-runtime.test.ts` | Agent 输入白名单、投票/重投目标边界和 `FakeAgentPolicy` 合法输出 |
 | Server | `game-stream.test.ts` | SSE/补取游标、`Last-Event-ID`、严格递增、去重和公开帧私有字段缺失 |
-| Web | `App.test.tsx` | 玩家身份弹层、经典/猜词模式入口、创建与准备恢复、本地翻牌、素材、开始游戏、最近终局恢复和 SSE 游标去重 |
+| Web | `App.test.tsx` | 玩家身份弹层、经典/猜词模式入口、创建与准备恢复、本地翻牌、素材、开始游戏、最近终局恢复、SSE 游标去重和中断对局确认 |
+| Web | `game-command-recovery.test.ts`、`use-game-stream.test.tsx` | 响应丢失后的权威判定、稳定 ID 重试、双重断网保留、旧对局回退、修订冲突，以及 SSE 延迟提示/自动重连/立即重试/权威同步 |
 | Web | `GameScreen.test.tsx`、`ReviewScreen.test.tsx` | 描述、投票、辩解、重投、违规/异常分镜、观战/放弃、终局揭晓、复盘和 DOM 隔离 |
 
 ### 5.2 Playwright
@@ -204,6 +205,8 @@ Playwright 每个模式使用独立临时 SQLite、确定性随机序列和真�
 2026-08-17 首页信息层级收口回归：Web 源码测试 52/52、生产构建和 `git diff --check` 通过；在 1280×720 可见浏览器中验证身份弹层保存/取消、焦点返回、经典/猜词模式层级和难度下置，控制台无 warning/error，页面无 Vite 错误遮罩。
 
 2026-08-19 最终零付费回归：默认测试 186/186、三 workspace typecheck、全仓 lint/build 与 Playwright 10/10 通过。E2E 的 Web 服务直接调用仓库 Vite CLI，避免嵌套包管理器在启动前重验依赖；normal 流程新增角色名必须位于席位卡片边界内的断言。另以 1440px 与 393px Chromium 截图检查首页、猜词模式提示和首轮对局；移动端 `scrollWidth === innerWidth === 393`、4 张角色图加载完成、控制台无 warning/error。全程强制 fake provider，不调用真实 API。
+
+2026-08-19 浏览器恢复阶段回归：Web 恢复专项 17/17、Web 源码测试 63/63、typecheck 与既有 Playwright 10/10 通过。另以一次性故障注入在 1440×1000 和 375×812 Chromium 验证 SSE 断线约 3 秒后保留当前画面并显示恢复横幅、立即重试可用、中断对局双选项无溢出且默认聚焦“继续上一局”；除刻意制造的 SSE `ERR_CONNECTION_REFUSED` 外无控制台错误。全程使用 fake/拦截视图，不读取真实 API Key、不产生模型费用，一次性脚本未保留为长期测试。
 
 ## 6. 首个里程碑验收清单
 

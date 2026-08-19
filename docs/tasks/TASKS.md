@@ -23,7 +23,7 @@
 - `TASK-072`：已完成；首页身份配置迁移后的 Playwright 助手已同步，10 项 E2E 全部通过。
 - `TASK-073`：已完成；面试交付前最终零付费回归通过，并修复 E2E 前端启动耦合与移动端席位名称溢出。
 - `TASK-074`：已完成；服务中断确认恢复与全局单并发复盘调度已实现。
-- `TASK-075`：进行中；SQLite 启动门禁、迁移备份和繁忙处理已完成，浏览器 SSE/命令恢复待第三阶段。
+- `TASK-075`：已完成；SQLite 启动门禁、迁移备份、繁忙处理、浏览器 SSE 重连和稳定命令恢复均已实现并验收。
 - `TASK-076`：进行中；调用台账、统一链路、上下文门禁与单 Provider 轻量熔断已完成，完整记录、清理与可选观测出口待第四阶段。
 - `TASK-077`：待开发；双层门禁的开发者面板在第四阶段实施。
 - 首个里程碑 7 个切片全部通过默认测试、E2E、构建、类型、静态检查和文档门禁。
@@ -200,6 +200,6 @@
 | 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
 | --- | --- | --- | --- | --- |
 | TASK-074 服务中断恢复与复盘调度 | 已完成 | 持久化模型调用中断状态；玩家确认继续旧局或开始新局；中断恢复不消耗常规重试；正常停机立即标记并取消本地等待；复盘中断自动回队；活动局阻止新复盘、在途复盘允许完成、全局复盘并发 1、空闲后按已确认优先级调度 | DEC-092/093、REQUIREMENTS 稳定性规划、SPEC architecture/persistence | `game_runtime_recovery`、`runtime_interrupted` attempt、恢复 Schema/API/状态机、关停 Abort、复盘全局队列；中断重启/继续/新局与调度测试通过 |
-| TASK-075 SQLite 与浏览器轻量恢复 | 进行中 | 数据完整性异常进入仅健康检查的本机诊断模式；迁移前备份；SQLite busy 默认约 3 秒且只重试事务；SSE 中断提示/持续重连/立即重试；`sessionStorage` 保存待确认命令并复用稳定 `commandId` | DEC-094、SPEC persistence/API/frontend、TEST §2.7 | 已完成：`quick_check` 健康门禁、仅健康路由、迁移前备份、可配置 busy timeout 与脱敏 503。待产出：浏览器 SSE/命令恢复及 Web/E2E 负向测试 |
+| TASK-075 SQLite 与浏览器轻量恢复 | 已完成 | 数据完整性异常进入仅健康检查的本机诊断模式；迁移前备份；SQLite busy 默认约 3 秒且只重试事务；SSE 中断提示/持续重连/立即重试；`sessionStorage` 保存待确认命令并复用稳定 `commandId` | DEC-094、SPEC persistence/API/frontend、TEST §2.7 | `quick_check` 健康门禁、仅健康路由、迁移前备份、可配置 busy timeout 与脱敏 503；SSE 3 秒提示、指数重连、立即重试与权威同步；八类命令发送前保存、响应不确定时权威判定及同 ID 重试。Web 恢复专项 17 项、源码测试 63 项、既有 E2E 10/10 与桌面/移动故障注入可见验收通过 |
 | TASK-076 Agent 调用台账、上下文审计与轻量熔断 | 进行中 | 实现 `model_attempts`；贯通 `gameId -> commandId -> actionId -> attemptId`；生成独立上下文清单并在出网前阻止越权；脱敏记录随对局保留，完整 Prompt/响应仅显式调试、Git 忽略且按 7 天/容量上限清理；实现单 Provider 轻量熔断与可选 `TelemetrySink`，正常模型流程不变 | DEC-095/096、SPEC agent-runtime §12、persistence §2.6、TEST §2.7 | 已完成：Schema/迁移、真实参赛与复盘 attempt、统一链路、结构化清单、出网前门禁、共享轻量熔断及冷却单探测测试。待产出：完整记录、清理器、`TelemetrySink` 和面板验收 |
 | TASK-077 双层门禁的 Agent 开发者面板与验收 | 待开发 | 服务端 env 默认关闭且决定是否注册诊断能力；开启后前端提供当前标签页开发者开关和四类只读观测视图；完整上下文记录使用二次敏感开关、仅当前服务会话生效并逐条确认展开；普通模式 DOM/Network/开发者工具无诊断数据，不触发模型重放 | DEC-095/096、SPEC frontend/API、TEST §2.7 | 待产出：服务端门禁、诊断投影/API、Web 面板、完整记录会话开关、组件/E2E/DOM/Network 负向测试、文档和验收截图 |

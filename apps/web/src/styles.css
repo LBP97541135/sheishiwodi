@@ -127,6 +127,31 @@ h1 {
   gap: 24px;
 }
 
+.connection-notice {
+  display: flex;
+  width: min(100%, 960px);
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 2px solid #9d7410;
+  margin: -6px 0 16px;
+  background: #fff4c7;
+  color: #5d4408;
+  font-weight: 800;
+  padding: 8px 12px;
+}
+
+.connection-notice button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  background: #fffdf6;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 5px 10px;
+}
+
 .storyboard:has(.new-game) {
   padding: clamp(24px, 4vw, 44px);
 }
@@ -1404,6 +1429,23 @@ legend {
   background: #fffdf6;
   padding: 8px 10px;
   width: 100%;
+}
+
+.recovery-dialog {
+  width: min(100%, 520px);
+}
+
+.recovery-dialog .action-row {
+  justify-content: flex-end;
+}
+
+.recovery-dialog .action-row .primary-action {
+  justify-self: auto;
+}
+
+.recovery-dialog button:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .model-card__field input:disabled {
