@@ -1,22 +1,24 @@
 # 角色素材索引
 
-- 状态：角色素材、审讯室背景与背景音乐均已接入
+- 状态：角色素材、审讯室背景与背景音乐均已按发布规格压缩并接入
 - 运行时素材目录：`apps/web/src/assets/`（仓库根重复原始目录已删除）
-- 检查日期：2026-08-17
-- 当前数量：26 张 PNG、1 个 WAV
+- 检查日期：2026-08-19
+- 当前数量：30 张角色 WebP（25 张动作图、5 张头像）、1 张场景 WebP、1 个 MP3
 - 覆盖范围：DeepSeek、豆包、千问、男性人类、女性人类各 5 种状态；1 张横版审讯室背景；1 首背景音乐
 
 ## 1. 使用结论
 
 当前素材已经完整覆盖三个 AI 角色与男、女人类形象的待机、思考、发言、被怀疑和被淘汰状态。三组 AI 角色保持统一的女性拟人漫画方向；人类素材使用匿名深色剪影，不建立具体面部画像，并通过姿势和场景符号表达状态。各角色在同一组内的人物识别特征基本稳定，五种状态具有可辨识的表情、动作或道具差异。构图比例接近一致，能够直接放入统一的角色容器，并通过 `object-fit: contain` 保持完整人物。
 
-当前代码在 `apps/web/src/assets/characters/` 保存 25 张角色 PNG，并通过 `character-assets.ts` 为 DeepSeek、豆包、千问、男性人类和女性人类建立五状态映射；准备页与对局页均使用这些素材，加载失败时回退为文字占位头像。审讯室背景位于 `apps/web/src/assets/scenes/interrogation-room.png`，由 `experience-settings.tsx` 的背景切换（纸面/审讯室）消费。背景音乐位于 `apps/web/src/assets/audio/game-bgm.wav` 并导出为 `audioAssets.gameBgm`；`useExperienceSettings` 负责默认关闭、循环、音量 0.24、自动播放解锁与卸载安全。仓库根重复的 `素材/` 目录已删除，不再作为可链接的归档事实源。桌面与 375×812 移动端均实测背景切换、设置控件布局与素材加载正常。
+当前代码在 `apps/web/src/assets/characters/` 保存 25 张 512×640 动作 WebP 和 5 张 256×256 头像 WebP，并通过 `character-assets.ts` 统一导出状态与头像映射；准备页与对局页继续使用五状态素材，加载失败时回退为文字占位头像。审讯室背景位于 `apps/web/src/assets/scenes/interrogation-room.webp`，背景音乐位于 `apps/web/src/assets/audio/game-bgm.mp3`。`useExperienceSettings` 继续负责背景选择、音乐默认关闭、循环、音量 0.24、自动播放解锁与卸载安全。
 
-发布前仍需完成：`game-bgm.wav` 为 10.5 MB 未压缩 WAV（构建已提示体积偏大），本机无 ffmpeg 暂未转码，正式发布前应压缩为较小音频格式；角色 PNG 的透明通道核验、统一导出尺寸与 WebP 压缩同属无损工程整理，不阻塞当前开发。
+`scripts/optimize-assets.py` 是角色和场景的可复现转换与检查入口：动作图输出 512×640、头像输出 256×256、质量 84、透明源保留 Alpha。原 25 张角色 PNG、场景 PNG 和 10.5 MB WAV 已在解码、可见裁切、Web 测试与生产构建通过后从当前树移除，历史仍可从 Git 恢复。角色与场景运行时图片约 1.11 MiB；60 秒 MP3 为 44.1 kHz 立体声、128 kbps，约 0.92 MiB。
+
+转换依赖固定在 `scripts/requirements-assets.txt`。从 Git 历史恢复原始目录或准备同结构的外部原始素材后，使用 `python scripts/optimize-assets.py --source-root <原始素材目录> --ffmpeg <ffmpeg路径>` 重新生成全部运行时资产；日常只需执行 `python scripts/optimize-assets.py --check` 验证格式、尺寸和可解码性。ffmpeg 只用于离线加工，不是应用运行依赖。
 
 素材接入不得改变已确认的信息层级、漫画分镜尺寸或状态机行为；图片和音频只负责表现。
 
-正式发布前仍需完成命名规范化、透明通道核验、统一导出尺寸和 WebP 压缩。上述工作属于无损工程整理，不阻塞当前开发。
+公开发布前仍需由项目负责人补齐生成来源、提示词、日期和许可记录，并确认画面右下角现有生成工具水印的处理方式。未确认前不移除水印，也不声称素材授权已经核验完成。
 
 ## 2. 状态语义
 
@@ -36,57 +38,57 @@
 
 | 状态 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 待机 | `apps/web/src/assets/characters/deepseek/idle.png` | 1792 × 2240 | 已接入 |
-| 思考 | `apps/web/src/assets/characters/deepseek/thinking.png` | 1831 × 2288 | 已接入；发布前统一画布 |
-| 发言 | `apps/web/src/assets/characters/deepseek/speaking.png` | 1792 × 2240 | 已接入 |
-| 被怀疑 | `apps/web/src/assets/characters/deepseek/suspected.png` | 1792 × 2240 | 已接入 |
-| 被淘汰 | `apps/web/src/assets/characters/deepseek/eliminated.png` | 1792 × 2240 | 已接入 |
+| 待机 | `apps/web/src/assets/characters/deepseek/idle.webp` | 512 × 640 | 已接入 |
+| 思考 | `apps/web/src/assets/characters/deepseek/thinking.webp` | 512 × 640 | 已接入；画布已统一 |
+| 发言 | `apps/web/src/assets/characters/deepseek/speaking.webp` | 512 × 640 | 已接入 |
+| 被怀疑 | `apps/web/src/assets/characters/deepseek/suspected.webp` | 512 × 640 | 已接入 |
+| 被淘汰 | `apps/web/src/assets/characters/deepseek/eliminated.webp` | 512 × 640 | 已接入 |
 
 ### 3.2 豆包
 
 | 状态 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 待机 | `apps/web/src/assets/characters/doubao/idle.png` | 1792 × 2240 | 已接入 |
-| 思考 | `apps/web/src/assets/characters/doubao/thinking.png` | 1792 × 2240 | 已接入 |
-| 发言 | `apps/web/src/assets/characters/doubao/speaking.png` | 1792 × 2240 | 已接入 |
-| 被怀疑 | `apps/web/src/assets/characters/doubao/suspected.png` | 1792 × 2240 | 已接入 |
-| 被淘汰 | `apps/web/src/assets/characters/doubao/eliminated.png` | 1792 × 2240 | 已接入 |
+| 待机 | `apps/web/src/assets/characters/doubao/idle.webp` | 512 × 640 | 已接入 |
+| 思考 | `apps/web/src/assets/characters/doubao/thinking.webp` | 512 × 640 | 已接入 |
+| 发言 | `apps/web/src/assets/characters/doubao/speaking.webp` | 512 × 640 | 已接入 |
+| 被怀疑 | `apps/web/src/assets/characters/doubao/suspected.webp` | 512 × 640 | 已接入 |
+| 被淘汰 | `apps/web/src/assets/characters/doubao/eliminated.webp` | 512 × 640 | 已接入 |
 
 ### 3.3 千问
 
 | 状态 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 待机 | `apps/web/src/assets/characters/qwen/idle.png` | 1792 × 2240 | 已接入 |
-| 思考 | `apps/web/src/assets/characters/qwen/thinking.png` | 1792 × 2240 | 已用规范化名称接入 |
-| 发言 | `apps/web/src/assets/characters/qwen/speaking.png` | 1792 × 2240 | 已接入 |
-| 被怀疑 | `apps/web/src/assets/characters/qwen/suspected.png` | 1792 × 2240 | 已接入 |
-| 被淘汰 | `apps/web/src/assets/characters/qwen/eliminated.png` | 1792 × 2240 | 已接入 |
+| 待机 | `apps/web/src/assets/characters/qwen/idle.webp` | 512 × 640 | 已接入 |
+| 思考 | `apps/web/src/assets/characters/qwen/thinking.webp` | 512 × 640 | 已用规范化名称接入 |
+| 发言 | `apps/web/src/assets/characters/qwen/speaking.webp` | 512 × 640 | 已接入 |
+| 被怀疑 | `apps/web/src/assets/characters/qwen/suspected.webp` | 512 × 640 | 已接入 |
+| 被淘汰 | `apps/web/src/assets/characters/qwen/eliminated.webp` | 512 × 640 | 已接入 |
 
 ### 3.4 男性人类剪影
 
 | 状态 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 待机 | `apps/web/src/assets/characters/human-male/idle.png` | 1792 × 2240 | 已接入 |
-| 思考 | `apps/web/src/assets/characters/human-male/thinking.png` | 1792 × 2240 | 已接入 |
-| 发言 | `apps/web/src/assets/characters/human-male/speaking.png` | 1792 × 2240 | 已接入 |
-| 被怀疑 | `apps/web/src/assets/characters/human-male/suspected.png` | 1792 × 2240 | 已接入 |
-| 被淘汰 | `apps/web/src/assets/characters/human-male/eliminated.png` | 1792 × 2240 | 已接入 |
+| 待机 | `apps/web/src/assets/characters/human-male/idle.webp` | 512 × 640 | 已接入 |
+| 思考 | `apps/web/src/assets/characters/human-male/thinking.webp` | 512 × 640 | 已接入 |
+| 发言 | `apps/web/src/assets/characters/human-male/speaking.webp` | 512 × 640 | 已接入 |
+| 被怀疑 | `apps/web/src/assets/characters/human-male/suspected.webp` | 512 × 640 | 已接入 |
+| 被淘汰 | `apps/web/src/assets/characters/human-male/eliminated.webp` | 512 × 640 | 已接入 |
 
 ### 3.5 女性人类剪影
 
 | 状态 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 待机 | `apps/web/src/assets/characters/human-female/idle.png` | 1792 × 2240 | 已接入 |
-| 思考 | `apps/web/src/assets/characters/human-female/thinking.png` | 1792 × 2240 | 已接入 |
-| 发言 | `apps/web/src/assets/characters/human-female/speaking.png` | 1792 × 2240 | 已接入 |
-| 被怀疑 | `apps/web/src/assets/characters/human-female/suspected.png` | 1792 × 2240 | 已接入 |
-| 被淘汰 | `apps/web/src/assets/characters/human-female/eliminated.png` | 1792 × 2240 | 已接入 |
+| 待机 | `apps/web/src/assets/characters/human-female/idle.webp` | 512 × 640 | 已接入 |
+| 思考 | `apps/web/src/assets/characters/human-female/thinking.webp` | 512 × 640 | 已接入 |
+| 发言 | `apps/web/src/assets/characters/human-female/speaking.webp` | 512 × 640 | 已接入 |
+| 被怀疑 | `apps/web/src/assets/characters/human-female/suspected.webp` | 512 × 640 | 已接入 |
+| 被淘汰 | `apps/web/src/assets/characters/human-female/eliminated.webp` | 512 × 640 | 已接入 |
 
 ### 3.6 对局背景
 
 | 用途 | 当前文件 | 原始尺寸 | 可用性 |
 | --- | --- | --- | --- |
-| 对局漫画主背景 | `apps/web/src/assets/scenes/interrogation-room.png` | 2600 × 1460，约 16:9 | 已接入纸面/审讯室切换 |
+| 对局漫画主背景 | `apps/web/src/assets/scenes/interrogation-room.webp` | 1410 × 838，约 16:9 | 已接入纸面/审讯室切换 |
 
 当前背景由 `sceneAssets` 导出并通过 `.shell--interrogation` 与 `--scene-background` 渲染；移动端使用同一图片的固定焦点裁切，桌面与 375×812 已完成实测。
 
@@ -94,9 +96,9 @@
 
 | 用途 | 当前文件 | 格式 | 可用性 |
 | --- | --- | --- | --- |
-| 对局背景音乐 | `apps/web/src/assets/audio/game-bgm.wav` | WAV，约 10.5 MB | 已接入；发布前需压缩并核验授权与音频参数 |
+| 对局背景音乐 | `apps/web/src/assets/audio/game-bgm.mp3` | MP3，60 秒、44.1 kHz、立体声、128 kbps，约 0.92 MiB | 已接入；来源授权仍待负责人补充 |
 
-背景音乐已由 `useExperienceSettings` 接入，默认关闭，只在允许的对局阶段播放，并提供本地开关。发布前应生成较小的 OGG/MP3 或其他适合 Web 的副本，同时核验响度、循环接缝与授权来源。
+背景音乐已由 `useExperienceSettings` 接入，默认关闭，只在允许的对局阶段播放，并提供本地开关。MP3 已通过完整解码检查；主观响度、循环接缝和授权来源仍需负责人最终听验与补充。
 
 ## 4. 接入命名
 
@@ -110,19 +112,16 @@
 | 男性人类 | `apps/web/src/assets/characters/human-male/` |
 | 女性人类 | `apps/web/src/assets/characters/human-female/` |
 
-每个角色目录当前统一使用 `idle.png`、`thinking.png`、`speaking.png`、`suspected.png`、`eliminated.png`，由 `apps/web/src/character-assets.ts` 集中维护 URL 映射。组件不通过拼接显示名称推导文件路径。
-
-当前仍直接使用大尺寸 PNG，构建产物体积较大；WebP 压缩尚未完成。后续视觉整理应在保持目录键和组件接口不变的前提下替换为统一画布的 WebP。
+每个角色目录统一使用 `avatar.webp`、`idle.webp`、`thinking.webp`、`speaking.webp`、`suspected.webp`、`eliminated.webp`，由 `apps/web/src/character-assets.ts` 集中维护 URL 映射。组件不通过拼接显示名称推导文件路径。
 
 ## 5. 尚需补充或核验
 
 ### 5.1 发布前必须补充
 
 - 在本文件的来源记录中补充生成工具、生成日期、主要提示词和必要后期处理。
-- 程序核验 26 张 PNG 中的 25 张角色图是否都带真实 Alpha 透明通道；背景图按不透明场景图处理。
-- 将 `千文-思考.png` 规范化为千问角色文件名；原始文件可以保留，前端规范化副本必须使用 `qwen/thinking.webp`。
-- 统一 DeepSeek 思考图与其余图片的导出画布、主体缩放和安全裁切位置。
-- 核验 `bgm.wav` 的生成或下载来源、授权范围、时长、采样率、声道、响度与循环接缝；发布前生成压缩的 OGG/MP3 Web 副本。
+- 由项目负责人确认并补充现有角色、背景和 BGM 的生成或下载来源、授权范围与对外使用说明。
+- 由项目负责人决定现有角色动作图右下角生成工具水印是否保留；未得到来源与授权依据前不做去水印处理。
+- 最终发布前人工听验 BGM 响度与循环接缝；程序已确认 MP3 可完整解码、时长与声道参数正确。
 
 ### 5.2 剩余素材的制作方式
 
@@ -163,7 +162,7 @@ AI 生图不适合生成包含文字的词牌、按钮、图标、票数、角�
 
 ### 5.3 推荐执行顺序
 
-1. 当前 25 张角色 PNG 已接入准备页与对局页；后续在不改变状态键的情况下压缩为 WebP。
+1. 当前 25 张角色动作图和 5 张头像已按统一规格接入；后续新增角色复用 `scripts/optimize-assets.py` 或等价上传处理链。
 2. 词牌、投票、印章、气泡、分镜和所有通用 UI 由开发直接编写，不等待额外图片。
 3. 通用功能图标和字体在工程初始化时从许可清晰的开源资源中选定并登记。
 4. 审讯室背景与 BGM 已接入；后续只需完成 Web 音频压缩、图片规范化和来源/授权记录。其余装饰物与纸张纹理均为可选。
@@ -178,5 +177,5 @@ AI 生图不适合生成包含文字的词牌、按钮、图标、票数、角�
 | 生成日期 | 待补充 |
 | 统一基础提示词 | 待补充 |
 | 各状态派生方式 | 待补充 |
-| 后期处理工具与步骤 | 待补充 |
+| 后期处理工具与步骤 | Pillow：动作图 512×640、头像 256×256、WebP quality 84；ffmpeg/libmp3lame：128 kbps MP3。视觉内容未做生成式修改，现有水印保留 |
 | 对外使用与公开仓库说明 | 项目专用生成素材；发布前复核生成工具条款 |

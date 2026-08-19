@@ -26,6 +26,10 @@
 - `TASK-075`：已完成；SQLite 启动门禁、迁移备份、繁忙处理、浏览器 SSE 重连和稳定命令恢复均已实现并验收。
 - `TASK-076`：已完成；调用台账、统一链路、上下文门禁、完整调试记录与清理、单 Provider 轻量熔断及可选观测出口均已落地。
 - `TASK-077`：已完成；双层门禁的四视图开发者面板、敏感记录确认和普通模式负向门禁已实现。
+- `TASK-078`～`TASK-084`：已完成；系统审计后的 Agent 工程补强与格式失败诊断已经逐项验证并提交。
+- `TASK-085`：已完成；发布素材规范化、压缩、可复现检查与来源缺口记录已收口。
+- `TASK-086`：待开始；角色库、4～8 人动态阵容、多卧底与纯 Agent 对局。
+- `TASK-087`：待开始；全阵营猜词模式及并行投票批次结算。
 - 首个里程碑 7 个切片全部通过默认测试、E2E、构建、类型、静态检查和文档门禁。
 
 ## 验收依据缩写
@@ -130,7 +134,7 @@
 | 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
 | --- | --- | --- | --- | --- |
 | TASK-044 扩充首版完整词库 | 已完成 | 将版本化词库从里程碑 4 组子集扩充为 30 组；简单/困难各 15 组；人工审核固定阵营、公平性、描述空间与泄词风险 | REQUIREMENTS 词库、DEC-075/076、SPEC persistence | `data/word-pairs.json` 30 组；`word-pairs.test.ts` 增加事实源数量/难度/启用/唯一性断言；文件级结构核对通过，完整命令门禁待本机执行环境恢复后补跑 |
-| TASK-045 视觉与媒体收口 | 已完成 | 接入 BGM 与开关；整理五角色五状态素材；完善视觉/无障碍；支持默认纸面与审讯室背景切换 | frontend UX、ASSETS、负责人 2026-08-16 指令 | `experience-settings.tsx` 设置控件（背景音乐开关默认关、纸面/审讯室背景单选）与 `useExperienceSettings` 媒体生命周期；`App` 根 shell 应用 `shell--<theme>` 与 `--scene-background`；`bgm.wav` 规范化为 `assets/audio/game-bgm.wav`（去掉仓库根中文路径导入）；新增 `experience-settings.test.tsx` 8 项组件/hook 测试（默认关、持久化、背景切换、底图、音源非中文路径）；typecheck/lint、默认测试 128 项、build 全绿；桌面与 375×812 实测背景切换与控件布局正常；待发布前压缩 10.5MB WAV（本机无 ffmpeg） |
+| TASK-045 视觉与媒体收口 | 已完成 | 接入 BGM 与开关；整理五角色五状态素材；完善视觉/无障碍；支持默认纸面与审讯室背景切换 | frontend UX、ASSETS、负责人 2026-08-16 指令 | `experience-settings.tsx` 设置控件（背景音乐开关默认关、纸面/审讯室背景单选）与 `useExperienceSettings` 媒体生命周期；`App` 根 shell 应用 `shell--<theme>` 与 `--scene-background`；新增 `experience-settings.test.tsx` 8 项组件/hook 测试；最初接入的 PNG/WAV 已由 TASK-085 完成发布压缩 |
 
 ## 真实模型接入（DEC-085）
 
@@ -217,3 +221,11 @@
 | TASK-082 细化 Agent 尝试阶段口径 | 已完成 | 区分 Provider 返回、结构校验、内容校验和动作提交；内容拒绝或过期结果不得显示最终成功 | DEC-095/097、TEST §2.8 | 新增 v3 `model_attempt_stages` 增量迁移与面板阶段列；成功终态统一为 `action_committed`，并覆盖 `content_rejected`、`domain_rejected`、`stale_discarded`、`commit_failed`；启动时对账已提交动作以关闭观测落账崩溃窗口。Node 22 默认测试 234/234、三 workspace typecheck、全仓 lint 与差异检查通过 |
 | TASK-083 固定 Node 22 与零付费 CI | 已完成 | 增加运行时版本文件和 GitHub Actions；默认 CI 只跑零出网门禁；修正文档中过期验收状态 | DEC-097、SPEC architecture §8、TEST §2.8 | `.node-version` 与 package engines 固定 Node 22.14.0，pnpm 固定 9.15.9；CI 强制 fake provider、清空真实凭据，只运行 typecheck/lint/test/build/E2E。Node 22 默认测试 234/234、三 workspace typecheck、lint/build、隔离端口 E2E 10/10 与 CI 契约静态检查通过；远端 Actions 待推送后由 GitHub 执行 |
 | TASK-084 细化模型格式失败诊断与修复 | 已完成 | 保持 strict Schema；为非法 JSON、非对象、Schema 字段、非法目标和信念不变量生成脱敏原因码；格式修复提示携带实际失败位置与完整输出约束；Provider 计时日志不再用 `ok` 冒充行动成功 | DEC-098、SPEC agent-runtime §8/12、TEST §2.9 | `AgentFormatError` 形成稳定原因码并只持久化脱敏字段路径/issue code；格式修复收到完整字段、长度、唯一 ID、概率与目标契约；概率上限进入共享 Schema。Node 22 下 Shared 55/55、Server 112/112、Web 67/67、三端 typecheck、全仓 lint 与差异检查通过；真实 API 复测待再次显式授权 |
+
+## 二期可扩展玩法
+
+| 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
+| --- | --- | --- | --- | --- |
+| TASK-085 发布素材规范化 | 已完成 | 25 张角色动作图统一为 512×640 WebP，并从待机图生成 256×256 WebP 头像；审讯室背景转 WebP；10.5 MB WAV 转 128 kbps MP3；运行时只引用压缩资产；保留可复现脚本、尺寸/解码/构建/视觉证据；不擅自移除水印或补写授权 | DEC-099、ASSETS、SPEC frontend | 图片由 67.90 MiB 降至 1.11 MiB（-98.37%），音频由 10.09 MiB 降至 0.92 MiB（-90.92%）；资产检查、Web 65/65、typecheck/build、1280×720 浏览器解码与零旧格式请求通过 |
+| TASK-086 动态阵容与本地角色库 | 待开始 | 统一管理内置与自建角色；支持 0/1 名人类、4～8 名总玩家、4～5 人 1 卧底、6～8 人 2 卧底；支持纯 Agent 普通观战、自动/暂停/单步、并发与真实请求预算；人类剪影禁止分配给 Agent | DEC-100、REQUIREMENTS、SPEC | 待产出迁移、状态机、API、UI、隔离、恢复和桌面验证证据 |
+| TASK-087 猜词模式 | 待开始 | 自己的描述或首轮投票行动可用一次猜词替代原动作；同时猜目标敌对身份与其精确词语；成功淘汰目标、失败淘汰自己；投票阶段从冻结快照并行收集、原子结算，公开信息不泄露目标与猜词 | DEC-101、REQUIREMENTS、SPEC | 待产出状态机、并行结算、Agent Schema/Prompt、信息隔离、UI 与整局验证证据 |

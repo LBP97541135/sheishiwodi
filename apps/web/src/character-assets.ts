@@ -1,30 +1,35 @@
-import deepseekIdle from './assets/characters/deepseek/idle.png';
-import deepseekThinking from './assets/characters/deepseek/thinking.png';
-import deepseekSpeaking from './assets/characters/deepseek/speaking.png';
-import deepseekSuspected from './assets/characters/deepseek/suspected.png';
-import deepseekEliminated from './assets/characters/deepseek/eliminated.png';
-import doubaoIdle from './assets/characters/doubao/idle.png';
-import doubaoThinking from './assets/characters/doubao/thinking.png';
-import doubaoSpeaking from './assets/characters/doubao/speaking.png';
-import doubaoSuspected from './assets/characters/doubao/suspected.png';
-import doubaoEliminated from './assets/characters/doubao/eliminated.png';
-import qwenIdle from './assets/characters/qwen/idle.png';
-import qwenThinking from './assets/characters/qwen/thinking.png';
-import qwenSpeaking from './assets/characters/qwen/speaking.png';
-import qwenSuspected from './assets/characters/qwen/suspected.png';
-import qwenEliminated from './assets/characters/qwen/eliminated.png';
-import maleIdle from './assets/characters/human-male/idle.png';
-import maleThinking from './assets/characters/human-male/thinking.png';
-import maleSpeaking from './assets/characters/human-male/speaking.png';
-import maleSuspected from './assets/characters/human-male/suspected.png';
-import maleEliminated from './assets/characters/human-male/eliminated.png';
-import femaleIdle from './assets/characters/human-female/idle.png';
-import femaleThinking from './assets/characters/human-female/thinking.png';
-import femaleSpeaking from './assets/characters/human-female/speaking.png';
-import femaleSuspected from './assets/characters/human-female/suspected.png';
-import femaleEliminated from './assets/characters/human-female/eliminated.png';
-import interrogationRoom from './assets/scenes/interrogation-room.png';
-import gameBgm from './assets/audio/game-bgm.wav?url';
+import deepseekAvatar from './assets/characters/deepseek/avatar.webp';
+import deepseekIdle from './assets/characters/deepseek/idle.webp';
+import deepseekThinking from './assets/characters/deepseek/thinking.webp';
+import deepseekSpeaking from './assets/characters/deepseek/speaking.webp';
+import deepseekSuspected from './assets/characters/deepseek/suspected.webp';
+import deepseekEliminated from './assets/characters/deepseek/eliminated.webp';
+import doubaoAvatar from './assets/characters/doubao/avatar.webp';
+import doubaoIdle from './assets/characters/doubao/idle.webp';
+import doubaoThinking from './assets/characters/doubao/thinking.webp';
+import doubaoSpeaking from './assets/characters/doubao/speaking.webp';
+import doubaoSuspected from './assets/characters/doubao/suspected.webp';
+import doubaoEliminated from './assets/characters/doubao/eliminated.webp';
+import qwenAvatar from './assets/characters/qwen/avatar.webp';
+import qwenIdle from './assets/characters/qwen/idle.webp';
+import qwenThinking from './assets/characters/qwen/thinking.webp';
+import qwenSpeaking from './assets/characters/qwen/speaking.webp';
+import qwenSuspected from './assets/characters/qwen/suspected.webp';
+import qwenEliminated from './assets/characters/qwen/eliminated.webp';
+import maleAvatar from './assets/characters/human-male/avatar.webp';
+import maleIdle from './assets/characters/human-male/idle.webp';
+import maleThinking from './assets/characters/human-male/thinking.webp';
+import maleSpeaking from './assets/characters/human-male/speaking.webp';
+import maleSuspected from './assets/characters/human-male/suspected.webp';
+import maleEliminated from './assets/characters/human-male/eliminated.webp';
+import femaleAvatar from './assets/characters/human-female/avatar.webp';
+import femaleIdle from './assets/characters/human-female/idle.webp';
+import femaleThinking from './assets/characters/human-female/thinking.webp';
+import femaleSpeaking from './assets/characters/human-female/speaking.webp';
+import femaleSuspected from './assets/characters/human-female/suspected.webp';
+import femaleEliminated from './assets/characters/human-female/eliminated.webp';
+import interrogationRoom from './assets/scenes/interrogation-room.webp';
+import gameBgm from './assets/audio/game-bgm.mp3?url';
 
 export type CharacterState = 'idle' | 'thinking' | 'speaking' | 'suspected' | 'eliminated';
 export type CharacterKey = 'deepseek' | 'doubao' | 'qwen' | 'human-male' | 'human-female';
@@ -65,6 +70,14 @@ export const characterAssets: Record<CharacterKey, Record<CharacterState, string
     suspected: femaleSuspected,
     eliminated: femaleEliminated,
   },
+};
+
+export const characterAvatars: Record<CharacterKey, string> = {
+  deepseek: deepseekAvatar,
+  doubao: doubaoAvatar,
+  qwen: qwenAvatar,
+  'human-male': maleAvatar,
+  'human-female': femaleAvatar,
 };
 
 export const sceneAssets = { interrogationRoom } as const;
