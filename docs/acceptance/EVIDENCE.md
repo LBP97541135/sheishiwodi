@@ -35,6 +35,8 @@
 
 2026-08-19 面试交付前最终零付费回归：Node 22 下默认测试 186/186（Shared 50、Server 83、Web 53）、typecheck、ESLint、三 workspace build 和 Playwright E2E 10/10 全部通过。E2E 前端服务改为直接调用仓库内 Vite CLI，降低对嵌套 pnpm 运行状态的耦合；Chromium 额外验证首页、猜词模式提示和首轮对局。393px 移动视口无横向溢出，4 张角色图均完成解码，席位名称保持在卡片边界内，控制台 0 warning/error。本轮使用 fake provider，没有读取真实 Key 或产生模型费用。
 
+2026-08-19 Agent 工程补强后的零付费回归：Node 22 下 Shared 55/55、Server 112/112、Web 67/67，共 234/234；三 workspace typecheck、全仓 ESLint 与生产构建通过。Playwright 使用隔离端口与现有开发服务并行，normal 4/4、spectator 4/4、tie 2/2，共 10/10。仓库新增固定 Node 22.14.0 的 `.node-version` 和假模型 GitHub CI；工作流契约静态检查确认包含 typecheck、lint、test、build、E2E，显式清空真实 Provider 凭据且不含 `test:live*`。本段证明本地门禁与工作流配置，不冒充尚未发生的远端 Actions 运行。
+
 ## 3. 真实模型策略级验收
 
 2026-08-17T04:30:32Z 使用 Tokendance OpenAI 兼容中转执行 3 个角色 × 2 种动作，共 6 次真实调用：

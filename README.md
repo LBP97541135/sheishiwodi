@@ -10,7 +10,7 @@
 
 ### 环境要求
 
-- Node.js 20.11+，推荐 Node.js 22 LTS。
+- Node.js 22（仓库通过 [`.node-version`](.node-version) 固定为 22.14.0）。
 - pnpm 9.15.9。
 
 ```bash
@@ -22,6 +22,8 @@ pnpm dev
 ```
 
 浏览器访问 `http://127.0.0.1:9001`，Fastify API 监听 `http://127.0.0.1:3001`。默认使用 `FakeAgentPolicy`、本地词库和 SQLite，不需要 API Key、不会联网，也不会产生模型费用。
+
+默认端口被占用时，可在本地环境中设置 `SHEISHIWODI_API_PORT`、`SHEISHIWODI_WEB_PORT` 和与前者一致的 `SHEISHIWODI_API_ORIGIN`；Playwright 可用独立的 `E2E_API_PORT`、`E2E_WEB_PORT` 与正在运行的开发服务并存。
 
 首次运行 E2E 时，如本机还没有 Chromium：
 
@@ -167,6 +169,8 @@ pnpm test:e2e
 ```
 
 默认测试和 E2E 强制假模型、临时 SQLite 和确定性随机序列，不读取 `.env` 中的 Key，也不访问网络。E2E 覆盖桌面与移动端的正常终局、刷新恢复、放弃、淘汰观战和平票重投。
+
+GitHub Actions 使用同一 Node 22 与 pnpm 版本执行 typecheck、lint、默认测试、build 和 Playwright E2E。工作流显式强制假模型并清空真实 Provider 凭据，不调用任何 `test:live*`；真实模型验收始终由负责人在本地手动授权。
 
 真实模型验证只能显式执行：
 

@@ -1485,3 +1485,12 @@
 - 结构已验证但尚未提交的 attempt 保持活动态，进程中断时仍由原有 `runtime_interrupted` 恢复机制捕获。完整调试记录在最终收口时保存脱敏原始响应和准确终态。
 - 开发者调用链新增阶段列；旧数据无阶段时显示占位，不影响读取。新增内容拒绝、动作提交、玩家放弃导致过期、连续事务失败、复盘摘要提交、v2 迁移和面板展示测试；全部使用本地 fake/scripted 数据，不联网、不读取真实 Key、不产生费用。
 - Node 22 下 Shared 55/55、Server 112/112、Web 67/67 全部通过，三 workspace typecheck、全仓 lint 与 `git diff --check` 通过；Web 的 jsdom 媒体暂停提示为既有测试环境噪声，测试退出码为 0。
+
+## 2026-08-19 固定 Node 22 与零付费 CI（TASK-083）
+
+- 新增 `.node-version` 并将根 `engines` 收紧为 Node 22.x、pnpm 9.15.9；README 与仓库协作说明统一使用已验证的 Node 22.14.0，避免 `better-sqlite3` 原生 ABI 随本机全局 Node 漂移。
+- 新增 GitHub Actions 默认门禁：只执行 typecheck、lint、默认测试、build 和 Playwright E2E；工作流显式强制 `AGENT_PROVIDER=fake`、清空 Tokendance 与通用 Provider 凭据，且不包含任何 `test:live*` 命令。真实模型验收继续保持负责人本地显式授权。
+- Server、Vite 与 Playwright 增加项目专属可选端口变量；默认仍为 API `3001`、Web `9001`。本地门禁使用 `3011/9011` 与正在运行的验收服务并存，没有中断现有页面。
+- 清理当前状态文档中的过期描述：TASK-057 全栈真实验收、异步复盘 Web 闭环、单局 Markdown、运行中断双选恢复、背景/BGM 和稳定性/可观测性任务均改为已完成；历史日志中当时真实发生的 ABI 阻塞记录保持不变。
+- Node 22 下本轮累计默认测试 234/234、三 workspace typecheck、全仓 lint、Shared/Server/Web 生产构建通过；Playwright normal 4/4、spectator 4/4、tie 2/2，共 10/10。所有自动验证均使用 fake/scripted 模型，不读取真实 Key、不联网调用模型、不产生费用。
+- CI 契约静态自检确认版本、fake provider、空凭据、五类门禁命令和禁止 live 命令均符合规格；远端 Actions 的首次运行需在提交推送 GitHub 后由平台生成，不在本地伪造为已通过。

@@ -4,6 +4,8 @@ const mode = process.env['E2E_MODE'] ?? 'normal';
 if (!['normal', 'spectator', 'tie'].includes(mode)) {
   throw new Error(`未知 E2E_MODE: ${mode}`);
 }
+const apiPort = readPort(process.env['E2E_API_PORT'], 3001, 'E2E_API_PORT');
+const webPort = readPort(process.env['E2E_WEB_PORT'], 9001, 'E2E_WEB_PORT');
 
 const scenario = mode === 'tie' ? 'tie-then-eliminate' : 'normal';
 const undercoverRandom = mode === 'normal' ? 0 : 0.76;
@@ -22,14 +24,14 @@ export default defineConfig({
   workers: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://127.0.0.1:9001',
+    baseURL: `http://127.0.0.1:${webPort}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
   webServer: [
     {
       command: `"${process.execPath}" ${tsxCli} apps/server/src/main.ts --database-path=${databasePath} --fake-agent-scenario=${scenario} --fake-random-sequence=${randomSequence}`,
-      url: 'http://127.0.0.1:3001/api/health',
+      url: `http://127.0.0.1:${apiPort}/api/health`,
       reuseExistingServer: false,
       timeout: 60_000,
       // 强制隔离：E2E 绝不联网、绝不读真实 Key。即便本地 .env 配了 tokendance+Key，
@@ -38,13 +40,20 @@ export default defineConfig({
         AGENT_PROVIDER: 'fake',
         TOKENDANCE_BASE_URL: '',
         TOKENDANCE_API_KEY: '',
+        OPENAI_COMPATIBLE_BASE_URL: '',
+        OPENAI_COMPATIBLE_API_KEY: '',
+        SHEISHIWODI_API_PORT: `${apiPort}`,
       },
     },
     {
       command: `"${process.execPath}" ${viteCli} apps/web --host 127.0.0.1`,
-      url: 'http://127.0.0.1:9001',
+      url: `http://127.0.0.1:${webPort}`,
       reuseExistingServer: false,
       timeout: 60_000,
+      env: {
+        SHEISHIWODI_WEB_PORT: `${webPort}`,
+        SHEISHIWODI_API_ORIGIN: `http://127.0.0.1:${apiPort}`,
+      },
     },
   ],
   projects: [
@@ -58,3 +67,12 @@ export default defineConfig({
     },
   ],
 });
+
+function readPort(value: string | undefined, fallback: number, name: string) {
+  if (value === undefined || value.trim() === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535) {
+    throw new Error(`${name} 必须是 1 到 65535 之间的整数`);
+  }
+  return parsed;
+}

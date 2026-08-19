@@ -1,0 +1,62 @@
+name: Zero-cost CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Node 22 fake-model verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: true
+      AGENT_PROVIDER: fake
+      TOKENDANCE_BASE_URL: ''
+      TOKENDANCE_API_KEY: ''
+      TOKENDANCE_REVIEW_MODEL: ''
+      OPENAI_COMPATIBLE_BASE_URL: ''
+      OPENAI_COMPATIBLE_API_KEY: ''
+      OPENAI_COMPATIBLE_REVIEW_MODEL: ''
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Activate pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.9 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Run default fake-model tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run fake-model E2E
+        run: pnpm test:e2e
