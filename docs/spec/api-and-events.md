@@ -226,6 +226,7 @@ data: <PublicStreamPayload JSON>
 | `vote_progressed` | 完成投票的角色，不含目标 |
 | `votes_revealed` | 全部完成后的一次性投票关系 |
 | `terminal_reveal_ready` | 终局事实已持久化，可以开始前端揭晓 |
+| `runtime_interrupted` | 后台推进发生未分类程序异常；仅表示应重新获取权威视图，不包含异常、Provider 或私有上下文详情 |
 | `stream_error` | 保留事件类型；当前自动重试期间不发布技术错误，恢复耗尽后以 `game_system_terminated` 通知 |
 | `heartbeat` | 无业务数据的连接保活 |
 
@@ -237,7 +238,7 @@ data: <PublicStreamPayload JSON>
 4. 客户端按 `streamSeq` 去重，收到旧帧不得倒退状态。
 5. 若客户端游标无效，服务端返回完整安全视图并从当前高水位继续；不得返回私有原始事件补洞。
 
-`heartbeat` 可以不持久化；它不得推进业务游标。运行状态在重连后以 `HumanGameView.operationalStatus` 恢复。
+`heartbeat` 可以不持久化；它不得推进业务游标。运行状态在重连后以 `HumanGameView.operationalStatus` 恢复。客户端收到 `runtime_interrupted` 后立即重新获取权威视图；服务端发现待确认中断记录时，SSE 建连不得顺带恢复 Agent 推进。
 
 客户端对一次待确认人类命令必须复用原 `commandId`：网络响应丢失后先读取 `HumanGameView`/命令结果判断是否已经提交，只有确认未提交时才重发相同语义。`REVISION_CONFLICT` 触发权威视图刷新，不得归类为模型失败。
 

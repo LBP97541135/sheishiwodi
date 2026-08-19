@@ -44,6 +44,9 @@ describe('useGameStream', () => {
     );
 
     expect(instances[0]?.url).toBe('/api/games/game-1/stream?after=8');
+    expect(instances[0]?.listeners.has('runtime_interrupted')).toBe(true);
+    act(() => instances[0]?.listeners.get('runtime_interrupted')?.());
+    expect(synchronize).toHaveBeenLastCalledWith('game-1', false);
     act(() => instances[0]?.onerror?.());
     expect(result.current.showRecovery).toBe(false);
 

@@ -213,6 +213,7 @@ export class GameService {
 
   async resumeGame(gameId: string) {
     const snapshot = this.games.findSnapshot(gameId);
+    if (this.recovery?.getAwaiting(gameId)) return;
     await this.advanceUntilHumanOrStop(gameId, `resume/${gameId}/${snapshot?.revision ?? 0}`);
   }
 
@@ -360,16 +361,53 @@ export class GameService {
 
   /**
    * 提交命令后驱动 AI 回合：运行时后台推进（立即返回，AI 回合异步跑、经 SSE 下发），
-   * 测试同步 await（断言可确定读到已推进状态）。后台失败仅脱敏记日志，绝不外泄 Key/URL。
+   * 测试同步 await（断言可确定读到已推进状态）。后台未分类异常进入玩家确认恢复，
+   * 同时仅脱敏记日志，绝不外泄 Key/URL。
    */
   private async settleAdvance(gameId: string, rootCommandId: string) {
     if (this.backgroundAdvance) {
       void this.advanceUntilHumanOrStop(gameId, rootCommandId).catch((error: unknown) => {
+        this.markBackgroundInterruption(gameId);
         console.error('[advance] 后台推进失败：', error instanceof Error ? error.name : 'unknown');
       });
       return;
     }
     await this.advanceUntilHumanOrStop(gameId, rootCommandId);
+  }
+
+  private markBackgroundInterruption(gameId: string) {
+    try {
+      const snapshot = this.games.findSnapshot(gameId);
+      const round = snapshot?.round;
+      const actor = round
+        ? snapshot.players.find((player) => player.playerId === round.currentActorId)
+        : undefined;
+      if (
+        !snapshot ||
+        snapshot.status !== 'in_progress' ||
+        !round ||
+        !actor ||
+        actor.kind !== 'agent' ||
+        !this.recovery
+      ) {
+        return;
+      }
+
+      const interruptedAt = this.dependencies.clock.now();
+      const actionId = `auto/${gameId}/${snapshot.revision}/${actor.playerId}/${round.actionType}`;
+      this.recovery.markAwaiting({ gameId, actionId, interruptedAt });
+      this.games.appendOperationalFrame({
+        gameId,
+        type: 'runtime_interrupted',
+        payload: { state: 'interrupted' },
+        occurredAt: interruptedAt,
+      });
+    } catch (error) {
+      console.error(
+        '[advance] 中断状态持久化失败：',
+        error instanceof Error ? error.name : 'unknown',
+      );
+    }
   }
 
   private async advanceUntilHumanOrStop(gameId: string, rootCommandId: string) {

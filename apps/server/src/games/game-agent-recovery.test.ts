@@ -97,12 +97,29 @@ class CountingPolicy implements AgentPolicy {
   }
 }
 
+class UnknownFailureOncePolicy implements AgentPolicy {
+  calls = 0;
+  private readonly fallback = new FakeAgentPolicy();
+
+  async act(input: AgentTurnInput): Promise<SpeechActionOutput | VoteActionOutput> {
+    this.calls += 1;
+    if (this.calls === 1) throw new Error('PRIVATE_PROVIDER_DETAIL');
+    return this.fallback.act(input);
+  }
+
+  priorBeliefs(playerId: string): readonly BeliefSnapshot[] {
+    return this.fallback.priorBeliefs(playerId);
+  }
+}
+
 interface HumanView {
   gameId: string;
   status: string;
   revision: number;
   human: { playerId: string };
   players: Array<{ playerId: string; alive: boolean }>;
+  allowedCommands?: string[];
+  operationalStatus?: { state: string };
   endReason?: string;
 }
 
@@ -204,6 +221,63 @@ describe('Agent 公开内容自动恢复', () => {
 });
 
 describe('Agent 结果并发与持久化恢复', () => {
+  it('后台未分类异常持久化为玩家确认中断，不终止对局或自动重试', async () => {
+    const policy = new UnknownFailureOncePolicy();
+    const environment = createTestEnvironment([0, 0.76, 0, 0, 0]);
+    const server = buildServer({
+      ...environment.dependencies,
+      agentPolicyFactory: () => policy,
+      backgroundAdvance: true,
+    });
+    const createdResponse = await server.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: {
+        commandId: 'create-unknown-background-failure',
+        human: { displayName: '玩家', silhouette: 'silhouette_a' },
+        difficulty: 'easy',
+      },
+    });
+    const created = (createdResponse.json() as { data: HumanView }).data;
+    const started = await server.inject({
+      method: 'POST',
+      url: `/api/games/${created.gameId}/start`,
+      payload: {
+        commandId: 'start-unknown-background-failure',
+        actorId: created.human.playerId,
+        expectedRevision: created.revision,
+      },
+    });
+    expect(started.statusCode).toBe(200);
+
+    let recovered: HumanView | undefined;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/games/${created.gameId}`,
+      });
+      recovered = (response.json() as { data: HumanView }).data;
+      if (recovered.operationalStatus?.state === 'interrupted') break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    expect(recovered?.status).toBe('in_progress');
+    expect(recovered?.operationalStatus?.state).toBe('interrupted');
+    expect(recovered?.allowedCommands).toEqual(['ResolveInterruptedGame']);
+    expect(policy.calls).toBe(1);
+    const frames = (
+      await server.inject({ method: 'GET', url: `/api/games/${created.gameId}/events?after=0` })
+    ).json() as {
+      data: { frames: Array<{ type: string; payload: Record<string, unknown> }> };
+    };
+    expect(frames.data.frames.some((frame) => frame.type === 'runtime_interrupted')).toBe(true);
+    expect(frames.data.frames.some((frame) => frame.type === 'game_system_terminated')).toBe(false);
+    expect(JSON.stringify(frames.data.frames)).not.toContain('PRIVATE_PROVIDER_DETAIL');
+
+    await server.close();
+    environment.cleanup();
+  });
+
   it('模型调用期间玩家放弃时丢弃旧 revision 结果，不提交私有动作', async () => {
     const policy = new DeferredPolicy();
     const environment = createTestEnvironment([0, 0.76, 0, 0, 0]);

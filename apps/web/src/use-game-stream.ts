@@ -17,6 +17,7 @@ const STREAM_EVENT_TYPES = [
   'game_abandoned',
   'terminal_reveal_ready',
   'game_system_terminated',
+  'runtime_interrupted',
 ];
 
 export function useGameStream(options: {

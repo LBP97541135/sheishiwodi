@@ -1468,3 +1468,10 @@
 - 严格约束只用于 `ReviewGeneration`；持久化/API 的 `ReviewSummary` 保持较宽读取范围，以兼容已有真实验收复盘、旧测试夹具以及 pending/failed 的空内容。
 - 离线 FakeReviewPolicy 收敛为最多两个关键片段，并用确定性裁切/补齐生成符合新契约的占位评价，不改变真实模型 Prompt 或调用策略。
 - 增加 59/60、空关键片段、单条 51、缺失评分、overall 99/100/161 等边界断言。Node 22 下 Shared 定向 6/6、Server 复盘策略/服务/Markdown 12/12、Shared 与 Server typecheck 通过；无网络和付费调用。
+
+## 2026-08-19 恢复后台未分类异常（TASK-081）
+
+- 运行时后台推进遇到非 `AgentSystemError` 的程序异常时，不再只写日志并让页面停留在“AI 思考中”；服务端立即把当前 Agent 动作写入既有 `game_runtime_recovery`，对局事实保持 `in_progress`，等待玩家选择继续或开始新局。
+- 新增持久化运行帧 `runtime_interrupted`。该帧只含中断状态，不保存异常消息、Provider、Prompt 或私有上下文；写入时同步推进快照与表列的 `streamSeq`，不增加领域 revision 或 `game_events`。
+- Web 事件流监听该帧并重新读取权威视图；待确认期间，无论服务启动恢复还是 SSE 重新连接都不得自动启动 Agent。异常本身不产生 `game_system_terminated`，也不触发模型重试。
+- 故障注入模拟首次 Agent 调用抛出含私有标记的普通异常，断言调用次数为 1、恢复状态持久化、事件流不含异常原文且不存在系统终止事件。Node 22 Server 定向 6/6、Web 定向 1/1、两端 typecheck 通过；全程使用本地 fake 策略，无网络和付费调用。

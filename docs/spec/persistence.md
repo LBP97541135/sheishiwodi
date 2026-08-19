@@ -136,7 +136,7 @@ SQLite 文件是本地运行状态，不是词库或需求的 Git 事实源。
 
 ### 2.11 `game_runtime_recovery`
 
-当前已实现每局一条运行中断恢复记录：保存 `gameId`、被中断的 `actionId`、`awaiting_confirmation/resolved` 状态、中断时间与解决时间。该表不复制 Prompt、响应或游戏私有内容，并随对局级联删除。服务启动时把遗留 `started` attempt 标为 `runtime_interrupted`；若所属对局仍在进行，则写入等待确认记录并停止自动推进。
+当前已实现每局一条运行中断恢复记录：保存 `gameId`、被中断的 `actionId`、`awaiting_confirmation/resolved` 状态、中断时间与解决时间。该表不复制 Prompt、响应或游戏私有内容，并随对局级联删除。服务启动时把遗留 `started` attempt 标为 `runtime_interrupted`；若所属对局仍在进行，则写入等待确认记录并停止自动推进。运行时后台推进遇到未分类程序异常也写入同一状态；同时原子追加只含 `{ state: 'interrupted' }` 的公开运行帧并推进 `streamSeq`，不修改领域 revision、事件或胜负事实。
 
 ### 2.12 后续实体
 
