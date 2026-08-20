@@ -334,6 +334,42 @@ describe('GameScreen 人类操作区', () => {
   });
 });
 
+describe('GameScreen 大阵容席位', () => {
+  it('8 人局使用头像、两行名称容器和独立状态角标', () => {
+    const players = [
+      ...basePlayers.map((player) => ({ ...player })),
+      { playerId: 'agent-4', seatIndex: 4, kind: 'agent' as const, displayName: '候补角色一号', alive: true, agentRoleId: 'custom-role-1', characterAssetKey: 'custom-role-1' },
+      { playerId: 'agent-5', seatIndex: 5, kind: 'agent' as const, displayName: '候补角色二号', alive: true, agentRoleId: 'custom-role-2', characterAssetKey: 'custom-role-2' },
+      { playerId: 'agent-6', seatIndex: 6, kind: 'agent' as const, displayName: '候补角色三号', alive: true, agentRoleId: 'custom-role-3', characterAssetKey: 'custom-role-3' },
+      { playerId: 'agent-7', seatIndex: 7, kind: 'agent' as const, displayName: '很长的候补角色名称', alive: true, agentRoleId: 'custom-role-4', characterAssetKey: 'custom-role-4' },
+    ];
+    const view = makeView({
+      config: { difficulty: 'easy', undercoverCount: 2 },
+      players,
+      round: {
+        number: 1,
+        speakingOrder: players.map((player) => player.playerId),
+        currentActorId: 'agent-7',
+        actionType: 'describe',
+        tieCandidateIds: [],
+      },
+      allowedCommands: [],
+    });
+
+    render(<GameScreen game={view} {...screenProps} />);
+    const roster = screen.getByLabelText('本局玩家');
+    expect(roster).toHaveClass('seats--large-roster');
+    expect(roster.querySelectorAll('.seat')).toHaveLength(8);
+    expect(roster.querySelectorAll('.seat__state-icon')).toHaveLength(8);
+    expect(within(roster).getByText('很长的候补角色名称')).toHaveAttribute('title', '很长的候补角色名称');
+    expect(roster.querySelector('[data-player-id="agent-7"] img')).toHaveAttribute(
+      'src',
+      '/api/character-assets/custom-role-4/avatar.webp',
+    );
+    expect(roster.querySelector('[data-player-id="agent-7"] .seat__state-icon')).toHaveAttribute('data-state', 'speaking');
+  });
+});
+
 describe('GameScreen 终局与观战', () => {
   it('平民胜利依次揭晓身份并在完成后开放事实复盘', async () => {
     const timeoutSpy = vi

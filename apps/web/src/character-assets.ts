@@ -120,3 +120,14 @@ export function characterImageFor(
   }
   return characterAssets[characterKeyFor(player, humanSilhouette)][state];
 }
+
+export function characterAvatarFor(
+  player: { kind: 'human' | 'agent'; displayName: string; agentRoleId?: string | undefined; characterAssetKey?: string | undefined },
+  humanSilhouette: 'silhouette_a' | 'silhouette_b',
+) {
+  const assetKey = player.characterAssetKey ?? player.agentRoleId;
+  if (assetKey?.startsWith('custom-')) {
+    return `/api/character-assets/${encodeURIComponent(assetKey)}/avatar.webp`;
+  }
+  return characterAvatars[characterKeyFor(player, humanSilhouette)];
+}

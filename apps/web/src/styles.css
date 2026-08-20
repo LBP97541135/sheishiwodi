@@ -1945,10 +1945,86 @@ legend {
   text-align: left;
 }
 
+.seat__avatar-wrap {
+  position: relative;
+  grid-row: 1 / span 2;
+}
+
+.seat__state-icon {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 2px solid #fffdf6;
+  border-radius: 50%;
+  background: #3e6f8e;
+  color: #fff;
+}
+
+.seat__state-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.seat__state-icon[data-state='speaking'] {
+  background: #d6a93a;
+  color: #26231f;
+}
+
+.seat__state-icon[data-state='suspected'],
+.seat__state-icon[data-state='eliminated'] {
+  background: #b74335;
+}
+
 .seats--game.seats--compact .portrait {
   width: 48px;
   height: 64px;
   grid-row: 1 / span 2;
+}
+
+.seats--game.seats--large-roster .seat {
+  min-height: 130px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 56px minmax(2.5em, auto) 1.2em;
+  justify-items: center;
+  align-content: center;
+  gap: 5px;
+  padding: 8px 5px;
+  text-align: center;
+}
+
+.seats--game.seats--large-roster .seat__avatar-wrap {
+  grid-row: auto;
+}
+
+.seats--game.seats--large-roster .portrait {
+  width: 54px;
+  height: 54px;
+  aspect-ratio: 1;
+  border: 2px solid #26231f;
+  background: #f7f3e8;
+}
+
+.seats--game.seats--large-roster .portrait img {
+  object-fit: cover;
+}
+
+.seats--large-roster .seat > strong {
+  display: -webkit-box;
+  min-height: 2.4em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.1;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.seats--large-roster .seat > span:last-child {
+  white-space: nowrap;
 }
 
 .seats--compact .seat > strong,
@@ -1957,6 +2033,11 @@ legend {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.seats--compact.seats--large-roster .seat > strong {
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .automation-panel {

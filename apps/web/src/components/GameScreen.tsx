@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Crosshair, Flag, Pause, Play, StepForward, TriangleAlert, X } from 'lucide-react';
+import { Brain, Circle, Crosshair, Flag, MessageCircle, Pause, Play, StepForward, TriangleAlert, X } from 'lucide-react';
 
 import {
   validatePublicSpeech,
@@ -8,7 +8,7 @@ import {
   type Player,
 } from '@sheishiwodi/shared';
 
-import { characterImageFor, characterKeyFor, type CharacterState } from '../character-assets';
+import { characterAvatarFor, characterImageFor, characterKeyFor, characterStateLabel, type CharacterState } from '../character-assets';
 import { CharacterPortrait } from './CharacterPortrait';
 import { ComicTimeline, type TimelineProps } from './ComicTimeline';
 
@@ -131,17 +131,22 @@ export function GameScreen({
         </div>
       )}
 
-      <div className="seats seats--game seats--compact" aria-label="本局玩家">
+      <div className={`seats seats--game seats--compact ${game.players.length >= 6 ? 'seats--large-roster' : ''}`} aria-label="本局玩家">
         {game.players.map((player) => {
           const state = portraitState(player, game);
-          return <article className="seat" key={player.playerId} data-alive={player.alive}>
-            <CharacterPortrait
-              characterKey={characterKeyFor(player, game.human?.silhouette ?? 'silhouette_a')}
-              src={characterImageFor(player, state, game.human?.silhouette ?? 'silhouette_a')}
-              label={player.displayName}
-              state={state}
-            />
-            <strong>{player.displayName}</strong>
+          return <article className="seat" key={player.playerId} data-player-id={player.playerId} data-alive={player.alive}>
+            <div className="seat__avatar-wrap">
+              <CharacterPortrait
+                characterKey={characterKeyFor(player, game.human?.silhouette ?? 'silhouette_a')}
+                src={characterAvatarFor(player, game.human?.silhouette ?? 'silhouette_a')}
+                label={player.displayName}
+                state={state}
+              />
+              <span className="seat__state-icon" data-state={state} title={characterStateLabel[state]} aria-label={`状态：${characterStateLabel[state]}`}>
+                <SeatStateIcon state={state} />
+              </span>
+            </div>
+            <strong title={player.displayName}>{player.displayName}</strong>
             <span>{seatCaption(player, game)}</span>
           </article>;
         })}
@@ -262,6 +267,14 @@ function portraitState(player: Player, game: HumanGameView): CharacterState {
     return 'speaking';
   }
   return 'idle';
+}
+
+function SeatStateIcon({ state }: { state: CharacterState }) {
+  if (state === 'thinking') return <Brain aria-hidden="true" />;
+  if (state === 'speaking') return <MessageCircle aria-hidden="true" />;
+  if (state === 'suspected') return <TriangleAlert aria-hidden="true" />;
+  if (state === 'eliminated') return <X aria-hidden="true" />;
+  return <Circle aria-hidden="true" />;
 }
 
 function AutomationPanel({ game, busy, currentActorName, onAutomation, onAddBudget }: {
