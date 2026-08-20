@@ -79,8 +79,12 @@ export class CharacterProfileRepository {
       .prepare("SELECT snapshot_json FROM games WHERE status IN ('preparing', 'in_progress', 'awaiting_spectator')")
       .all() as Array<{ snapshot_json: string }>;
     return rows.some((row) => {
-      const snapshot = JSON.parse(row.snapshot_json) as { players?: Array<{ agentRoleId?: string }> };
-      return snapshot.players?.some((player) => player.agentRoleId === profileId) === true;
+      const snapshot = JSON.parse(row.snapshot_json) as {
+        players?: Array<{ agentRoleId?: string; characterAssetKey?: string }>;
+      };
+      return snapshot.players?.some((player) =>
+        player.agentRoleId === profileId || player.characterAssetKey === profileId,
+      ) === true;
     });
   }
 

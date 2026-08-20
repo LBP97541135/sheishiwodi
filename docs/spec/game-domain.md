@@ -10,6 +10,13 @@
 | 玩家 `Player` | 一个人类或 AI 座位；通过稳定 `playerId` 标识 |
 | 词牌 `WordCard` | 玩家唯一知道的本局词语，不等同于真实阵营 |
 | 阵营 `Camp` | `civilian` 或 `undercover`，对局中由服务端保密 |
+
+### 1.1 玩家角色夺舍
+
+- `participationMode=human` 时，人类身份可为人类剪影或一个完整 AI 角色。两者都生成 `kind=human` 的玩家实体。
+- 夺舍只复用角色的稳定 ID、显示名称与角色素材；不得把默认 model、人格 Prompt、Agent 私有信念或自动行动能力附加到人类玩家。
+- 被人类选择的角色 ID 不得再次出现在 `agentRoleIds`。领域组局必须校验该不变量，防止绕过前端产生同角色双席位。
+- 男、女人类剪影不能解析为 Agent 角色，也不能出现在 `agentRoleIds`。
 | 公开事件 | 所有仍在对局中的参与者允许获知的事实 |
 | 私有信念 `BeliefSnapshot` | 单个 AI 在行动时对阵营和异阵营词的判断 |
 | 回合 `Round` | 一轮描述、投票以及可能发生的平票分支 |

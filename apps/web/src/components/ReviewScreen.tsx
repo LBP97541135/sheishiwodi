@@ -12,7 +12,7 @@ import type {
 } from '@sheishiwodi/shared';
 
 import { getReview, regenerateReview, reviewExportPath } from '../api';
-import { characterKeyFor } from '../character-assets';
+import { characterImageFor, characterKeyFor } from '../character-assets';
 import { CharacterPortrait } from './CharacterPortrait';
 
 interface ReviewScreenProps {
@@ -404,7 +404,7 @@ function IdentityCard({
 }: {
   entry: RevealPlayer;
   player: Player | undefined;
-  humanSilhouette: NonNullable<HumanGameView['human']>['silhouette'];
+  humanSilhouette: NonNullable<NonNullable<HumanGameView['human']>['silhouette']>;
   nameOf: (playerId: string | null | undefined) => string;
 }) {
   const isUndercover = entry.camp === 'undercover';
@@ -413,7 +413,12 @@ function IdentityCard({
     : characterKeyFor({ kind: 'agent', displayName: nameOf(entry.playerId) }, humanSilhouette);
   return (
     <li className="review-identity-card" data-camp={entry.camp}>
-      <CharacterPortrait characterKey={characterKey} label={nameOf(entry.playerId)} state="idle" />
+      <CharacterPortrait
+        characterKey={characterKey}
+        {...(player ? { src: characterImageFor(player, 'idle', humanSilhouette) } : {})}
+        label={nameOf(entry.playerId)}
+        state="idle"
+      />
       <strong>{nameOf(entry.playerId)}</strong>
       <span className={`review-camp-badge ${isUndercover ? 'is-undercover' : 'is-civilian'}`}>
         {isUndercover ? '卧底' : '平民'}

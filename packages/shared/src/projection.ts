@@ -14,7 +14,7 @@ export function projectHumanGameView(
   const human = snapshot.config.participationMode === 'observer'
     ? undefined
     : snapshot.players.find((player) => player.playerId === snapshot.humanPlayerId);
-  if (snapshot.config.participationMode !== 'observer' && !human?.silhouette) {
+  if (snapshot.config.participationMode !== 'observer' && !human) {
     throw new Error('对局缺少人类玩家');
   }
   const controllerId = snapshot.controllerId ?? snapshot.humanPlayerId;
@@ -55,7 +55,8 @@ export function projectHumanGameView(
       ? {
           playerId: human.playerId,
           displayName: human.displayName,
-          silhouette: human.silhouette!,
+          ...(human.silhouette ? { silhouette: human.silhouette } : {}),
+          ...(human.characterAssetKey ? { characterAssetKey: human.characterAssetKey } : {}),
           ownWordCard: human.wordCard,
           guessUsed: human.guessUsed ?? false,
         }

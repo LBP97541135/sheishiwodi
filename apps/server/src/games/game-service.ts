@@ -125,6 +125,9 @@ export class GameService {
       if (error instanceof Error && error.message === 'UNKNOWN_AGENT_ROLE') {
         throw new GameServiceError('MODEL_CONFIGURATION_REQUIRED');
       }
+      if (error instanceof Error && ['DUPLICATE_AGENT_ROLE', 'INVALID_PLAYER_COUNT'].includes(error.message)) {
+        throw new GameServiceError('INVALID_TRANSITION');
+      }
       throw error;
     }
     const view = projectHumanGameView(transition.snapshot);

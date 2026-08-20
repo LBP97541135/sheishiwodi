@@ -46,10 +46,15 @@ function routeFetch(handlers: {
   profiles: unknown;
   models: unknown;
   put?: (roleId: string) => unknown;
+  copy?: (roleId: string) => unknown;
 }) {
   return vi.fn((url: string, init?: RequestInit) => {
     if (url === '/api/character-profiles') return Promise.resolve(response(successBody(handlers.profiles)));
     if (url === '/api/models') return Promise.resolve(response(successBody(handlers.models)));
+    if (init?.method === 'POST' && url.endsWith('/copies')) {
+      const roleId = url.split('/').at(-2) ?? '';
+      return Promise.resolve(response(successBody(handlers.copy?.(roleId))));
+    }
     if (init?.method === 'PUT') {
       const roleId = url.split('/').pop() ?? '';
       return Promise.resolve(response(successBody(handlers.put?.(roleId))));
@@ -154,6 +159,40 @@ describe('ModelProfiles', () => {
     expect(screen.getByText(/对局进行中，暂不能修改角色或模型配置/)).toBeInTheDocument();
     const input = screen.getByTestId('model-card-deepseek').querySelector('input')!;
     expect(input).toBeDisabled();
+  });
+
+  it('隐藏人类剪影，并通过独立复制接口创建角色副本', async () => {
+    const humanProfile = {
+      ...profile('human-male', '男性玩家', null),
+      allowedParticipantKinds: ['human'],
+      personalityTags: [],
+      personalityPrompt: '',
+    };
+    const copied = {
+      ...profile('custom-copy', 'DeepSeek副本', 'gpt-existing'),
+      source: 'custom',
+      immutable: false,
+      createdAt: '2026-08-20T12:00:00.000Z',
+      updatedAt: '2026-08-20T12:00:00.000Z',
+    };
+    const fetchMock = routeFetch({
+      profiles: profileList({ profiles: [humanProfile, ...profileList().profiles] }),
+      models: { providerMode: 'tokendance', models: [] },
+      copy: () => copied,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ModelProfiles onBack={() => {}} />);
+    await screen.findByTestId('model-card-deepseek');
+    expect(screen.queryByTestId('model-card-human-male')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '复制 DeepSeek' }));
+    expect(await screen.findByText('已创建独立副本“DeepSeek副本”')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/character-profiles/deepseek/copies',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(screen.queryByRole('dialog', { name: /角色/ })).not.toBeInTheDocument();
   });
 
   it('通用中转站允许手填 model ID，并提示必须配置评测模型', async () => {

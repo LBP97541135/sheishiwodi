@@ -70,6 +70,7 @@ export interface ServerDependencies {
   gameControls?: GameControlRepository;
   maxAgentConcurrency?: number;
   characterAssetRoot?: string;
+  builtInCharacterAssetRoot?: string;
 }
 
 export function buildServer(dependencies?: ServerDependencies) {
@@ -159,6 +160,7 @@ export function buildServer(dependencies?: ServerDependencies) {
       gameService,
       runtime.clock,
       runtime.characterAssetRoot ?? resolve('.local/character-assets'),
+      runtime.builtInCharacterAssetRoot ?? fileURLToPath(new URL('../../web/src/assets/characters/', import.meta.url)),
     ),
   );
   const modelProfileService = new ModelProfileService(

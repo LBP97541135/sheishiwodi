@@ -95,6 +95,66 @@ describe('创建准备对局', () => {
     expect(view).not.toHaveProperty('reveal');
   });
 
+  it('玩家夺舍角色时只复用名称和素材，不获得 Agent 配置', () => {
+    const roles = Object.fromEntries(
+      ['human-role', 'agent-a', 'agent-b', 'agent-c'].map((roleId) => [
+        roleId,
+        {
+          roleId,
+          displayName: roleId === 'human-role' ? 'DeepSeek' : roleId,
+          personalityTags: ['谨慎', '简洁', '观察'] as const,
+          defaultModelId: `model-${roleId}`,
+          personalityPrompt: `人格-${roleId}`,
+        } satisfies AgentRoleDefinition,
+      ]),
+    );
+    const { snapshot } = createPreparingGame(
+      {
+        ...createCommand,
+        human: { roleId: 'human-role' },
+        agentRoleIds: ['agent-a', 'agent-b', 'agent-c'],
+      },
+      pairs,
+      {
+        random: new SequenceRandom([0, 0, 0, 0, 0]),
+        ids: new SequenceIds(),
+        clock,
+        resolveAgentRole: (roleId) => roles[roleId],
+      },
+    );
+
+    const human = snapshot.players[0]!;
+    expect(human).toMatchObject({
+      kind: 'human',
+      displayName: 'DeepSeek',
+      characterAssetKey: 'human-role',
+    });
+    expect(human).not.toHaveProperty('silhouette');
+    expect(human).not.toHaveProperty('agentRoleId');
+    expect(human).not.toHaveProperty('agentModelId');
+    expect(human).not.toHaveProperty('agentPersonalityPrompt');
+    expect(projectHumanGameView(snapshot).human).toMatchObject({
+      displayName: 'DeepSeek',
+      characterAssetKey: 'human-role',
+    });
+  });
+
+  it('服务端拒绝玩家与 Agent 重复使用同一角色', () => {
+    expect(() => createPreparingGame(
+      {
+        ...createCommand,
+        human: { roleId: 'deepseek' },
+        agentRoleIds: ['deepseek', 'doubao', 'qwen'],
+      },
+      pairs,
+      {
+        random: new SequenceRandom([0, 0, 0, 0, 0]),
+        ids: new SequenceIds(),
+        clock,
+      },
+    )).toThrow('DUPLICATE_AGENT_ROLE');
+  });
+
   it('支持 4 名纯 Agent 对局且观察者视图不包含人类玩家或私有词语', () => {
     const roles = Object.fromEntries(
       ['agent-a', 'agent-b', 'agent-c', 'agent-d'].map((roleId) => [

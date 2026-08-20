@@ -98,9 +98,11 @@ const agentNameToKey: Record<string, CharacterKey> = {
 };
 
 export function characterKeyFor(
-  player: { kind: 'human' | 'agent'; displayName: string },
+  player: { kind: 'human' | 'agent'; displayName: string; agentRoleId?: string | undefined; characterAssetKey?: string | undefined },
   humanSilhouette: 'silhouette_a' | 'silhouette_b',
 ): CharacterKey {
+  const assetKey = player.characterAssetKey ?? player.agentRoleId;
+  if (assetKey && assetKey in characterAssets) return assetKey as CharacterKey;
   if (player.kind === 'agent') {
     return agentNameToKey[player.displayName] ?? 'deepseek';
   }
@@ -113,7 +115,7 @@ export function characterImageFor(
   humanSilhouette: 'silhouette_a' | 'silhouette_b',
 ) {
   const assetKey = player.characterAssetKey ?? player.agentRoleId;
-  if (player.kind === 'agent' && assetKey?.startsWith('custom-')) {
+  if (assetKey?.startsWith('custom-')) {
     return `/api/character-assets/${encodeURIComponent(assetKey)}/${state}.webp`;
   }
   return characterAssets[characterKeyFor(player, humanSilhouette)][state];

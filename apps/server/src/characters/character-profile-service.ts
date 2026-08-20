@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -44,6 +44,7 @@ export class CharacterProfileError extends Error {
 
 export class CharacterProfileService {
   private readonly assetRoot: string;
+  private readonly builtInAssetRoot: string;
 
   constructor(
     private readonly profiles: CharacterProfileRepository,
@@ -52,8 +53,10 @@ export class CharacterProfileService {
     private readonly lock: ConfigLockSource,
     private readonly clock: Clock,
     assetRoot: string,
+    builtInAssetRoot = resolve('apps/web/src/assets/characters'),
   ) {
     this.assetRoot = resolve(assetRoot);
+    this.builtInAssetRoot = resolve(builtInAssetRoot);
     mkdirSync(this.assetRoot, { recursive: true });
   }
 
@@ -113,6 +116,61 @@ export class CharacterProfileService {
     };
     this.profiles.save(next);
     return this.project(next);
+  }
+
+  copy(profileId: string): CharacterProfile {
+    if (this.lock.isGameLockedForConfig()) throw new CharacterProfileError('PROFILE_LOCKED');
+    const customSource = this.profiles.get(profileId);
+    const builtInSource = this.builtIns(this.roleModels.listSelections()).find((profile) =>
+      profile.profileId === profileId && profile.allowedParticipantKinds.includes('agent'),
+    );
+    if (!customSource && !builtInSource) throw new CharacterProfileError('PROFILE_NOT_FOUND');
+
+    const now = this.clock.now();
+    const copyId = `custom-${randomUUID()}`;
+    const sourceManifest = customSource?.assetManifest ?? Object.fromEntries(
+      assetStates.map((state) => [state, true]),
+    ) as StoredCharacterProfile['assetManifest'];
+    try {
+      for (const state of assetStates) {
+        if (!sourceManifest[state]) continue;
+        const source = customSource
+          ? this.assetFile(customSource.profileId, state)
+          : resolve(this.builtInAssetRoot, profileId, `${state}.webp`);
+        if (!existsSync(source)) throw new CharacterProfileError('PROFILE_NOT_FOUND');
+        const target = this.assetFile(copyId, state);
+        mkdirSync(dirname(target), { recursive: true });
+        copyFileSync(source, target);
+      }
+      const selectedModelId = builtInSource?.selectedModelId ?? null;
+      const copied: StoredCharacterProfile = customSource
+        ? {
+            ...customSource,
+            profileId: copyId,
+            displayName: copyName(customSource.displayName),
+            personalityTags: [...customSource.personalityTags],
+            modelBindings: { ...customSource.modelBindings },
+            assetManifest: { ...customSource.assetManifest },
+            createdAt: now,
+            updatedAt: now,
+          }
+        : {
+            profileId: copyId,
+            displayName: copyName(builtInSource!.displayName),
+            intro: builtInSource!.intro,
+            personalityTags: [...builtInSource!.personalityTags],
+            personalityPrompt: builtInSource!.personalityPrompt,
+            modelBindings: selectedModelId ? { [this.provider.mode]: selectedModelId } : {},
+            assetManifest: sourceManifest,
+            createdAt: now,
+            updatedAt: now,
+          };
+      this.profiles.save(copied);
+      return this.project(copied);
+    } catch (error) {
+      rmSync(this.profileDirectory(copyId), { recursive: true, force: true });
+      throw error;
+    }
   }
 
   delete(profileId: string) {
@@ -265,4 +323,8 @@ function humanBuiltIn(profileId: 'human-male' | 'human-female', displayName: str
     createdAt: null,
     updatedAt: null,
   };
+}
+
+function copyName(displayName: string) {
+  return `${displayName.slice(0, 10)}副本`;
 }

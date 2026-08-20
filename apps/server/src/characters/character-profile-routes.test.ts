@@ -76,4 +76,33 @@ describe('角色库 API', () => {
     expect(response.json()).toMatchObject({ error: { code: 'INVALID_IMAGE' } });
     await server.close();
   });
+
+  it('将内置和自建角色复制为素材独立的自建副本', async () => {
+    const environment = createTestEnvironment();
+    environments.push(environment);
+    const server = buildServer({
+      ...environment.dependencies,
+      characterAssetRoot: environment.directory,
+    });
+
+    const firstResponse = await server.inject({
+      method: 'POST',
+      url: '/api/character-profiles/deepseek/copies',
+    });
+    expect(firstResponse.statusCode).toBe(201);
+    const first = (firstResponse.json() as { data: { profileId: string; displayName: string; complete: boolean } }).data;
+    expect(first).toMatchObject({ displayName: 'DeepSeek副本', complete: true });
+
+    const secondResponse = await server.inject({
+      method: 'POST',
+      url: `/api/character-profiles/${first.profileId}/copies`,
+    });
+    expect(secondResponse.statusCode).toBe(201);
+    const second = (secondResponse.json() as { data: { profileId: string; complete: boolean } }).data;
+    expect(second.complete).toBe(true);
+
+    expect((await server.inject({ method: 'DELETE', url: `/api/character-profiles/${first.profileId}` })).statusCode).toBe(204);
+    expect((await server.inject({ method: 'GET', url: `/api/character-assets/${second.profileId}/avatar.webp` })).statusCode).toBe(200);
+    await server.close();
+  });
 });

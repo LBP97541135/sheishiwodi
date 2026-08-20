@@ -62,29 +62,35 @@ export function createPreparingGame(
   const participationMode = command.participationMode ?? 'human';
   const selectedRoleIds = command.agentRoleIds ?? agentRoles.map((role) => role.roleId);
   const resolveRole = dependencies.resolveAgentRole ?? findAgentRole;
+  if (new Set(selectedRoleIds).size !== selectedRoleIds.length) throw new Error('DUPLICATE_AGENT_ROLE');
   const selectedRoles = selectedRoleIds.map((roleId) => {
     const role = resolveRole(roleId);
     if (!role) throw new Error('UNKNOWN_AGENT_ROLE');
     return role;
   });
-  if (new Set(selectedRoleIds).size !== selectedRoleIds.length) throw new Error('DUPLICATE_AGENT_ROLE');
+  const humanInput = participationMode === 'human' ? command.human : undefined;
+  const humanRole = humanInput && 'roleId' in humanInput ? resolveRole(humanInput.roleId) : undefined;
+  if (humanInput && 'roleId' in humanInput && !humanRole) throw new Error('UNKNOWN_AGENT_ROLE');
+  if (humanRole && selectedRoleIds.includes(humanRole.roleId)) throw new Error('DUPLICATE_AGENT_ROLE');
   const totalPlayers = selectedRoles.length + (participationMode === 'human' ? 1 : 0);
   if (totalPlayers < 4 || totalPlayers > 8) throw new Error('INVALID_PLAYER_COUNT');
   const humanPlayerId = dependencies.ids.nextId('player');
   const controllerId = humanPlayerId;
-  const human = participationMode === 'human' ? command.human : undefined;
+  const human = humanInput;
   const players: GamePlayerState[] = [
     ...(human
       ? [{
           playerId: humanPlayerId,
           seatIndex: 0,
           kind: 'human' as const,
-          displayName: human.displayName,
+          displayName: 'roleId' in human ? humanRole!.displayName : human.displayName,
           alive: true,
           camp: 'civilian' as const,
           wordCard: selectedPair.civilianWord,
-          silhouette: human.silhouette,
-          characterAssetKey: human.silhouette === 'silhouette_b' ? 'human-female' : 'human-male',
+          ...('silhouette' in human ? { silhouette: human.silhouette } : {}),
+          characterAssetKey: 'roleId' in human
+            ? humanRole!.roleId
+            : human.silhouette === 'silhouette_b' ? 'human-female' : 'human-male',
           guessUsed: false,
         }]
       : []),

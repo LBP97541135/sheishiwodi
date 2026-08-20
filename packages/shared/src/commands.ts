@@ -13,18 +13,21 @@ const commandEnvelopeSchema = z
   })
   .strict();
 
+const humanIdentitySchema = z.union([
+  z.object({
+    displayName: z.string().trim().min(1).max(12).default('玩家'),
+    silhouette: silhouetteSchema,
+  }).strict(),
+  z.object({ roleId: identifierSchema }).strict(),
+]);
+
 export const createGameCommandSchema = z
   .object({
     type: z.literal('CreateGame'),
     commandId: identifierSchema,
     gameMode: gameModeSchema.optional(),
     participationMode: z.enum(['human', 'observer']).optional(),
-    human: z
-      .object({
-        displayName: z.string().trim().min(1).max(12).default('玩家'),
-        silhouette: silhouetteSchema,
-      })
-      .strict(),
+    human: humanIdentitySchema,
     agentRoleIds: z.array(identifierSchema).min(3).max(8).optional(),
     requestBudget: z.number().int().min(1).max(500).optional(),
     difficulty: difficultySchema,

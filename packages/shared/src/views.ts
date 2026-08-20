@@ -33,7 +33,8 @@ export const humanProfileSchema = z
   .object({
     playerId: identifierSchema,
     displayName: z.string().trim().min(1).max(12),
-    silhouette: silhouetteSchema,
+    silhouette: silhouetteSchema.optional(),
+    characterAssetKey: identifierSchema.optional(),
     ownWordCard: z.string().trim().min(1),
     guessUsed: z.boolean().optional(),
   })

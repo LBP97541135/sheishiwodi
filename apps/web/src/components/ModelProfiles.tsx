@@ -5,6 +5,7 @@ import type { CharacterAssetState, CharacterProfile, CharacterProfileList } from
 
 import {
   ApiClientError,
+  copyCharacterProfile,
   createCharacterProfile,
   deleteCharacterProfile,
   getCharacterProfiles,
@@ -69,14 +70,28 @@ export function ModelProfiles({ onBack }: ModelProfilesProps) {
   }, []);
 
   const openEditor = (profile?: CharacterProfile) => setEditor(profile ? {
-    ...(profile.source === 'custom' ? { profileId: profile.profileId } : {}),
-    displayName: profile.source === 'built_in' ? `${profile.displayName}副本` : profile.displayName,
+    profileId: profile.profileId,
+    displayName: profile.displayName,
     intro: profile.intro,
     personalityTags: profile.personalityTags.join('、'),
     personalityPrompt: profile.personalityPrompt,
     selectedModelId: profile.selectedModelId ?? '',
     assets: {},
   } : emptyDraft());
+
+  const copy = async (profile: CharacterProfile) => {
+    setBusyId(profile.profileId);
+    setError(null);
+    try {
+      const copied = await copyCharacterProfile(profile.profileId);
+      await reload();
+      setNotice(`已创建独立副本“${copied.displayName}”`);
+    } catch (caught) {
+      setError(messageFor(caught));
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const saveBuiltInModel = async (profile: CharacterProfile) => {
     const modelId = modelDrafts[profile.profileId]?.trim();
@@ -127,7 +142,7 @@ export function ModelProfiles({ onBack }: ModelProfilesProps) {
       {notice && <p className="form-success" role="status">{notice}</p>}
 
       <div className="model-profiles__grid role-library-grid">
-        {list.profiles.map((profile) => {
+        {list.profiles.filter((profile) => profile.allowedParticipantKinds.includes('agent')).map((profile) => {
           const agentEligible = profile.allowedParticipantKinds.includes('agent');
           return (
             <article key={profile.profileId} className="model-card role-card" data-testid={`model-card-${profile.profileId}`}>
@@ -147,7 +162,7 @@ export function ModelProfiles({ onBack }: ModelProfilesProps) {
 
               <div className="role-card__actions">
                 {profile.source === 'built_in' && agentEligible && list.providerConfigured && <button className="icon-action" type="button" title="保存模型" aria-label={`保存 ${profile.displayName} 模型`} disabled={busyId === profile.profileId || !list.editable} onClick={() => void saveBuiltInModel(profile)}><Pencil aria-hidden="true" /></button>}
-                <button className="icon-action" type="button" title="复制角色" aria-label={`复制 ${profile.displayName}`} disabled={!list.editable} onClick={() => openEditor(profile)}><Copy aria-hidden="true" /></button>
+                <button className="icon-action" type="button" title="复制角色" aria-label={`复制 ${profile.displayName}`} disabled={!list.editable || busyId === profile.profileId} onClick={() => void copy(profile)}><Copy aria-hidden="true" /></button>
                 {profile.source === 'custom' && <button className="icon-action" type="button" title="编辑角色" aria-label={`编辑 ${profile.displayName}`} disabled={!list.editable} onClick={() => openEditor(profile)}><Pencil aria-hidden="true" /></button>}
                 {profile.source === 'custom' && <button className="icon-action icon-action--danger" type="button" title="删除角色" aria-label={`删除 ${profile.displayName}`} disabled={!list.editable || busyId === profile.profileId} onClick={() => void remove(profile)}><Trash2 aria-hidden="true" /></button>}
               </div>

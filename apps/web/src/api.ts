@@ -210,6 +210,13 @@ export async function updateCharacterProfile(profileId: string, input: UpsertCha
   return apiSuccessSchema(characterProfileSchema).parse(body).data;
 }
 
+export async function copyCharacterProfile(profileId: string) {
+  const body = await request(`/api/character-profiles/${encodeURIComponent(profileId)}/copies`, {
+    method: 'POST',
+  });
+  return apiSuccessSchema(characterProfileSchema).parse(body).data;
+}
+
 export async function deleteCharacterProfile(profileId: string) {
   const response = await fetch(`/api/character-profiles/${encodeURIComponent(profileId)}`, {
     method: 'DELETE',

@@ -43,6 +43,18 @@ export function registerCharacterProfileRoutes(server: FastifyInstance, service:
     },
   );
 
+  server.post<{ Params: { profileId: string } }>(
+    '/api/character-profiles/:profileId/copies',
+    async (request, reply) => {
+      try {
+        const profile = service.copy(request.params.profileId);
+        return reply.status(201).send(apiSuccessSchema(characterProfileSchema).parse({ data: profile }));
+      } catch (error) {
+        return profileError(reply, error);
+      }
+    },
+  );
+
   server.delete<{ Params: { profileId: string } }>('/api/character-profiles/:profileId', async (request, reply) => {
     try {
       service.delete(request.params.profileId);

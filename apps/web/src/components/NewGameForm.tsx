@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, Bot, Settings2, UserRound, Users } from 'lucide-react';
 
-import type { CharacterProfileList, CreateGameRequest } from '@sheishiwodi/shared';
+import type { CharacterProfile, CharacterProfileList, CreateGameRequest } from '@sheishiwodi/shared';
 
 import { getCharacterProfiles } from '../api';
-import { characterAssets } from '../character-assets';
+import { characterAssets, characterAvatars, type CharacterKey } from '../character-assets';
 
 interface NewGameFormProps {
   busy: boolean;
@@ -15,6 +15,7 @@ interface NewGameFormProps {
 export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormProps) {
   const [displayName, setDisplayName] = useState('');
   const [silhouette, setSilhouette] = useState<'silhouette_a' | 'silhouette_b'>('silhouette_a');
+  const [humanRoleId, setHumanRoleId] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<'easy' | 'hard'>('easy');
   const [participationMode, setParticipationMode] = useState<'human' | 'observer'>('human');
   const [totalPlayers, setTotalPlayers] = useState(4);
@@ -27,6 +28,7 @@ export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormPr
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [silhouetteDraft, setSilhouetteDraft] = useState<'silhouette_a' | 'silhouette_b'>('silhouette_a');
+  const [humanRoleDraft, setHumanRoleDraft] = useState<string | null>(null);
   const nameTriggerRef = useRef<HTMLButtonElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -34,13 +36,20 @@ export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormPr
     void getCharacterProfiles().then(setProfiles).catch(() => setValidation('角色库暂时无法读取'));
   }, []);
 
-  const eligibleProfiles = useMemo(
+  const selectableProfiles = useMemo(
     () => profiles?.profiles.filter((profile) =>
       profile.complete &&
       profile.allowedParticipantKinds.includes('agent') &&
       (profiles.providerMode === 'fake' || Boolean(profile.selectedModelId))) ?? [],
     [profiles],
   );
+  const eligibleProfiles = useMemo(
+    () => selectableProfiles.filter((profile) =>
+      participationMode !== 'human' || profile.profileId !== humanRoleId,
+    ),
+    [humanRoleId, participationMode, selectableProfiles],
+  );
+  const selectedHumanRole = selectableProfiles.find((profile) => profile.profileId === humanRoleId);
   const agentCount = totalPlayers - (participationMode === 'human' ? 1 : 0);
 
   useEffect(() => {
@@ -65,11 +74,11 @@ export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormPr
 
   useEffect(() => {
     if (!nameDialogOpen) return;
-    nameInputRef.current?.focus();
+    if (humanRoleDraft === null) nameInputRef.current?.focus();
     const escape = (event: KeyboardEvent) => event.key === 'Escape' && closeNameDialog();
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
-  }, [closeNameDialog, nameDialogOpen]);
+  }, [closeNameDialog, humanRoleDraft, nameDialogOpen]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -82,7 +91,9 @@ export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormPr
       commandId: crypto.randomUUID(),
       gameMode,
       participationMode,
-      human: { displayName: displayName.trim() || '玩家', silhouette },
+      human: selectedHumanRole
+        ? { roleId: selectedHumanRole.profileId }
+        : { displayName: displayName.trim() || '玩家', silhouette },
       agentRoleIds: selectedRoleIds,
       difficulty,
       ...(profiles?.providerMode !== 'fake' && participationMode === 'observer' ? { requestBudget } : {}),
@@ -159,9 +170,10 @@ export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormPr
       <header className="new-game__header">
         <p className="eyebrow">AI 多角色推理对局</p>
         <h1 aria-label="谁是卧底">
-          <button ref={nameTriggerRef} className="title-name-trigger" type="button" aria-haspopup="dialog" aria-label={`编辑玩家身份，当前名称为${displayName.trim() || '玩家'}`} onClick={() => {
+          <button ref={nameTriggerRef} className="title-name-trigger" type="button" aria-haspopup="dialog" aria-label={selectedHumanRole ? `编辑玩家身份，当前角色为${selectedHumanRole.displayName}` : `编辑玩家身份，当前名称为${displayName.trim() || '玩家'}`} onClick={() => {
             setNameDraft(displayName);
             setSilhouetteDraft(silhouette);
+            setHumanRoleDraft(humanRoleId);
             setNameDialogOpen(true);
           }}>谁</button><span>是卧底</span>
         </h1>
@@ -175,12 +187,17 @@ export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormPr
         <div className="coming-soon-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeNameDialog()}>
           <section className="coming-soon-dialog player-name-dialog" role="dialog" aria-modal="true" aria-labelledby="player-identity-title">
             <p className="eyebrow">玩家身份</p><h2 id="player-identity-title">编辑玩家身份</h2>
-            <label className="field"><span>玩家名称</span><input ref={nameInputRef} value={nameDraft} maxLength={12} onChange={(event) => setNameDraft(event.target.value)} /></label>
+            {humanRoleDraft === null
+              ? <label className="field"><span>玩家名称</span><input ref={nameInputRef} value={nameDraft} maxLength={12} onChange={(event) => setNameDraft(event.target.value)} /></label>
+              : <p className="player-name-dialog__possession">你将使用该角色的名称与形象亲自参与；该角色不会再出现在 AI 阵容中，也不会替你调用模型。</p>}
             <fieldset className="player-name-dialog__appearance">
               <legend>玩家形象</legend>
               <div className="choice-grid choice-grid--silhouette">
                 {([['silhouette_a', '男性', characterAssets['human-male'].idle], ['silhouette_b', '女性', characterAssets['human-female'].idle]] as const).map(([value, label, image]) => (
-                  <label className="choice-card choice-card--portrait" key={value}><input type="radio" name="silhouette" checked={silhouetteDraft === value} onChange={() => setSilhouetteDraft(value)} /><img className="choice-portrait" src={image} alt="" /><strong>{label}</strong></label>
+                  <label className="choice-card choice-card--portrait" key={value}><input type="radio" name="player-identity" checked={humanRoleDraft === null && silhouetteDraft === value} onChange={() => { setHumanRoleDraft(null); setSilhouetteDraft(value); }} /><img className="choice-portrait" src={image} alt="" /><strong>{label}</strong></label>
+                ))}
+                {selectableProfiles.map((profile) => (
+                  <label className="choice-card choice-card--portrait" key={profile.profileId}><input type="radio" name="player-identity" checked={humanRoleDraft === profile.profileId} onChange={() => setHumanRoleDraft(profile.profileId)} /><img className="choice-portrait" src={profileAvatar(profile)} alt="" /><strong>{profile.displayName}</strong></label>
                 ))}
               </div>
             </fieldset>
@@ -189,6 +206,7 @@ export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormPr
               <button className="primary-action" type="button" onClick={() => {
                 setDisplayName(nameDraft.trim());
                 setSilhouette(silhouetteDraft);
+                setHumanRoleId(humanRoleDraft);
                 closeNameDialog();
               }}><Settings2 aria-hidden="true" />保存身份</button>
             </div>
@@ -197,4 +215,11 @@ export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormPr
       )}
     </section>
   );
+}
+
+function profileAvatar(profile: CharacterProfile) {
+  const value = profile.assets.avatar;
+  if (!value?.startsWith('builtin:')) return value ?? characterAvatars.deepseek;
+  const profileId = value.slice('builtin:'.length).split('/')[0] as CharacterKey;
+  return characterAvatars[profileId] ?? characterAvatars.deepseek;
 }

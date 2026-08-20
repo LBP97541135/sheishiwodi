@@ -379,16 +379,24 @@ legend {
 }
 
 .choice-grid--silhouette {
-  width: min(100%, 480px);
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  width: min(100%, 680px);
   margin-inline: auto;
 }
 
 .coming-soon-dialog.player-name-dialog {
-  width: min(100%, 520px);
+  width: min(100%, 720px);
 }
 
 .player-name-dialog .field {
   margin-top: 2px;
+}
+
+.player-name-dialog__possession {
+  margin: 0;
+  border-left: 4px solid #3e6f8e;
+  padding: 8px 12px;
+  color: #555047;
 }
 
 .player-name-dialog__appearance {

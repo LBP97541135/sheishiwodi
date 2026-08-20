@@ -447,6 +447,56 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: '第 2 轮' })).toBeInTheDocument();
   });
 
+  it('玩家夺舍 AI 角色后从 Agent 阵容排除并提交角色身份', async () => {
+    const reserveRole = {
+      ...characterProfiles.profiles[0],
+      profileId: 'custom-reserve',
+      displayName: '候补角色',
+      source: 'custom',
+      immutable: false,
+      assets: Object.fromEntries(
+        ['avatar', 'idle', 'thinking', 'speaking', 'suspected', 'eliminated'].map((state) => [
+          state,
+          `/api/character-assets/custom-reserve/${state}.webp`,
+        ]),
+      ),
+      createdAt: '2026-08-20T12:00:00.000Z',
+      updatedAt: '2026-08-20T12:00:00.000Z',
+    };
+    const fetchMock = vi.fn().mockImplementation(async (input: string) => {
+      if (input === '/api/games/active') return response({ data: { game: null } });
+      if (input === '/api/character-profiles') return response({
+        data: { ...characterProfiles, profiles: [...characterProfiles.profiles, reserveRole] },
+      });
+      if (input === '/api/games') return response(successBody(preparingGame));
+      throw new Error(`unexpected request: ${input}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('crypto', { randomUUID: () => 'command-possession' });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑玩家身份，当前名称为玩家' }));
+    const dialog = screen.getByRole('dialog', { name: '编辑玩家身份' });
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'DeepSeek' }));
+    expect(within(dialog).queryByLabelText('玩家名称')).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/不会替你调用模型/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存身份' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '经典模式' }));
+    const selects = screen.getAllByRole('combobox');
+    expect(selects).toHaveLength(3);
+    expect(selects.every((select) => !Array.from((select as HTMLSelectElement).options).some((option) => option.value === 'deepseek'))).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '创建对局' }));
+
+    await screen.findByRole('heading', { name: '记住你的词牌' });
+    const createCall = fetchMock.mock.calls.find(([path]) => path === '/api/games')!;
+    expect(JSON.parse(String((createCall[1] as RequestInit).body))).toMatchObject({
+      commandId: 'command-possession',
+      human: { roleId: 'deepseek' },
+      agentRoleIds: ['doubao', 'qwen', 'custom-reserve'],
+    });
+  });
+
   it('服务中断恢复视图要求玩家选择，并使用恢复端点继续当前动作', async () => {
     const interrupted = interruptedGame();
     const continued = {
