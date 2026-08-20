@@ -26,6 +26,8 @@ export const gameEventTypeSchema = z.enum([
   'speech_published',
   'vote_cast',
   'vote_progressed',
+  'guess_resolved',
+  'guess_recorded',
   'votes_revealed',
   'tie_declared',
   'revote_started',
@@ -38,6 +40,7 @@ export const gameEventTypeSchema = z.enum([
   'terminal_reveal_ready',
   'game_abandoned',
   'game_system_terminated',
+  'game_interruption_declined',
 ]);
 
 export const gameEventSchema = z.object({

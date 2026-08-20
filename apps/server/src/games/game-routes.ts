@@ -2,15 +2,19 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import {
   abandonGameRequestSchema,
+  addRequestBudgetSchema,
   activeGameDataSchema,
   apiErrorResponseSchema,
   apiSuccessSchema,
+  automationControlRequestSchema,
   createGameRequestSchema,
   continueSpectatingRequestSchema,
   humanGameViewSchema,
+  resolveInterruptedGameRequestSchema,
   startGameRequestSchema,
   submitDefenseRequestSchema,
   submitDescriptionRequestSchema,
+  submitGuessRequestSchema,
   submitVoteRequestSchema,
 } from '@sheishiwodi/shared';
 
@@ -39,7 +43,11 @@ const errorMessage = {
   REVISION_CONFLICT: '对局状态已更新，请刷新后重试',
 } as const;
 
-export function registerGameRoutes(server: FastifyInstance, gameService: GameService) {
+export function registerGameRoutes(
+  server: FastifyInstance,
+  gameService: GameService,
+  options: { developerMode?: boolean } = {},
+) {
   server.post('/api/games', async (request, reply) => {
     const parsed = createGameRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -74,7 +82,9 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
   server.get('/api/games/active', async (_request, reply) => {
     const game = gameService.getActiveGame();
     return reply.send(
-      apiSuccessSchema(activeGameDataSchema).parse({ data: { game } }),
+      apiSuccessSchema(activeGameDataSchema).parse({
+        data: { game, ...(options.developerMode ? { developerModeAvailable: true } : {}) },
+      }),
     );
   });
 
@@ -95,6 +105,39 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
       return sendGameError(reply, error);
     }
   });
+
+  server.post<{ Params: { gameId: string } }>(
+    '/api/games/:gameId/recovery',
+    async (request, reply) => {
+      const parsed = resolveInterruptedGameRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: '中断恢复选择不合法',
+              details: { fields: parsed.error.issues.map((issue) => issue.path.join('.')) },
+            },
+          }),
+        );
+      }
+      try {
+        const view = await gameService.resolveInterruptedGame(request.params.gameId, parsed.data);
+        return reply.send(
+          apiSuccessSchema(humanGameViewSchema).parse({
+            data: view,
+            meta: {
+              gameId: view.gameId,
+              revision: view.revision,
+              eventCursor: view.eventCursor,
+            },
+          }),
+        );
+      } catch (error) {
+        return sendGameError(reply, error);
+      }
+    },
+  );
 
   server.post<{ Params: { gameId: string } }>(
     '/api/games/:gameId/start',
@@ -128,6 +171,42 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
             },
           }),
         );
+      } catch (error) {
+        return sendGameError(reply, error);
+      }
+    },
+  );
+
+  server.put<{ Params: { gameId: string } }>(
+    '/api/games/:gameId/automation',
+    async (request, reply) => {
+      const parsed = automationControlRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send(apiErrorResponseSchema.parse({
+          error: { code: 'VALIDATION_ERROR', message: '自动运行控制不合法', details: {} },
+        }));
+      }
+      try {
+        const view = await gameService.setAutomationMode(request.params.gameId, parsed.data.mode);
+        return reply.send(apiSuccessSchema(humanGameViewSchema).parse({ data: view }));
+      } catch (error) {
+        return sendGameError(reply, error);
+      }
+    },
+  );
+
+  server.post<{ Params: { gameId: string } }>(
+    '/api/games/:gameId/request-budget',
+    async (request, reply) => {
+      const parsed = addRequestBudgetSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send(apiErrorResponseSchema.parse({
+          error: { code: 'VALIDATION_ERROR', message: '追加请求预算不合法', details: {} },
+        }));
+      }
+      try {
+        const view = gameService.addRequestBudget(request.params.gameId, parsed.data.amount);
+        return reply.send(apiSuccessSchema(humanGameViewSchema).parse({ data: view }));
       } catch (error) {
         return sendGameError(reply, error);
       }
@@ -196,6 +275,33 @@ export function registerGameRoutes(server: FastifyInstance, gameService: GameSer
             meta: { gameId: view.gameId, revision: view.revision, eventCursor: view.eventCursor },
           }),
         );
+      } catch (error) {
+        return sendGameError(reply, error);
+      }
+    },
+  );
+
+  server.post<{ Params: { gameId: string } }>(
+    '/api/games/:gameId/guesses',
+    async (request, reply) => {
+      const parsed = submitGuessRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send(apiErrorResponseSchema.parse({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: '猜词命令不合法',
+            details: { fields: parsed.error.issues.map((issue) => issue.path.join('.')) },
+          },
+        }));
+      }
+      try {
+        const view = await gameService.submitGuess({
+          type: 'SubmitGuess', gameId: request.params.gameId, ...parsed.data,
+        });
+        return reply.send(apiSuccessSchema(humanGameViewSchema).parse({
+          data: view,
+          meta: { gameId: view.gameId, revision: view.revision, eventCursor: view.eventCursor },
+        }));
       } catch (error) {
         return sendGameError(reply, error);
       }

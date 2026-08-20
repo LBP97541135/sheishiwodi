@@ -5,6 +5,17 @@ import { createAndStartGame, expectNoTerminalSecrets, playUntilTerminalOrSpectat
 test('正常完整对局、进行中刷新、终局揭晓与恢复', async ({ page }) => {
   await createAndStartGame(page, '正常流程');
   await expectNoTerminalSecrets(page);
+  expect(
+    await page.locator('.seats--game .seat').evaluateAll((seats) =>
+      seats.every((seat) => {
+        const name = seat.querySelector('strong');
+        if (!name) return false;
+        const seatBox = seat.getBoundingClientRect();
+        const nameBox = name.getBoundingClientRect();
+        return nameBox.left >= seatBox.left && nameBox.right <= seatBox.right;
+      }),
+    ),
+  ).toBe(true);
 
   const heading = await page.getByRole('heading', { name: /第 \d+ 轮/ }).textContent();
   const panelsBefore = await page.locator('.comic-timeline > li').count();

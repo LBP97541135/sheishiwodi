@@ -12,7 +12,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { buildServer, type ServerDependencies } from '../server.js';
 import { createTestEnvironment } from '../test-environment.js';
-import type { AgentPolicy } from '../agents/agent-policy.js';
+import type { AgentActContext, AgentPolicy } from '../agents/agent-policy.js';
 
 const GENERIC_DESCRIBE = '这是一个很普通的东西';
 
@@ -46,6 +46,7 @@ interface HumanView {
     tieCandidateIds: string[];
   } | null;
   legalVoteTargetIds: string[];
+  voteProgress: { completedPlayerIds: string[] };
   allowedCommands?: string[];
   players: Array<{ playerId: string; alive: boolean }>;
   human: { playerId: string; ownWordCard: string };
@@ -578,6 +579,18 @@ describe('切片三 正常描述与投票闭环', () => {
     expect(revoting.legalVoteTargetIds).toEqual(['player-3', 'player-4']);
     expect(policy.actionTypes.filter((type) => type === 'defend')).toEqual(['defend', 'defend']);
     expect(policy.actionTypes.filter((type) => type === 'revote')).toEqual([]);
+    const voteCalls = policy.calls.filter((call) => call.actionType === 'vote');
+    const persistedVoteActionIds = environment.dependencies.database.sqlite
+      .prepare(
+        `SELECT action_id FROM agent_actions
+         WHERE game_id = ? AND action_type = 'vote' ORDER BY action_id`,
+      )
+      .all(created.gameId) as Array<{ action_id: string }>;
+    expect(voteCalls).toHaveLength(3);
+    expect(voteCalls.every((call) => call.context?.trace?.commandId === 'human-vote-tie')).toBe(true);
+    expect(voteCalls.map((call) => call.context?.trace?.actionId).sort()).toEqual(
+      persistedVoteActionIds.map((row) => row.action_id).sort(),
+    );
 
     const { data } = await readEvents(server, created.gameId);
     const defenseFrames = data.frames.filter(
@@ -876,6 +889,60 @@ describe('切片三 正常描述与投票闭环', () => {
   });
 });
 
+describe('猜词模式服务编排', () => {
+  it('投票期三名 Agent 使用同一冻结修订并先于人类私下完成选择', async () => {
+    const environment = createTestEnvironment();
+    const policy = new TiePolicy();
+    const server = buildServer({ ...environment.dependencies, agentPolicyFactory: () => policy });
+    const createdResponse = await server.inject({
+      method: 'POST', url: '/api/games', payload: {
+        commandId: 'create-guess-flow', gameMode: 'guess',
+        human: { displayName: '玩家', silhouette: 'silhouette_a' }, difficulty: 'easy',
+      },
+    });
+    const created = (createdResponse.json() as { data: HumanView }).data;
+    await server.inject({
+      method: 'POST', url: `/api/games/${created.gameId}/start`,
+      payload: { commandId: 'start-guess-flow', actorId: created.human.playerId, expectedRevision: created.revision },
+    });
+    const describing = (await getView(server, created.gameId)).data;
+    expect(describing.round?.currentActorId).toBe(created.human.playerId);
+    const described = await server.inject({
+      method: 'POST', url: `/api/games/${created.gameId}/descriptions`, payload: {
+        commandId: 'human-describe-guess-flow', actorId: created.human.playerId,
+        expectedRevision: describing.revision, text: GENERIC_DESCRIBE,
+      },
+    });
+    const voting = (described.json() as { data: HumanView }).data;
+    expect(voting.round?.actionType).toBe('vote');
+    expect(voting.round?.currentActorId).toBe(created.human.playerId);
+    expect(voting.voteProgress.completedPlayerIds).toHaveLength(3);
+    expect(voting.allowedCommands).toContain('SubmitGuess');
+    const voteCalls = policy.calls.filter((call) => call.actionType === 'vote');
+    expect(voteCalls).toHaveLength(3);
+    expect(new Set(voteCalls.map((call) => call.baseRevision)).size).toBe(1);
+
+    const privatePlayers = readPlayers(environment.dependencies, created.gameId);
+    const human = privatePlayers.find((player) => player.player_id === created.human.playerId)!;
+    const enemy = privatePlayers.find((player) => player.camp !== human.camp)!;
+    const guessed = await server.inject({
+      method: 'POST', url: `/api/games/${created.gameId}/guesses`, payload: {
+        commandId: 'human-guess-vote', actorId: created.human.playerId,
+        expectedRevision: voting.revision, targetPlayerId: enemy.player_id, guessedWord: enemy.word_card,
+      },
+    });
+    expect(guessed.statusCode, guessed.body).toBe(200);
+    const events = await readEvents(server, created.gameId);
+    const guessFrame = events.data.frames.find((frame) => frame.type === 'guess_resolved');
+    expect(guessFrame?.payload).toEqual({ actorId: created.human.playerId, success: true });
+    expect(JSON.stringify(guessFrame)).not.toContain(enemy.player_id);
+    expect(JSON.stringify(guessFrame)).not.toContain(enemy.word_card);
+
+    await server.close();
+    environment.cleanup();
+  });
+});
+
 async function assertPublicIsolation(
   server: FastifyInstance,
   dependencies: ServerDependencies,
@@ -908,6 +975,12 @@ async function assertPublicIsolation(
 
 class TiePolicy implements AgentPolicy {
   readonly actionTypes: AgentTurnInput['actionType'][] = [];
+  readonly calls: Array<{
+    playerId: string;
+    actionType: AgentTurnInput['actionType'];
+    baseRevision: number;
+    context: AgentActContext | undefined;
+  }> = [];
   private readonly voteMap: Record<string, string>;
   private readonly revoteMap: Record<string, string>;
 
@@ -920,8 +993,17 @@ class TiePolicy implements AgentPolicy {
     this.revoteMap = options.revoteMap ?? {};
   }
 
-  async act(input: AgentTurnInput): Promise<SpeechActionOutput | VoteActionOutput> {
+  async act(
+    input: AgentTurnInput,
+    context?: AgentActContext,
+  ): Promise<SpeechActionOutput | VoteActionOutput> {
     this.actionTypes.push(input.actionType);
+    this.calls.push({
+      playerId: input.actor.playerId,
+      actionType: input.actionType,
+      baseRevision: input.baseRevision,
+      context,
+    });
     const belief = this.belief(input);
     if (input.actionType === 'describe') {
       return { belief, text: GENERIC_DESCRIBE };

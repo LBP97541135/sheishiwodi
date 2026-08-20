@@ -4,7 +4,7 @@
  * 抛出的错误只带脱敏的分类与可选 HTTP 状态码，不含 URL、Key、请求头或完整响应体。
  */
 
-export type TokendanceErrorKind = 'timeout' | 'network' | 'http' | 'bad_response';
+export type TokendanceErrorKind = 'timeout' | 'interrupted' | 'network' | 'http' | 'bad_response';
 
 export class TokendanceError extends Error {
   constructor(
@@ -61,13 +61,15 @@ export class TokendanceClient {
     messages: ChatMessage[];
     /** 本次调用追加的模型参数（如按厂商关闭推理），优先级高于 defaultBody；不含 Key/URL。 */
     extraBody?: Record<string, unknown>;
+    /** 仅用于服务正常停机取消本地等待；不会改变 provider 侧已收到请求的事实。 */
+    signal?: AbortSignal;
   }): Promise<string> {
     const body = await this.request('POST', '/chat/completions', {
       ...this.defaultBody,
       ...(params.extraBody ?? {}),
       model: params.modelId,
       messages: params.messages,
-    });
+    }, params.signal);
     const content = (body as { choices?: { message?: { content?: unknown } }[] }).choices?.[0]
       ?.message?.content;
     if (typeof content !== 'string' || content.trim().length === 0) {
@@ -76,8 +78,20 @@ export class TokendanceClient {
     return content;
   }
 
-  private async request(method: 'GET' | 'POST', path: string, payload?: unknown): Promise<unknown> {
+  private async request(
+    method: 'GET' | 'POST',
+    path: string,
+    payload?: unknown,
+    externalSignal?: AbortSignal,
+  ): Promise<unknown> {
     const controller = new AbortController();
+    let externallyInterrupted = false;
+    const interrupt = () => {
+      externallyInterrupted = true;
+      controller.abort();
+    };
+    if (externalSignal?.aborted) interrupt();
+    else externalSignal?.addEventListener('abort', interrupt, { once: true });
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     let response: Response;
     try {
@@ -95,11 +109,13 @@ export class TokendanceClient {
       response = await fetch(`${this.baseUrl}${path}`, init);
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
+        if (externallyInterrupted) throw new TokendanceError('interrupted');
         throw new TokendanceError('timeout');
       }
       throw new TokendanceError('network');
     } finally {
       clearTimeout(timer);
+      externalSignal?.removeEventListener('abort', interrupt);
     }
 
     if (!response.ok) {

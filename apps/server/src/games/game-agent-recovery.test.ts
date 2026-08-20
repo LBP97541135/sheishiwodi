@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import type {
@@ -8,7 +10,14 @@ import type {
 } from '@sheishiwodi/shared';
 
 import type { AgentActContext, AgentPolicy } from '../agents/agent-policy.js';
+import {
+  ContextAuditWriter,
+  PersistentAgentObservability,
+  type AgentObservability,
+  type AttemptHandle,
+} from '../agents/agent-observability.js';
 import { FakeAgentPolicy } from '../agents/fake-agent-policy.js';
+import { ModelAttemptRepository } from '../db/model-attempt-repository.js';
 import { buildServer } from '../server.js';
 import { createTestEnvironment } from '../test-environment.js';
 
@@ -56,7 +65,7 @@ class DeferredPolicy implements AgentPolicy {
   private resolveRelease!: () => void;
   private readonly fallback = new FakeAgentPolicy();
 
-  constructor() {
+  constructor(private readonly observability?: AgentObservability) {
     this.started = new Promise((resolve) => {
       this.resolveStarted = resolve;
     });
@@ -65,15 +74,79 @@ class DeferredPolicy implements AgentPolicy {
     });
   }
 
-  async act(input: AgentTurnInput): Promise<SpeechActionOutput | VoteActionOutput> {
+  async act(
+    input: AgentTurnInput,
+    context?: AgentActContext,
+  ): Promise<SpeechActionOutput | VoteActionOutput> {
+    const attempt = this.beginAttempt(input, context);
     const output = await this.fallback.act(input);
     this.resolveStarted();
     await this.releasePromise;
+    if (attempt) {
+      this.observability?.markAttemptStage?.(attempt.attemptId, 'provider_returned');
+      this.observability?.markAttemptStage?.(attempt.attemptId, 'schema_validated');
+      if (context?.lifecycle) context.lifecycle.validatedAttemptId = attempt.attemptId;
+    }
     return output;
   }
 
   release() {
     this.resolveRelease();
+  }
+
+  priorBeliefs(playerId: string): readonly BeliefSnapshot[] {
+    return this.fallback.priorBeliefs(playerId);
+  }
+
+  private beginAttempt(input: AgentTurnInput, context?: AgentActContext): AttemptHandle | undefined {
+    if (!this.observability || !context) return undefined;
+    return this.observability.beginPlayerAttempt({
+      agentInput: input,
+      context,
+      modelId: 'lifecycle-test-model',
+      messages: [{ role: 'user', content: 'lifecycle test' }],
+      attemptKind: 'initial',
+    });
+  }
+}
+
+class LifecyclePolicy implements AgentPolicy {
+  private readonly fallback = new FakeAgentPolicy();
+  private rejectedFirstSpeech = false;
+
+  constructor(
+    private readonly observability: AgentObservability,
+    private readonly rejectFirstSpeech: boolean,
+  ) {}
+
+  async act(
+    input: AgentTurnInput,
+    context?: AgentActContext,
+  ): Promise<SpeechActionOutput | VoteActionOutput> {
+    if (!context) throw new Error('MISSING_CONTEXT');
+    const attempt = this.observability.beginPlayerAttempt({
+      agentInput: input,
+      context,
+      modelId: 'lifecycle-test-model',
+      messages: [{ role: 'user', content: 'lifecycle test' }],
+      attemptKind: context.contentRetry ? 'content_regeneration' : 'initial',
+    });
+    const output = await this.fallback.act(input);
+    this.observability.markAttemptStage?.(attempt.attemptId, 'provider_returned', {
+      rawResponse: JSON.stringify(output),
+    });
+    this.observability.markAttemptStage?.(attempt.attemptId, 'schema_validated');
+    if (context.lifecycle) context.lifecycle.validatedAttemptId = attempt.attemptId;
+
+    if (
+      this.rejectFirstSpeech &&
+      !this.rejectedFirstSpeech &&
+      (input.actionType === 'describe' || input.actionType === 'defend')
+    ) {
+      this.rejectedFirstSpeech = true;
+      return { ...output, text: '短' } as SpeechActionOutput;
+    }
+    return output;
   }
 
   priorBeliefs(playerId: string): readonly BeliefSnapshot[] {
@@ -97,12 +170,29 @@ class CountingPolicy implements AgentPolicy {
   }
 }
 
+class UnknownFailureOncePolicy implements AgentPolicy {
+  calls = 0;
+  private readonly fallback = new FakeAgentPolicy();
+
+  async act(input: AgentTurnInput): Promise<SpeechActionOutput | VoteActionOutput> {
+    this.calls += 1;
+    if (this.calls === 1) throw new Error('PRIVATE_PROVIDER_DETAIL');
+    return this.fallback.act(input);
+  }
+
+  priorBeliefs(playerId: string): readonly BeliefSnapshot[] {
+    return this.fallback.priorBeliefs(playerId);
+  }
+}
+
 interface HumanView {
   gameId: string;
   status: string;
   revision: number;
   human: { playerId: string };
   players: Array<{ playerId: string; alive: boolean }>;
+  allowedCommands?: string[];
+  operationalStatus?: { state: string };
   endReason?: string;
 }
 
@@ -139,6 +229,15 @@ async function startWith(policy: AgentPolicy) {
   };
 }
 
+function createLifecycleObservability(environment: ReturnType<typeof createTestEnvironment>) {
+  const attempts = new ModelAttemptRepository(environment.dependencies.database);
+  const observability = new PersistentAgentObservability(
+    attempts,
+    new ContextAuditWriter(join(environment.directory, 'agent-audit')),
+  );
+  return { attempts, observability };
+}
+
 describe('Agent 公开内容自动恢复', () => {
   it('首次原词泄露秘密重生成，失败原文不进入公开事件', async () => {
     const policy = new ContentRecoveryPolicy('word-once');
@@ -148,6 +247,15 @@ describe('Agent 公开内容自动恢复', () => {
     ).json() as { data: { frames: unknown[] } };
 
     expect(policy.contexts.some((context) => context?.contentRetry === 'word_leak')).toBe(true);
+    expect(
+      policy.contexts.every(
+        (context) =>
+          context?.trace?.gameId === view.gameId &&
+          context.trace.commandId.startsWith('start-') &&
+          context.trace.actionId.startsWith(`auto/${view.gameId}/`) &&
+          context.trace.provenance.priorBeliefOwnerId.length > 0,
+      ),
+    ).toBe(true);
     expect(JSON.stringify(frames.data)).not.toContain(policy.leakedWord);
     expect(JSON.stringify(frames.data)).not.toContain('player_rule_violated');
 
@@ -195,13 +303,122 @@ describe('Agent 公开内容自动恢复', () => {
 });
 
 describe('Agent 结果并发与持久化恢复', () => {
-  it('模型调用期间玩家放弃时丢弃旧 revision 结果，不提交私有动作', async () => {
-    const policy = new DeferredPolicy();
+  it('只在内容校验和动作提交完成后记录最终成功', async () => {
+    const environment = createTestEnvironment([0, 0.76, 0, 0, 0]);
+    const { attempts, observability } = createLifecycleObservability(environment);
+    const policy = new LifecyclePolicy(observability, true);
+    const server = buildServer({
+      ...environment.dependencies,
+      agentPolicyFactory: () => policy,
+      agentObservability: observability,
+    });
+    const createdResponse = await server.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: {
+        commandId: 'create-attempt-lifecycle',
+        human: { displayName: '玩家', silhouette: 'silhouette_a' },
+        difficulty: 'easy',
+      },
+    });
+    const created = (createdResponse.json() as { data: HumanView }).data;
+    await server.inject({
+      method: 'POST',
+      url: `/api/games/${created.gameId}/start`,
+      payload: {
+        commandId: 'start-attempt-lifecycle',
+        actorId: created.human.playerId,
+        expectedRevision: created.revision,
+      },
+    });
+
+    const rows = attempts.listRecent(created.gameId);
+    const rejected = rows.find((row) => row.resultCode === 'content_rejected');
+    const committed = rows.find((row) => row.resultCode === 'action_committed');
+    expect(rejected?.stages.map((stage) => stage.stage)).toEqual([
+      'request_started',
+      'provider_returned',
+      'schema_validated',
+    ]);
+    expect(committed?.stages.map((stage) => stage.stage)).toEqual([
+      'request_started',
+      'provider_returned',
+      'schema_validated',
+      'content_validated',
+      'action_committed',
+    ]);
+    expect(rows.some((row) => row.resultCode === 'success')).toBe(false);
+
+    await server.close();
+    environment.cleanup();
+  });
+
+  it('后台未分类异常持久化为玩家确认中断，不终止对局或自动重试', async () => {
+    const policy = new UnknownFailureOncePolicy();
     const environment = createTestEnvironment([0, 0.76, 0, 0, 0]);
     const server = buildServer({
       ...environment.dependencies,
       agentPolicyFactory: () => policy,
       backgroundAdvance: true,
+    });
+    const createdResponse = await server.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: {
+        commandId: 'create-unknown-background-failure',
+        human: { displayName: '玩家', silhouette: 'silhouette_a' },
+        difficulty: 'easy',
+      },
+    });
+    const created = (createdResponse.json() as { data: HumanView }).data;
+    const started = await server.inject({
+      method: 'POST',
+      url: `/api/games/${created.gameId}/start`,
+      payload: {
+        commandId: 'start-unknown-background-failure',
+        actorId: created.human.playerId,
+        expectedRevision: created.revision,
+      },
+    });
+    expect(started.statusCode).toBe(200);
+
+    let recovered: HumanView | undefined;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/games/${created.gameId}`,
+      });
+      recovered = (response.json() as { data: HumanView }).data;
+      if (recovered.operationalStatus?.state === 'interrupted') break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    expect(recovered?.status).toBe('in_progress');
+    expect(recovered?.operationalStatus?.state).toBe('interrupted');
+    expect(recovered?.allowedCommands).toEqual(['ResolveInterruptedGame']);
+    expect(policy.calls).toBe(1);
+    const frames = (
+      await server.inject({ method: 'GET', url: `/api/games/${created.gameId}/events?after=0` })
+    ).json() as {
+      data: { frames: Array<{ type: string; payload: Record<string, unknown> }> };
+    };
+    expect(frames.data.frames.some((frame) => frame.type === 'runtime_interrupted')).toBe(true);
+    expect(frames.data.frames.some((frame) => frame.type === 'game_system_terminated')).toBe(false);
+    expect(JSON.stringify(frames.data.frames)).not.toContain('PRIVATE_PROVIDER_DETAIL');
+
+    await server.close();
+    environment.cleanup();
+  });
+
+  it('模型调用期间玩家放弃时丢弃旧 revision 结果，不提交私有动作', async () => {
+    const environment = createTestEnvironment([0, 0.76, 0, 0, 0]);
+    const { attempts, observability } = createLifecycleObservability(environment);
+    const policy = new DeferredPolicy(observability);
+    const server = buildServer({
+      ...environment.dependencies,
+      agentPolicyFactory: () => policy,
+      backgroundAdvance: true,
+      agentObservability: observability,
     });
     const createdResponse = await server.inject({
       method: 'POST',
@@ -244,6 +461,67 @@ describe('Agent 结果并发与持久化恢复', () => {
       .prepare('SELECT COUNT(*) AS value FROM agent_actions WHERE game_id = ?')
       .get(created.gameId) as { value: number };
     expect(actionCount.value).toBe(0);
+    expect(attempts.listRecent(created.gameId)).toMatchObject([
+      {
+        resultCode: 'stale_discarded',
+        stages: [
+          { stage: 'request_started' },
+          { stage: 'provider_returned' },
+          { stage: 'schema_validated' },
+        ],
+      },
+    ]);
+
+    await server.close();
+    environment.cleanup();
+  });
+
+  it('动作事务连续失败时记录 commit_failed，而不是最终成功', async () => {
+    const environment = createTestEnvironment([0, 0.76, 0, 0, 0]);
+    const { attempts, observability } = createLifecycleObservability(environment);
+    const policy = new LifecyclePolicy(observability, false);
+    environment.dependencies.database.sqlite.exec(`
+      CREATE TRIGGER fail_all_agent_actions
+      BEFORE INSERT ON agent_actions
+      BEGIN
+        SELECT RAISE(FAIL, 'COMMIT_FAILURE');
+      END;
+    `);
+    const server = buildServer({
+      ...environment.dependencies,
+      agentPolicyFactory: () => policy,
+      agentObservability: observability,
+    });
+    const createdResponse = await server.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: {
+        commandId: 'create-attempt-commit-failure',
+        human: { displayName: '玩家', silhouette: 'silhouette_a' },
+        difficulty: 'easy',
+      },
+    });
+    const created = (createdResponse.json() as { data: HumanView }).data;
+    const started = await server.inject({
+      method: 'POST',
+      url: `/api/games/${created.gameId}/start`,
+      payload: {
+        commandId: 'start-attempt-commit-failure',
+        actorId: created.human.playerId,
+        expectedRevision: created.revision,
+      },
+    });
+
+    expect((started.json() as { data: HumanView }).data.status).toBe('system_terminated');
+    expect(attempts.listRecent(created.gameId)[0]).toMatchObject({
+      resultCode: 'commit_failed',
+      stages: [
+        { stage: 'request_started' },
+        { stage: 'provider_returned' },
+        { stage: 'schema_validated' },
+        { stage: 'content_validated' },
+      ],
+    });
 
     await server.close();
     environment.cleanup();

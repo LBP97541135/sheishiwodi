@@ -25,4 +25,18 @@ describe('Agent 信念', () => {
       'BELIEF_TOTAL_INVALID',
     );
   });
+
+  it('拒绝用重复 playerId 冒充完整玩家集合', () => {
+    const duplicate = {
+      ...belief,
+      playerUndercoverProbabilities: [
+        { playerId: 'p1', probability: 0.2 },
+        { playerId: 'p2', probability: 0.3 },
+        { playerId: 'p3', probability: 0.4 },
+        { playerId: 'p3', probability: 0.1 },
+      ],
+    };
+
+    expect(() => validateBeliefSnapshot(duplicate, ['p1', 'p2', 'p3'], 1)).toThrow();
+  });
 });

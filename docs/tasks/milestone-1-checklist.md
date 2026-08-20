@@ -127,11 +127,18 @@
 - [x] `test:live` 链已建立：`run.mjs` 冒烟（缺 env 显式失败）→ `build shared` → tsx 编排器（`agent-live.ts`）。
 - [x] 策略级 3 模型 × describe/vote 共 6 次真实 `.act()` 已通过输出 Schema 与信念校验。
 - [x] Agent 输入、策略公开文本、整局公开帧与报告文本的隔离检查已通过；错误路径继续由默认测试覆盖。
-- [ ] `test:live:full` 已用真实策略和纯 shared 状态机驱动到 `finished`；仍待可用 `better-sqlite3` 环境验证 HTTP/SQLite 完整链。
+- [x] `test:live:full` 已用真实策略和纯 shared 状态机驱动到 `finished`；一次性全栈验收又在临时 Node 22 环境补齐 HTTP/SSE/SQLite 完整链。
 - [x] 已生成两份 `docs/acceptance/reports/live-<时间>.md`，包含结构、隔离、耗时和重试的脱敏结果。
 - [x] **默认守卫**：`no-live-in-default.test.ts` 覆盖默认假模型零出网路径。
 - [x] 既有默认门禁证明 `pnpm test`/`test:e2e` 不触发联网或读取 Key；最终收口时仍需在当前依赖环境复跑。
 - [x] 负责人已执行付费策略级与纯状态机整局验收，并留存两份脱敏报告。
+- [x] 在临时 Node 22、独立依赖和临时 SQLite 中复跑 `test`、`typecheck`、`lint`、`build`、`test:e2e`，不修改系统 Node 或当前工作区依赖；默认测试 186/186、E2E 10/10，其余门禁全绿。
+- [x] 使用真实 API Key，但不输出或保存 Key/Base URL/请求头/完整响应；显式固定三参赛模型与复盘模型。
+- [x] 由可见浏览器经 Web/HTTP/SSE 完成一局正常终局，浏览器刷新及 Server 重启后均从 SQLite 恢复相同终局。
+- [x] 正常终局后真实复盘生成、持久化、Web 展示、刷新恢复和 Markdown 导出通过。
+- [x] 单次只启动一局；440 秒到正常终局、37 次真实请求，未触发 20 分钟或 40 次停止线。
+- [x] 只保留脱敏 Markdown、进行中/复盘截图和结构化数据库摘要；不提交临时驱动器、数据库、原始响应或运行环境。
+- [x] 清理临时环境并停止本次启动的 Docker Desktop；EVIDENCE/PROJECT_LOG 已更新，最终本地链接、敏感值与 `git diff --check` 通过。
 
 ## 文档状态一致性（TASK-058）
 
@@ -251,3 +258,12 @@
 - [x] model 专属参数覆盖 `OPENAI_COMPATIBLE_EXTRA_BODY` 的同名顶层字段，不影响其他 model。
 - [x] `.env.example` 提供千问、DeepSeek/豆包及评测模型示例，并明确不存在通用自动识别。
 - [x] Server 定向测试 17/17、typecheck/build、live TS/语法检查、全仓 lint、文档和差异检查通过，完成记录已更新。
+
+## 面试交付前最终回归（TASK-073）
+
+- [x] Node 22 下精确复跑 Shared 50、Server 83、Web 53，共 186/186 项默认测试。
+- [x] 三 workspace typecheck、全仓 ESLint、Shared/Server/Web 生产构建通过。
+- [x] normal 4、spectator 4、tie 2，共 10/10 项 Desktop Chrome 与 Pixel 5 E2E 通过。
+- [x] E2E 前端服务改为直接调用仓库 Vite CLI，避免嵌套 pnpm 的依赖状态检查影响验收启动。
+- [x] Chromium 截图验证首页、猜词模式提示、首轮对局、四张角色图和移动端布局；393px 视口无横向溢出，控制台无 warning/error。
+- [x] 修复窄屏四席位下英文角色名换行，并为角色名加入卡片边界 E2E 断言。

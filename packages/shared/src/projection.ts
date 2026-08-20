@@ -11,23 +11,32 @@ export function projectHumanGameView(
   publicTimeline: readonly PublicTimelineItem[] = [],
   factReview?: FactReview,
 ): HumanGameView {
-  const human = snapshot.players.find((player) => player.playerId === snapshot.humanPlayerId);
-  if (!human?.silhouette) {
+  const human = snapshot.config.participationMode === 'observer'
+    ? undefined
+    : snapshot.players.find((player) => player.playerId === snapshot.humanPlayerId);
+  if (snapshot.config.participationMode !== 'observer' && !human) {
     throw new Error('对局缺少人类玩家');
   }
+  const controllerId = snapshot.controllerId ?? snapshot.humanPlayerId;
+  if (!controllerId) throw new Error('对局缺少控制者');
 
-  const isHumanTurn = snapshot.round?.currentActorId === human.playerId;
+  const isHumanTurn = Boolean(human && snapshot.round?.currentActorId === human.playerId);
   const actionType = snapshot.round?.actionType;
   const isVoteAction = actionType === 'vote' || actionType === 'revote';
+  const canHumanGuess =
+    snapshot.config.gameMode === 'guess' &&
+    Boolean(human?.alive) &&
+    !human?.guessUsed &&
+    (actionType === 'describe' || actionType === 'vote');
   const allowedCommands =
     snapshot.status === 'preparing'
       ? ['StartGame', 'AbandonGame']
       : snapshot.status === 'in_progress' && isHumanTurn && actionType === 'describe'
-        ? ['SubmitDescription', 'AbandonGame']
+        ? ['SubmitDescription', ...(canHumanGuess ? ['SubmitGuess'] : []), 'AbandonGame']
         : snapshot.status === 'in_progress' && isHumanTurn && actionType === 'defend'
           ? ['SubmitDefense', 'AbandonGame']
           : snapshot.status === 'in_progress' && isHumanTurn && isVoteAction
-            ? ['SubmitVote', 'AbandonGame']
+            ? ['SubmitVote', ...(canHumanGuess && actionType === 'vote' ? ['SubmitGuess'] : []), 'AbandonGame']
             : snapshot.status === 'in_progress'
               ? ['AbandonGame']
               : snapshot.status === 'awaiting_spectator'
@@ -41,19 +50,26 @@ export function projectHumanGameView(
     revision: snapshot.revision,
     eventCursor: snapshot.streamSeq,
     config: snapshot.config,
-    human: {
-      playerId: human.playerId,
-      displayName: human.displayName,
-      silhouette: human.silhouette,
-      ownWordCard: human.wordCard,
-    },
+    controllerId,
+    human: human
+      ? {
+          playerId: human.playerId,
+          displayName: human.displayName,
+          ...(human.silhouette ? { silhouette: human.silhouette } : {}),
+          ...(human.characterAssetKey ? { characterAssetKey: human.characterAssetKey } : {}),
+          ownWordCard: human.wordCard,
+          guessUsed: human.guessUsed ?? false,
+        }
+      : null,
     players: snapshot.players.map((player) => ({
       playerId: player.playerId,
       seatIndex: player.seatIndex,
       kind: player.kind,
       displayName: player.displayName,
       alive: player.alive,
+      ...(player.agentRoleId ? { agentRoleId: player.agentRoleId } : {}),
       ...(player.agentRoleDisplay ? { agentRoleDisplay: player.agentRoleDisplay } : {}),
+      ...(player.characterAssetKey ? { characterAssetKey: player.characterAssetKey } : {}),
     })),
     round: snapshot.round
       ? {
@@ -67,7 +83,7 @@ export function projectHumanGameView(
     publicTimeline,
     voteProgress: { completedPlayerIds: snapshot.round?.completedVoterIds ?? [] },
     legalVoteTargetIds:
-      isVoteAction && isHumanTurn
+      isVoteAction && isHumanTurn && human
         ? actionType === 'revote'
           ? snapshot.round!.tieCandidateIds
           : snapshot.players
@@ -93,7 +109,10 @@ export function projectHumanGameView(
                 wordCard: player.wordCard,
               })),
           },
-          factReview: factReview ?? { agentActions: [] },
+          factReview: {
+            agentActions: factReview?.agentActions ?? [],
+            guesses: snapshot.guessHistory ?? factReview?.guesses ?? [],
+          },
         }
       : {}),
     allowedCommands,

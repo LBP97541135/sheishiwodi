@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { actionTypeSchema } from './enums.js';
+import { actionTypeSchema, campSchema, gameModeSchema } from './enums.js';
 import { publicTimelineItemSchema } from './events.js';
 
 const identifierSchema = z.string().trim().min(1).max(128);
@@ -16,7 +16,7 @@ export const opposingWordCandidateSchema = z
 export const playerProbabilitySchema = z
   .object({
     playerId: identifierSchema,
-    probability: z.number().min(0),
+    probability: z.number().min(0).max(1),
   })
   .strict();
 
@@ -26,7 +26,17 @@ export const beliefSnapshotSchema = z
     playerUndercoverProbabilities: z.array(playerProbabilitySchema).min(1),
     reasoningSummary: z.string().trim().min(1).max(300),
   })
-  .strict();
+  .strict()
+  .superRefine((belief, context) => {
+    const playerIds = belief.playerUndercoverProbabilities.map((entry) => entry.playerId);
+    if (new Set(playerIds).size !== playerIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['playerUndercoverProbabilities'],
+        message: 'playerId 必须唯一',
+      });
+    }
+  });
 
 export const agentTurnInputSchema = z
   .object({
@@ -37,12 +47,15 @@ export const agentTurnInputSchema = z
         playerId: identifierSchema,
         displayName: z.string().trim().min(1).max(32),
         ownWordCard: z.string().trim().min(1),
+        ownCamp: campSchema,
       })
       .strict(),
     publicConfig: z
       .object({
         undercoverCount: z.number().int().positive(),
         difficulty: z.enum(['easy', 'hard']),
+        participationMode: z.enum(['human', 'observer']).optional(),
+        gameMode: gameModeSchema.optional(),
       })
       .strict(),
     players: z.array(
@@ -58,6 +71,7 @@ export const agentTurnInputSchema = z
     roundNumber: z.number().int().positive(),
     actionType: actionTypeSchema,
     legalTargets: z.array(identifierSchema),
+    guessAvailable: z.boolean().default(false),
     tieCandidates: z.array(identifierSchema),
     publicEvents: z.array(publicTimelineItemSchema),
     priorOwnBeliefs: z.array(beliefSnapshotSchema),
@@ -65,20 +79,40 @@ export const agentTurnInputSchema = z
   })
   .strict();
 
-export const speechActionOutputSchema = z
+export const normalSpeechActionOutputSchema = z
   .object({
     belief: beliefSnapshotSchema,
     text: z.string(),
   })
   .strict();
 
-export const voteActionOutputSchema = z
+export const normalVoteActionOutputSchema = z
   .object({
     belief: beliefSnapshotSchema,
     targetPlayerId: identifierSchema,
     reason: z.string().trim().min(1).max(200),
   })
   .strict();
+
+export const guessActionOutputSchema = z
+  .object({
+    belief: beliefSnapshotSchema,
+    action: z.literal('guess'),
+    targetPlayerId: identifierSchema,
+    guessedWord: z.string().trim().min(1).max(40),
+    reason: z.string().trim().min(1).max(200),
+  })
+  .strict();
+
+export const speechActionOutputSchema = z.union([
+  normalSpeechActionOutputSchema,
+  guessActionOutputSchema,
+]);
+
+export const voteActionOutputSchema = z.union([
+  normalVoteActionOutputSchema,
+  guessActionOutputSchema,
+]);
 
 export function validateBeliefSnapshot(
   belief: z.infer<typeof beliefSnapshotSchema>,
@@ -88,7 +122,8 @@ export function validateBeliefSnapshot(
   const parsed = beliefSnapshotSchema.parse(belief);
   const probabilityIds = parsed.playerUndercoverProbabilities.map((entry) => entry.playerId);
   if (
-    new Set(probabilityIds).size !== livingPlayerIds.length ||
+    probabilityIds.length !== livingPlayerIds.length ||
+    new Set(probabilityIds).size !== probabilityIds.length ||
     livingPlayerIds.some((playerId) => !probabilityIds.includes(playerId))
   ) {
     throw new Error('BELIEF_PLAYERS_INVALID');
@@ -107,3 +142,4 @@ export type BeliefSnapshot = z.infer<typeof beliefSnapshotSchema>;
 export type AgentTurnInput = z.infer<typeof agentTurnInputSchema>;
 export type SpeechActionOutput = z.infer<typeof speechActionOutputSchema>;
 export type VoteActionOutput = z.infer<typeof voteActionOutputSchema>;
+export type GuessActionOutput = z.infer<typeof guessActionOutputSchema>;

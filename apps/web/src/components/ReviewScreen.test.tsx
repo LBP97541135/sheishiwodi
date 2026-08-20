@@ -152,6 +152,28 @@ function makeFinishedView(): HumanGameView {
   } as HumanGameView;
 }
 
+function makeGuessFinishedView(): HumanGameView {
+  const view = makeFinishedView();
+  return {
+    ...view,
+    config: { ...view.config, gameMode: 'guess' },
+    factReview: {
+      ...view.factReview!,
+      guesses: [
+        {
+          actorId: 'agent-1',
+          targetPlayerId: 'agent-2',
+          guessedWord: '牛奶',
+          roundNumber: 1,
+          phase: 'describe',
+          success: true,
+          eliminatedPlayerId: 'agent-2',
+        },
+      ],
+    },
+  };
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -161,7 +183,8 @@ describe('ReviewScreen', () => {
   it('揭晓词对与胜负', () => {
     render(<ReviewScreen game={makeFinishedView()} onBack={vi.fn()} />);
     expect(screen.getByText('平民胜利')).toBeInTheDocument();
-    expect(screen.getByText(/卧底被票出/)).toBeInTheDocument();
+    expect(screen.getByText(/卧底已被淘汰/)).toBeInTheDocument();
+    expect(screen.getByText('经典模式')).toBeInTheDocument();
     expect(screen.getByText('饮品')).toBeInTheDocument();
     // 平民词与卧底词分别揭晓
     const wordpair = screen.getByText('卧底词').closest('div')!;
@@ -224,6 +247,49 @@ describe('ReviewScreen', () => {
     expect(within(region).getByText(/第 1 轮用「白色饮品」自曝/)).toBeInTheDocument();
     // 评价区与事实身份区是相互独立的 region。
     expect(region).not.toBe(screen.getByRole('region', { name: '真实身份与词牌' }));
+  });
+
+  it('猜词模式精简展示折叠事实与最多三个 AI 关键决策', async () => {
+    getReviewMock.mockResolvedValue({
+      ...doneSummary(),
+      guessAnalysisStatus: 'done',
+      guessAnalysis: {
+        summary: 'AI 在目标与词语置信度较高时使用猜词，整体时机合理。',
+        keyDecisions: [
+          {
+            actionId: 'guess-action-1',
+            actorId: 'agent-1',
+            roundNumber: 1,
+            phase: 'describe',
+            kind: 'attempt',
+            verdict: 'reasonable',
+            assessment: '行动时已有足够公开证据支持目标和词语判断。',
+            outcomeImpact: '猜词成功后目标立即出局。',
+          },
+        ],
+      },
+    });
+
+    render(<ReviewScreen game={makeGuessFinishedView()} onBack={vi.fn()} />);
+
+    expect(screen.getByText('猜词模式')).toBeInTheDocument();
+    expect(screen.getByText('猜词记录（1）')).toBeInTheDocument();
+    const region = await screen.findByRole('region', { name: 'AI 复盘评价' });
+    expect(within(region).getByText('AI 猜词决策')).toBeInTheDocument();
+    expect(within(region).getByText('合理')).toBeInTheDocument();
+    expect(within(region).getByText(/行动时已有足够公开证据/)).toBeInTheDocument();
+    expect(within(region).getByText(/实际影响：猜词成功后目标立即出局/)).toBeInTheDocument();
+  });
+
+  it('猜词专项失败时保留基础复盘并显示局部降级提示', async () => {
+    getReviewMock.mockResolvedValue({
+      ...doneSummary(),
+      guessAnalysisStatus: 'failed',
+    });
+    render(<ReviewScreen game={makeGuessFinishedView()} onBack={vi.fn()} />);
+    const region = await screen.findByRole('region', { name: 'AI 复盘评价' });
+    expect(within(region).getByText(/猜词专项分析暂未生成/)).toBeInTheDocument();
+    expect(within(region).getByText(/平民凭借豆包的稳健描述锁定卧底/)).toBeInTheDocument();
   });
 
   it('AI 复盘生成中显示占位文案', async () => {

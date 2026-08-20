@@ -15,6 +15,7 @@ for (const argument of process.argv.slice(2)) {
   }
 }
 
+const apiPort = readPort(process.env['SHEISHIWODI_API_PORT'], 3001);
 const dependencies = createRuntimeDependencies();
 const server = buildServer(dependencies);
 
@@ -33,9 +34,18 @@ process.once('SIGTERM', () => {
 try {
   await server.listen({
     host: '127.0.0.1',
-    port: 3001,
+    port: apiPort,
   });
 } catch (error) {
   server.log.error(error);
   process.exitCode = 1;
+}
+
+function readPort(value: string | undefined, fallback: number) {
+  if (value === undefined || value.trim() === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535) {
+    throw new Error('SHEISHIWODI_API_PORT must be an integer between 1 and 65535');
+  }
+  return parsed;
 }

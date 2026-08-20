@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { HumanGameView } from '@sheishiwodi/shared';
@@ -94,6 +94,37 @@ describe('GameScreen 描述输入', () => {
     fireEvent.click(screen.getByRole('button', { name: '提交描述' }));
     expect(onDescribe).toHaveBeenCalledWith('一种常见的白色饮品');
   });
+
+  it('猜词模式在本人发言时经过风险确认提交一次精确猜测', () => {
+    const onGuess = vi.fn().mockResolvedValue(undefined);
+    render(
+      <GameScreen
+        game={makeView({
+          config: { difficulty: 'easy', undercoverCount: 1, gameMode: 'guess' },
+          human: {
+            playerId: 'human-1',
+            displayName: '玩家',
+            silhouette: 'silhouette_a',
+            ownWordCard: '牛奶',
+            guessUsed: false,
+          },
+          allowedCommands: ['SubmitDescription', 'SubmitGuess'],
+        })}
+        {...screenProps}
+        onGuess={onGuess}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '发起猜测' }));
+    const dialog = screen.getByRole('dialog', { name: '发起猜测' });
+    expect(within(dialog).getByText(/身份或词语任一错误/)).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('目标玩家'), { target: { value: 'agent-2' } });
+    fireEvent.change(within(dialog).getByLabelText('目标的精确词语'), { target: { value: '  豆浆  ' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '核对猜测' }));
+    expect(within(dialog).getByText('确认猜测 豆包 的词是“豆浆”？')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认并提交' }));
+    expect(onGuess).toHaveBeenCalledWith('agent-2', '豆浆');
+  });
 });
 
 describe('GameScreen 秘密投票', () => {
@@ -125,11 +156,12 @@ describe('GameScreen 秘密投票', () => {
   it('投票开始时所有存活玩家同步进入思考状态', () => {
     render(<GameScreen game={votingView} {...screenProps} />);
 
-    expect(screen.getByTestId('portrait-human-male')).toHaveAttribute('data-state', 'thinking');
-    expect(screen.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'thinking');
-    expect(screen.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'thinking');
-    expect(screen.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'thinking');
-    expect(screen.getByText('你 · 思考中')).toBeInTheDocument();
+    const seats = within(screen.getByLabelText('本局玩家'));
+    expect(seats.getByTestId('portrait-human-male')).toHaveAttribute('data-state', 'thinking');
+    expect(seats.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'thinking');
+    expect(seats.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'thinking');
+    expect(seats.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'thinking');
+    expect(screen.getAllByText('你 · 思考中')).toHaveLength(2);
     expect(screen.getAllByText('思考中')).toHaveLength(3);
   });
 
@@ -181,10 +213,11 @@ describe('GameScreen 秘密投票', () => {
 
     render(<GameScreen game={view} {...screenProps} />);
 
-    expect(screen.getByTestId('portrait-human-male')).toHaveAttribute('data-state', 'thinking');
-    expect(screen.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'suspected');
-    expect(screen.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'suspected');
-    expect(screen.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'idle');
+    const seats = within(screen.getByLabelText('本局玩家'));
+    expect(seats.getByTestId('portrait-human-male')).toHaveAttribute('data-state', 'thinking');
+    expect(seats.getByTestId('portrait-deepseek')).toHaveAttribute('data-state', 'suspected');
+    expect(seats.getByTestId('portrait-doubao')).toHaveAttribute('data-state', 'suspected');
+    expect(seats.getByTestId('portrait-qwen')).toHaveAttribute('data-state', 'idle');
   });
 });
 
@@ -301,6 +334,42 @@ describe('GameScreen 人类操作区', () => {
   });
 });
 
+describe('GameScreen 大阵容席位', () => {
+  it('8 人局使用头像、两行名称容器和独立状态角标', () => {
+    const players = [
+      ...basePlayers.map((player) => ({ ...player })),
+      { playerId: 'agent-4', seatIndex: 4, kind: 'agent' as const, displayName: '候补角色一号', alive: true, agentRoleId: 'custom-role-1', characterAssetKey: 'custom-role-1' },
+      { playerId: 'agent-5', seatIndex: 5, kind: 'agent' as const, displayName: '候补角色二号', alive: true, agentRoleId: 'custom-role-2', characterAssetKey: 'custom-role-2' },
+      { playerId: 'agent-6', seatIndex: 6, kind: 'agent' as const, displayName: '候补角色三号', alive: true, agentRoleId: 'custom-role-3', characterAssetKey: 'custom-role-3' },
+      { playerId: 'agent-7', seatIndex: 7, kind: 'agent' as const, displayName: '很长的候补角色名称', alive: true, agentRoleId: 'custom-role-4', characterAssetKey: 'custom-role-4' },
+    ];
+    const view = makeView({
+      config: { difficulty: 'easy', undercoverCount: 2 },
+      players,
+      round: {
+        number: 1,
+        speakingOrder: players.map((player) => player.playerId),
+        currentActorId: 'agent-7',
+        actionType: 'describe',
+        tieCandidateIds: [],
+      },
+      allowedCommands: [],
+    });
+
+    render(<GameScreen game={view} {...screenProps} />);
+    const roster = screen.getByLabelText('本局玩家');
+    expect(roster).toHaveClass('seats--large-roster');
+    expect(roster.querySelectorAll('.seat')).toHaveLength(8);
+    expect(roster.querySelectorAll('.seat__state-icon')).toHaveLength(8);
+    expect(within(roster).getByText('很长的候补角色名称')).toHaveAttribute('title', '很长的候补角色名称');
+    expect(roster.querySelector('[data-player-id="agent-7"] img')).toHaveAttribute(
+      'src',
+      '/api/character-assets/custom-role-4/avatar.webp',
+    );
+    expect(roster.querySelector('[data-player-id="agent-7"] .seat__state-icon')).toHaveAttribute('data-state', 'speaking');
+  });
+});
+
 describe('GameScreen 终局与观战', () => {
   it('平民胜利依次揭晓身份并在完成后开放事实复盘', async () => {
     const timeoutSpy = vi
@@ -328,7 +397,7 @@ describe('GameScreen 终局与观战', () => {
     });
     render(<GameScreen game={view} {...screenProps} />);
     expect(screen.getByText('平民胜利')).toBeInTheDocument();
-    expect(screen.getByText(/卧底被票出/)).toBeInTheDocument();
+    expect(screen.getByText(/卧底已被淘汰/)).toBeInTheDocument();
     expect(timeoutSpy).toHaveBeenCalledTimes(4);
     expect(screen.getByText('豆浆')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看事实复盘' }));

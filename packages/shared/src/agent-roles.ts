@@ -46,7 +46,9 @@ export const agentRoleIds = agentRoles.map((role) => role.roleId);
 export const agentRoleIdSchema = z
   .string()
   .trim()
-  .refine((value) => agentRoleIds.includes(value), { message: '未知的 AI 角色标识' });
+  .min(1)
+  .max(128)
+  .regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'AI 角色标识格式不合法' });
 
 export function findAgentRole(roleId: string): AgentRoleDefinition | undefined {
   return agentRoles.find((role) => role.roleId === roleId);

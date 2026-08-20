@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { difficultySchema, silhouetteSchema } from './enums.js';
+import { difficultySchema, gameModeSchema, silhouetteSchema } from './enums.js';
 
 const identifierSchema = z.string().trim().min(1).max(128);
 
@@ -13,16 +13,23 @@ const commandEnvelopeSchema = z
   })
   .strict();
 
+const humanIdentitySchema = z.union([
+  z.object({
+    displayName: z.string().trim().min(1).max(12).default('玩家'),
+    silhouette: silhouetteSchema,
+  }).strict(),
+  z.object({ roleId: identifierSchema }).strict(),
+]);
+
 export const createGameCommandSchema = z
   .object({
     type: z.literal('CreateGame'),
     commandId: identifierSchema,
-    human: z
-      .object({
-        displayName: z.string().trim().min(1).max(12).default('玩家'),
-        silhouette: silhouetteSchema,
-      })
-      .strict(),
+    gameMode: gameModeSchema.optional(),
+    participationMode: z.enum(['human', 'observer']).optional(),
+    human: humanIdentitySchema,
+    agentRoleIds: z.array(identifierSchema).min(3).max(8).optional(),
+    requestBudget: z.number().int().min(1).max(500).optional(),
     difficulty: difficultySchema,
   })
   .strict();
@@ -46,6 +53,12 @@ export const submitVoteCommandSchema = commandEnvelopeSchema.extend({
   targetPlayerId: identifierSchema,
 });
 
+export const submitGuessCommandSchema = commandEnvelopeSchema.extend({
+  type: z.literal('SubmitGuess'),
+  targetPlayerId: identifierSchema,
+  guessedWord: z.string().trim().min(1).max(40),
+});
+
 export const continueSpectatingCommandSchema = commandEnvelopeSchema.extend({
   type: z.literal('ContinueSpectating'),
 });
@@ -59,6 +72,11 @@ export const terminateForSystemErrorCommandSchema = commandEnvelopeSchema.extend
   type: z.literal('TerminateForSystemError'),
   failedActionId: identifierSchema,
   errorType: z.string().trim().min(1).max(64),
+});
+
+export const resolveInterruptedGameCommandSchema = commandEnvelopeSchema.extend({
+  type: z.literal('ResolveInterruptedGame'),
+  resolution: z.enum(['continue', 'start_new']),
 });
 
 export const disqualifyPlayerForRuleViolationCommandSchema = commandEnvelopeSchema.extend({
@@ -79,6 +97,7 @@ export const submitDefenseRequestSchema = submitDefenseCommandSchema.omit({
   gameId: true,
 });
 export const submitVoteRequestSchema = submitVoteCommandSchema.omit({ type: true, gameId: true });
+export const submitGuessRequestSchema = submitGuessCommandSchema.omit({ type: true, gameId: true });
 export const continueSpectatingRequestSchema = continueSpectatingCommandSchema.omit({
   type: true,
   gameId: true,
@@ -87,6 +106,12 @@ export const abandonGameRequestSchema = abandonGameCommandSchema.omit({
   type: true,
   gameId: true,
 });
+export const automationControlRequestSchema = z
+  .object({ mode: z.enum(['auto', 'paused', 'step']) })
+  .strict();
+export const addRequestBudgetSchema = z
+  .object({ amount: z.number().int().min(1).max(500) })
+  .strict();
 
 export const gameCommandSchema = z.discriminatedUnion('type', [
   createGameCommandSchema,
@@ -94,8 +119,10 @@ export const gameCommandSchema = z.discriminatedUnion('type', [
   submitDescriptionCommandSchema,
   submitDefenseCommandSchema,
   submitVoteCommandSchema,
+  submitGuessCommandSchema,
   continueSpectatingCommandSchema,
   abandonGameCommandSchema,
+  resolveInterruptedGameCommandSchema,
   terminateForSystemErrorCommandSchema,
   disqualifyPlayerForRuleViolationCommandSchema,
 ]);
@@ -111,10 +138,22 @@ export type SubmitDefenseCommand = z.infer<typeof submitDefenseCommandSchema>;
 export type SubmitDefenseRequest = z.infer<typeof submitDefenseRequestSchema>;
 export type SubmitVoteCommand = z.infer<typeof submitVoteCommandSchema>;
 export type SubmitVoteRequest = z.infer<typeof submitVoteRequestSchema>;
+export type SubmitGuessCommand = z.infer<typeof submitGuessCommandSchema>;
+export type SubmitGuessRequest = z.infer<typeof submitGuessRequestSchema>;
 export type ContinueSpectatingCommand = z.infer<typeof continueSpectatingCommandSchema>;
 export type ContinueSpectatingRequest = z.infer<typeof continueSpectatingRequestSchema>;
 export type AbandonGameCommand = z.infer<typeof abandonGameCommandSchema>;
 export type AbandonGameRequest = z.infer<typeof abandonGameRequestSchema>;
+export type AutomationControlRequest = z.infer<typeof automationControlRequestSchema>;
+export type AddRequestBudgetRequest = z.infer<typeof addRequestBudgetSchema>;
+export const resolveInterruptedGameRequestSchema = resolveInterruptedGameCommandSchema.omit({
+  type: true,
+  gameId: true,
+  actorId: true,
+  expectedRevision: true,
+});
+export type ResolveInterruptedGameCommand = z.infer<typeof resolveInterruptedGameCommandSchema>;
+export type ResolveInterruptedGameRequest = z.infer<typeof resolveInterruptedGameRequestSchema>;
 export type TerminateForSystemErrorCommand = z.infer<typeof terminateForSystemErrorCommandSchema>;
 export type DisqualifyPlayerForRuleViolationCommand = z.infer<
   typeof disqualifyPlayerForRuleViolationCommandSchema

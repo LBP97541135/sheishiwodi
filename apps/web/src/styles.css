@@ -108,7 +108,7 @@ h1 {
   font-family: KaiTi, STKaiti, serif;
   font-size: clamp(2.7rem, 8vw, 5.8rem);
   font-weight: 700;
-  letter-spacing: -0.06em;
+  letter-spacing: 0;
   line-height: 1;
 }
 
@@ -125,6 +125,31 @@ h1 {
 .started-panel {
   display: grid;
   gap: 24px;
+}
+
+.connection-notice {
+  display: flex;
+  width: min(100%, 960px);
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 2px solid #9d7410;
+  margin: -6px 0 16px;
+  background: #fff4c7;
+  color: #5d4408;
+  font-weight: 800;
+  padding: 8px 12px;
+}
+
+.connection-notice button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  background: #fffdf6;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 5px 10px;
 }
 
 .storyboard:has(.new-game) {
@@ -354,16 +379,27 @@ legend {
 }
 
 .choice-grid--silhouette {
-  width: min(100%, 480px);
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  width: min(100%, 680px);
   margin-inline: auto;
 }
 
 .coming-soon-dialog.player-name-dialog {
-  width: min(100%, 520px);
+  width: min(100%, 720px);
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
 }
 
 .player-name-dialog .field {
   margin-top: 2px;
+}
+
+.player-name-dialog__possession {
+  margin: 0;
+  border-left: 4px solid #3e6f8e;
+  padding: 8px 12px;
+  color: #555047;
 }
 
 .player-name-dialog__appearance {
@@ -865,6 +901,90 @@ legend {
   line-height: 1.45;
 }
 
+.guess-action {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed #b74335;
+  background: #fff8f2;
+  color: #7c2c24;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 8px 14px;
+}
+
+.guess-action svg,
+.guess-panel svg,
+.guess-used svg {
+  width: 18px;
+  height: 18px;
+}
+
+.guess-panel {
+  display: grid;
+  gap: 12px;
+  border: 2px solid #b74335;
+  background: #fff8f2;
+  padding: 14px;
+}
+
+.guess-panel header,
+.guess-panel header strong,
+.guess-panel label,
+.guess-used {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.guess-panel header {
+  justify-content: space-between;
+}
+
+.guess-panel label {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.guess-panel select,
+.guess-panel input {
+  min-height: 44px;
+  border: 2px solid #26231f;
+  background: #fffdf6;
+  padding: 8px 10px;
+}
+
+.guess-panel__risk {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: #7c2c24;
+  line-height: 1.5;
+}
+
+.guess-panel__risk svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.guess-panel__confirm {
+  display: grid;
+  gap: 10px;
+}
+
+.guess-panel__confirm p,
+.guess-used {
+  margin: 0;
+}
+
+.guess-used {
+  color: #777066;
+  font-weight: 700;
+}
+
 .form-error--inline {
   border-left: 0;
   padding: 0;
@@ -917,6 +1037,10 @@ legend {
 
 .finale-stamp--undercover {
   color: #b74335;
+}
+
+.finale-stamp--draw {
+  color: #777066;
 }
 
 .finale-reason {
@@ -1086,6 +1210,17 @@ legend {
   .seats--game .portrait {
     width: min(100%, 112px);
     height: 140px;
+  }
+
+  .seats--game .seat {
+    padding: 8px 3px;
+  }
+
+  .seats--game .seat > strong {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 0.82rem;
+    line-height: 1.15;
   }
 
   .finale-cards {
@@ -1307,10 +1442,184 @@ legend {
   min-width: 0;
 }
 
+.developer-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.developer-panel__header,
+.developer-panel__actions,
+.developer-panel__sensitive-controls,
+.developer-record header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.developer-panel__header h1 {
+  margin: 0;
+  font-size: 2.35rem;
+  letter-spacing: 0;
+}
+
+.developer-panel__sensitive-controls {
+  border-block: 2px solid #26231f;
+  padding: 14px 0;
+}
+
+.developer-panel__sensitive-controls > div {
+  display: grid;
+  flex: 1 1 300px;
+  gap: 3px;
+}
+
+.developer-panel__sensitive-controls span {
+  color: #555047;
+  font-size: 0.86rem;
+}
+
+.developer-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 2px solid #26231f;
+}
+
+.developer-tabs button {
+  min-height: 42px;
+  flex: 0 0 auto;
+  border: 0;
+  border-bottom: 4px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 8px 14px;
+}
+
+.developer-tabs button[aria-selected='true'] {
+  border-bottom-color: #b33a2f;
+  background: rgba(62, 111, 142, 0.12);
+}
+
+.developer-panel__body {
+  min-height: 220px;
+}
+
+.developer-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.developer-table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.developer-table th,
+.developer-table td {
+  border-bottom: 1px solid #b9b3a8;
+  padding: 9px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.developer-table th {
+  background: rgba(62, 111, 142, 0.12);
+}
+
+.developer-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.developer-list li {
+  display: grid;
+  gap: 7px;
+  border-bottom: 1px solid #b9b3a8;
+  padding: 14px 0;
+}
+
+.developer-list li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.developer-list p,
+.developer-list small,
+.developer-facts p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.developer-list .secondary-action {
+  justify-self: start;
+}
+
+.developer-facts {
+  display: grid;
+  gap: 12px;
+}
+
+.developer-facts > code {
+  display: block;
+  overflow-wrap: anywhere;
+  border-left: 4px solid #b33a2f;
+  background: rgba(179, 58, 47, 0.08);
+  padding: 9px 12px;
+}
+
+.developer-empty {
+  color: #555047;
+}
+
+.developer-record {
+  display: grid;
+  gap: 12px;
+  border-top: 3px solid #26231f;
+  padding-top: 18px;
+}
+
+.developer-record h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.developer-record pre {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  border: 2px solid #26231f;
+  background: #1f2427;
+  color: #f7f3e8;
+  padding: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .developer-panel__header h1 {
+    font-size: 1.85rem;
+  }
+
+  .developer-panel__actions,
+  .developer-panel__actions button {
+    width: 100%;
+  }
+}
+
 /* 列表视图标题无需主页级别的巨大展示字号，收敛到更协调的尺寸。 */
 .model-profiles__header h1 {
   font-size: clamp(1.9rem, 3.4vw, 2.9rem);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   line-height: 1.15;
 }
 
@@ -1395,6 +1704,23 @@ legend {
   width: 100%;
 }
 
+.recovery-dialog {
+  width: min(100%, 520px);
+}
+
+.recovery-dialog .action-row {
+  justify-content: flex-end;
+}
+
+.recovery-dialog .action-row .primary-action {
+  justify-self: auto;
+}
+
+.recovery-dialog button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .model-card__field input:disabled {
   color: #706b62;
   background: #eeeae0;
@@ -1405,6 +1731,476 @@ legend {
   color: #555047;
   font-family: Consolas, monospace;
   font-size: 0.85rem;
+}
+
+/* 动态阵容、角色库与纯 Agent 桌面控制 */
+.icon-action,
+.icon-command {
+  display: inline-grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid #26231f;
+  background: #fffdf6;
+  color: #26231f;
+  cursor: pointer;
+  padding: 0;
+}
+
+.icon-action svg,
+.icon-command svg,
+.segmented-control svg,
+.config-section legend svg,
+.automation-panel svg {
+  width: 19px;
+  height: 19px;
+}
+
+.icon-action:hover,
+.icon-command:hover {
+  background: #d6a93a;
+}
+
+.icon-action:disabled,
+.icon-command:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.icon-action--danger {
+  color: #a53228;
+}
+
+.text-action {
+  justify-self: start;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: #274b60;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 2px 0;
+}
+
+.game-config {
+  gap: 22px;
+}
+
+.game-config__header {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.game-config__header h1 {
+  font-size: 2.5rem;
+  line-height: 1.1;
+}
+
+.game-config__grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 1.2fr);
+  gap: 18px 28px;
+  border-block: 2px solid #26231f;
+  padding-block: 20px;
+}
+
+.config-section {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.config-section legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+}
+
+.config-section--roster {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  border: 2px solid #26231f;
+  padding: 4px;
+}
+
+.segmented-control label {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: transparent;
+  font-weight: 800;
+  padding: 8px 10px;
+}
+
+.segmented-control label:has(input:checked) {
+  background: #3e6f8e;
+  color: #fffdf6;
+}
+
+.player-count-control {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(42px, 1fr));
+  gap: 4px;
+}
+
+.player-count-control button {
+  min-height: 42px;
+  border: 2px solid #777066;
+  background: #fffdf6;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.player-count-control button.is-active {
+  border-color: #26231f;
+  background: #d6a93a;
+}
+
+.roster-selects {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.roster-selects label,
+.budget-field,
+.character-editor__fields label {
+  display: grid;
+  gap: 5px;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.roster-selects select,
+.budget-field input,
+.character-editor input,
+.character-editor textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 2px solid #26231f;
+  background: #fffdf6;
+  padding: 8px 10px;
+}
+
+.game-config__start {
+  width: min(100%, 420px);
+  justify-self: center;
+}
+
+.focus-stage {
+  display: grid;
+  min-height: 260px;
+  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr);
+  align-items: end;
+  gap: 24px;
+  border-bottom: 3px solid #26231f;
+  background: rgba(255, 253, 246, 0.72);
+  padding: 0 18px;
+}
+
+.focus-stage > .portrait {
+  width: 100%;
+  height: 250px;
+  aspect-ratio: auto;
+  background: transparent;
+}
+
+.focus-stage > div:last-child {
+  display: grid;
+  align-self: center;
+  gap: 5px;
+}
+
+.focus-stage > div:last-child strong {
+  font-family: KaiTi, STKaiti, serif;
+  font-size: 2.2rem;
+}
+
+.focus-stage__status {
+  color: #b74335;
+  font-weight: 900;
+}
+
+.seats--compact {
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  gap: 7px;
+}
+
+.seats--game.seats--compact .seat {
+  min-height: 88px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-rows: repeat(2, auto);
+  justify-items: start;
+  gap: 0 8px;
+  padding: 6px;
+  text-align: left;
+}
+
+.seat__avatar-wrap {
+  position: relative;
+  grid-row: 1 / span 2;
+}
+
+.seat__state-icon {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 2px solid #fffdf6;
+  border-radius: 50%;
+  background: #3e6f8e;
+  color: #fff;
+}
+
+.seat__state-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.seat__state-icon[data-state='speaking'] {
+  background: #d6a93a;
+  color: #26231f;
+}
+
+.seat__state-icon[data-state='suspected'],
+.seat__state-icon[data-state='eliminated'] {
+  background: #b74335;
+}
+
+.seats--game.seats--compact .portrait {
+  width: 48px;
+  height: 64px;
+  grid-row: 1 / span 2;
+}
+
+.seats--game.seats--large-roster .seat {
+  min-height: 130px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 56px minmax(2.5em, auto) 1.2em;
+  justify-items: center;
+  align-content: center;
+  gap: 5px;
+  padding: 8px 5px;
+  text-align: center;
+}
+
+.seats--game.seats--large-roster .seat__avatar-wrap {
+  grid-row: auto;
+}
+
+.seats--game.seats--large-roster .portrait {
+  width: 54px;
+  height: 54px;
+  aspect-ratio: 1;
+  border: 2px solid #26231f;
+  background: #f7f3e8;
+}
+
+.seats--game.seats--large-roster .portrait img {
+  object-fit: cover;
+}
+
+.seats--large-roster .seat > strong {
+  display: -webkit-box;
+  min-height: 2.4em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.1;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.seats--large-roster .seat > span:last-child {
+  white-space: nowrap;
+}
+
+.seats--compact .seat > strong,
+.seats--compact .seat > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seats--compact.seats--large-roster .seat > strong {
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.automation-panel {
+  display: grid;
+  gap: 14px;
+  border: 2px solid #26231f;
+  background: #fffdf6;
+  padding: 16px;
+}
+
+.automation-panel__status,
+.automation-panel__actions,
+.automation-budget,
+.automation-panel__hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.automation-panel__status > div {
+  display: grid;
+}
+
+.status-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  background: #3e6f8e;
+  color: white;
+}
+
+.status-icon.is-paused {
+  background: #d6a93a;
+  color: #26231f;
+}
+
+.automation-budget {
+  justify-content: space-between;
+  border-top: 1px dashed #777066;
+  padding-top: 10px;
+}
+
+.automation-budget__warning {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #a53228;
+  font-weight: 900;
+}
+
+.automation-panel__hint {
+  margin: 0;
+  color: #777066;
+  font-size: 0.82rem;
+}
+
+.role-library-grid {
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.role-card__avatar {
+  width: 82px;
+  height: 82px;
+  border: 2px solid #26231f;
+  object-fit: cover;
+}
+
+.role-card__heading,
+.role-card__actions,
+.character-editor > header {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.role-card__heading h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.status-badge {
+  border: 1px solid #9d7410;
+  color: #6b5a1f;
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 2px 7px;
+}
+
+.status-badge.is-ready {
+  border-color: #3e6f8e;
+  color: #274b60;
+}
+
+.character-editor {
+  width: min(100%, 820px);
+  max-height: min(90vh, 820px);
+  overflow-y: auto;
+}
+
+.character-editor__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.character-editor__wide {
+  grid-column: 1 / -1;
+}
+
+.character-editor textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.character-editor__assets {
+  border-top: 2px dashed #777066;
+  padding-top: 12px;
+}
+
+.character-editor__assets > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.character-editor__assets label {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #aaa398;
+  padding: 8px;
+}
+
+.character-editor__assets input {
+  min-height: 0;
+  border: 0;
+  padding: 0;
+  font-size: 0.78rem;
+}
+
+.character-editor__assets b {
+  color: #555047;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .game-config__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .config-section--roster {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .focus-stage {
+    grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  }
 }
 
 /* 赛后复盘页 */
@@ -1480,6 +2276,40 @@ a.review-export {
   font-weight: 800;
 }
 
+.review-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.review-title-row h1 {
+  margin: 0;
+}
+
+.review-title-row span {
+  border: 1px solid #59534a;
+  padding: 2px 8px;
+  color: #4c473f;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.review-guess-facts {
+  margin: 18px 0;
+  border-block: 1px dashed #8b8378;
+  padding: 10px 0;
+}
+
+.review-guess-facts summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.review-guess-facts .guess-review-list {
+  margin-bottom: 0;
+}
+
 .review-identities h2,
 .review-timeline-section h2 {
   margin: 0 0 12px;
@@ -1551,6 +2381,82 @@ a.review-export {
 .review-ai__overall h3 {
   margin: 0 0 6px;
   font-size: 1rem;
+}
+
+.review-ai__guess {
+  margin-bottom: 16px;
+  border-left: 3px solid #d2a62f;
+  padding-left: 14px;
+}
+
+.review-ai__guess h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.review-ai__guess > p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.review-ai__guess-decisions {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-ai__guess-decisions li {
+  border-top: 1px solid #ddd4c2;
+  padding-top: 9px;
+}
+
+.review-ai__guess-decision-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.review-ai__guess-decision-head span {
+  color: #686157;
+  font-size: 0.82rem;
+}
+
+.review-ai__guess-decision-head b {
+  margin-left: auto;
+  border: 1px solid currentColor;
+  padding: 1px 7px;
+  color: #39704d;
+  font-size: 0.78rem;
+}
+
+.review-ai__guess-decision-head b[data-verdict='rash'],
+.review-ai__guess-decision-head b[data-verdict='insufficient_basis'] {
+  color: #a13f32;
+}
+
+.review-ai__guess-decision-head b[data-verdict='missed_opportunity'] {
+  color: #8a5d10;
+}
+
+.review-ai__guess-decisions p {
+  margin: 5px 0 0;
+  line-height: 1.55;
+}
+
+.review-ai__guess-decisions small {
+  display: block;
+  margin-top: 4px;
+  color: #625c52;
+}
+
+.review-ai__guess-unavailable {
+  margin: 0 0 14px;
+  border-left: 3px solid #b88624;
+  padding-left: 10px;
+  color: #705115;
 }
 
 .review-ai__overall p {

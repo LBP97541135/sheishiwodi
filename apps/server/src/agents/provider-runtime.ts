@@ -8,6 +8,15 @@ import type { ReviewPolicy } from './review-policy.js';
 import { TokendanceReviewPolicy } from './review-agent-policy.js';
 import { TokendanceAgentPolicy } from './tokendance-agent-policy.js';
 import { TokendanceClient } from './tokendance-client.js';
+import {
+  noOpProviderCircuitBreaker,
+  ProviderCircuitBreaker,
+  type ProviderCircuitBreakerPort,
+} from './provider-circuit-breaker.js';
+import {
+  noOpAgentObservability,
+  type AgentObservability,
+} from './agent-observability.js';
 
 export interface RoleModelSelectionSource {
   listSelections(): Record<string, string>;
@@ -19,6 +28,7 @@ export interface ResolvedAgentProvider {
   modelProvider: ModelProviderContext;
   /** 开始真实对局前动态检查，允许用户在服务启动后通过模型档案补齐角色 model ID。 */
   areRequiredModelsConfigured: () => boolean;
+  circuitBreaker: ProviderCircuitBreakerPort;
 }
 
 type ProviderEnvironment = Readonly<Record<string, string | undefined>>;
@@ -32,13 +42,14 @@ export function resolveAgentProvider(
   roleModels: RoleModelSelectionSource,
   fakeScenario: FakeAgentScenario,
   env: ProviderEnvironment = process.env,
+  observability: AgentObservability = noOpAgentObservability,
 ): ResolvedAgentProvider {
   const provider = (env['AGENT_PROVIDER'] ?? 'fake').trim();
   if (provider === 'tokendance') {
-    return resolveTokendance(roleModels, fakeScenario, env);
+    return resolveTokendance(roleModels, fakeScenario, env, observability);
   }
   if (provider === 'openai-compatible') {
-    return resolveOpenAiCompatible(roleModels, fakeScenario, env);
+    return resolveOpenAiCompatible(roleModels, fakeScenario, env, observability);
   }
   return fakeProvider(fakeScenario, 'fake', true, true);
 }
@@ -47,6 +58,7 @@ function resolveTokendance(
   roleModels: RoleModelSelectionSource,
   fakeScenario: FakeAgentScenario,
   env: ProviderEnvironment,
+  observability: AgentObservability,
 ): ResolvedAgentProvider {
   const baseUrl = valueOf(env, 'TOKENDANCE_BASE_URL');
   const apiKey = valueOf(env, 'TOKENDANCE_API_KEY');
@@ -86,6 +98,10 @@ function resolveTokendance(
     debug: valueOf(env, 'AGENT_DEBUG_TIMING') === '1',
     modelExtraBodies: {},
     areRequiredModelsConfigured: () => true,
+    observability,
+    circuitFailureThreshold: readPositiveInt(env, 'AGENT_CIRCUIT_FAILURE_THRESHOLD', 3),
+    circuitFailureWindowMs: readPositiveInt(env, 'AGENT_CIRCUIT_FAILURE_WINDOW_MS', 60_000),
+    circuitCooldownMs: readPositiveInt(env, 'AGENT_CIRCUIT_COOLDOWN_MS', 30_000),
   });
 }
 
@@ -93,6 +109,7 @@ function resolveOpenAiCompatible(
   roleModels: RoleModelSelectionSource,
   fakeScenario: FakeAgentScenario,
   env: ProviderEnvironment,
+  observability: AgentObservability,
 ): ResolvedAgentProvider {
   const baseUrl = valueOf(env, 'OPENAI_COMPATIBLE_BASE_URL');
   const apiKey = valueOf(env, 'OPENAI_COMPATIBLE_API_KEY');
@@ -126,6 +143,10 @@ function resolveOpenAiCompatible(
     debug: valueOf(env, 'AGENT_DEBUG_TIMING') === '1',
     modelExtraBodies: parseModelExtraBodyMap(env['OPENAI_COMPATIBLE_MODEL_EXTRA_BODY']),
     areRequiredModelsConfigured,
+    observability,
+    circuitFailureThreshold: readPositiveInt(env, 'AGENT_CIRCUIT_FAILURE_THRESHOLD', 3),
+    circuitFailureWindowMs: readPositiveInt(env, 'AGENT_CIRCUIT_FAILURE_WINDOW_MS', 60_000),
+    circuitCooldownMs: readPositiveInt(env, 'AGENT_CIRCUIT_COOLDOWN_MS', 30_000),
   });
 }
 
@@ -141,7 +162,16 @@ function realProvider(options: {
   debug: boolean;
   modelExtraBodies: ModelExtraBodyMap;
   areRequiredModelsConfigured: () => boolean;
+  observability: AgentObservability;
+  circuitFailureThreshold: number;
+  circuitFailureWindowMs: number;
+  circuitCooldownMs: number;
 }): ResolvedAgentProvider {
+  const circuitBreaker = new ProviderCircuitBreaker({
+    failureThreshold: options.circuitFailureThreshold,
+    failureWindowMs: options.circuitFailureWindowMs,
+    cooldownMs: options.circuitCooldownMs,
+  });
   return {
     agentPolicyFactory: () =>
       new TokendanceAgentPolicy({
@@ -152,6 +182,8 @@ function realProvider(options: {
         debug: options.debug,
         reasoningHints: options.reasoningHints,
         extraBodyForModel: (modelId) => extraBodyForModel(options.modelExtraBodies, modelId),
+        observability: options.observability,
+        circuitBreaker,
       }),
     reviewPolicyFactory: () =>
       new TokendanceReviewPolicy({
@@ -161,6 +193,8 @@ function realProvider(options: {
         retryDelayMs: options.retryDelayMs,
         reasoningHints: options.reasoningHints,
         extraBodyForModel: (modelId) => extraBodyForModel(options.modelExtraBodies, modelId),
+        observability: options.observability,
+        circuitBreaker,
       }),
     modelProvider: {
       mode: options.mode,
@@ -170,6 +204,7 @@ function realProvider(options: {
       reviewModelConfigured: options.reviewModel.length > 0,
     },
     areRequiredModelsConfigured: options.areRequiredModelsConfigured,
+    circuitBreaker,
   };
 }
 
@@ -190,6 +225,7 @@ function fakeProvider(
       reviewModelConfigured,
     },
     areRequiredModelsConfigured: () => true,
+    circuitBreaker: noOpProviderCircuitBreaker,
   };
 }
 

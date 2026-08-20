@@ -5,10 +5,12 @@ import {
   actionTypeSchema,
   campSchema,
   difficultySchema,
+  gameModeSchema,
   gamePhaseSchema,
   gameStatusSchema,
   playerKindSchema,
   silhouetteSchema,
+  winnerCampSchema,
 } from './enums.js';
 import { publicTimelineItemSchema } from './events.js';
 
@@ -21,7 +23,9 @@ export const playerSchema = z
     kind: playerKindSchema,
     displayName: z.string().trim().min(1).max(12),
     alive: z.boolean(),
+    agentRoleId: identifierSchema.optional(),
     agentRoleDisplay: z.string().trim().min(1).max(32).optional(),
+    characterAssetKey: z.string().trim().min(1).max(128).optional(),
   })
   .strict();
 
@@ -29,15 +33,20 @@ export const humanProfileSchema = z
   .object({
     playerId: identifierSchema,
     displayName: z.string().trim().min(1).max(12),
-    silhouette: silhouetteSchema,
+    silhouette: silhouetteSchema.optional(),
+    characterAssetKey: identifierSchema.optional(),
     ownWordCard: z.string().trim().min(1),
+    guessUsed: z.boolean().optional(),
   })
   .strict();
 
 export const gameConfigSchema = z
   .object({
     difficulty: difficultySchema,
+    gameMode: gameModeSchema.optional(),
     undercoverCount: z.number().int().positive(),
+    participationMode: z.enum(['human', 'observer']).optional(),
+    requestBudget: z.number().int().min(1).max(500).optional(),
   })
   .strict();
 
@@ -100,6 +109,8 @@ export const finaleAgentActionSchema = z
     roundNumber: z.number().int().positive(),
     actionType: actionTypeSchema,
     baseRevision: z.number().int().nonnegative(),
+    /** 该行动调用时最后一条可见公开事件；旧版本记录可能缺失。 */
+    publicEventCursor: z.number().int().nonnegative().optional(),
     belief: beliefSnapshotSchema,
     output: z.record(z.unknown()),
     completedAt: z.string().datetime(),
@@ -109,11 +120,24 @@ export const finaleAgentActionSchema = z
 export const factReviewSchema = z
   .object({
     agentActions: z.array(finaleAgentActionSchema),
+    guesses: z.array(
+      z
+        .object({
+          actorId: identifierSchema,
+          targetPlayerId: identifierSchema,
+          guessedWord: z.string().trim().min(1).max(40),
+          roundNumber: z.number().int().positive(),
+          phase: z.enum(['describe', 'vote']),
+          success: z.boolean(),
+          eliminatedPlayerId: identifierSchema,
+        })
+        .strict(),
+    ).optional(),
   })
   .strict();
 
 export const operationalStatusSchema = z.object({
-  state: z.enum(['idle', 'waiting_human', 'agent_working', 'retrying']),
+  state: z.enum(['idle', 'waiting_human', 'agent_working', 'retrying', 'interrupted']),
   actorId: identifierSchema.optional(),
   retry: z
     .object({
@@ -124,6 +148,16 @@ export const operationalStatusSchema = z.object({
     .optional(),
 });
 
+export const automationControlSchema = z
+  .object({
+    mode: z.enum(['auto', 'paused', 'step']),
+    usedRequests: z.number().int().nonnegative(),
+    requestBudget: z.number().int().positive().nullable(),
+    remainingRequests: z.number().int().nonnegative().nullable(),
+    pauseReason: z.enum(['user', 'budget_exhausted']).nullable(),
+  })
+  .strict();
+
 export const humanGameViewSchema = z
   .object({
     gameId: identifierSchema,
@@ -132,7 +166,8 @@ export const humanGameViewSchema = z
     revision: z.number().int().nonnegative(),
     eventCursor: z.number().int().nonnegative(),
     config: gameConfigSchema,
-    human: humanProfileSchema,
+    controllerId: identifierSchema.optional(),
+    human: humanProfileSchema.nullable(),
     players: z.array(playerSchema).min(1),
     round: roundViewSchema.nullable(),
     publicTimeline: z.array(publicTimelineItemSchema),
@@ -140,7 +175,7 @@ export const humanGameViewSchema = z
       completedPlayerIds: z.array(identifierSchema),
     }),
     legalVoteTargetIds: z.array(identifierSchema),
-    winnerCamp: z.enum(['civilian', 'undercover']).optional(),
+    winnerCamp: winnerCampSchema.optional(),
     endReason: z
       .enum([
         'undercover_eliminated',
@@ -148,12 +183,15 @@ export const humanGameViewSchema = z
         'player_rule_violation',
         'abandoned_by_human',
         'model_failure_limit',
+        'interrupted_not_resumed',
+        'all_players_eliminated',
       ])
       .optional(),
     reveal: finaleRevealSchema.optional(),
     factReview: factReviewSchema.optional(),
     allowedCommands: z.array(z.string().trim().min(1)),
     operationalStatus: operationalStatusSchema,
+    automationControl: automationControlSchema.optional(),
   })
   .strict()
   .superRefine((view, context) => {
@@ -207,6 +245,7 @@ export const humanGameViewSchema = z
 export const activeGameDataSchema = z
   .object({
     game: humanGameViewSchema.nullable(),
+    developerModeAvailable: z.literal(true).optional(),
   })
   .strict();
 
@@ -220,4 +259,5 @@ export type FinaleReveal = z.infer<typeof finaleRevealSchema>;
 export type FinaleAgentAction = z.infer<typeof finaleAgentActionSchema>;
 export type FactReview = z.infer<typeof factReviewSchema>;
 export type OperationalStatus = z.infer<typeof operationalStatusSchema>;
+export type AutomationControl = z.infer<typeof automationControlSchema>;
 export type HumanGameView = z.infer<typeof humanGameViewSchema>;

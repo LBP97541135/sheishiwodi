@@ -30,7 +30,7 @@ describe('对局命令', () => {
       difficulty: 'easy',
     });
 
-    expect(command.human.displayName).toBe('玩家');
+    expect(command.human).toEqual({ displayName: '玩家', silhouette: 'silhouette_a' });
   });
 
   it('限制人类名称长度', () => {
@@ -45,6 +45,18 @@ describe('对局命令', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it('接受由服务端解析名称和素材的玩家角色', () => {
+    const command = createGameCommandSchema.parse({
+      type: 'CreateGame',
+      commandId: 'command-role',
+      human: { roleId: 'deepseek' },
+      agentRoleIds: ['doubao', 'qwen', 'custom-one'],
+      difficulty: 'easy',
+    });
+
+    expect(command.human).toEqual({ roleId: 'deepseek' });
   });
 
   it('要求投票命令携带修订号与目标', () => {

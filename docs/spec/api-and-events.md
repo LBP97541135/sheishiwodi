@@ -1,6 +1,6 @@
 # API 与事件流规格
 
-- 状态：首个里程碑基线与模型档案路由已实现；真实模型错误事件端点部分待实现
+- 状态：基础玩法、动态阵容、角色库、猜词模式、单局复盘、恢复与 Agent 开发者诊断接口已实现
 - 适用范围：本机单用户 REST + SSE
 
 ## 1. 总则
@@ -10,6 +10,25 @@
 - 服务只监听 `127.0.0.1`，但仍必须按不可信边界校验浏览器输入。
 - 浏览器永远接收 `HumanGameView` 或专用公开投影，不得接收数据库实体或完整领域快照。
 - 改变状态的命令必须带 `commandId` 和 `expectedRevision`；创建对局除外。
+
+### 1.1 创建对局的人类身份契约
+
+`CreateGame` 的 `human` 字段使用互斥的两种形态：
+
+```json
+{ "displayName": "玩家", "silhouette": "silhouette_a" }
+```
+
+或：
+
+```json
+{ "roleId": "deepseek" }
+```
+
+- 观察者对局仍可携带默认人类字段以保持客户端兼容，但服务端不创建人类席位。
+- 使用 `roleId` 时，服务端从权威角色库派生玩家名称与素材，并拒绝不完整、当前 Provider 不可用或同时存在于 `agentRoleIds` 的角色。
+- 人类角色选择不会产生 Agent 模型绑定，也不会改变公开事件和命令协议。
+- 角色复制使用独立复制命令，返回新建的自建角色；不得把复制请求解释成对来源角色的更新。
 
 ## 2. 通用信封
 
@@ -51,6 +70,7 @@
 | 409 | `IDEMPOTENCY_CONFLICT` | 相同命令 ID 携带不同请求语义 |
 | 422 | `CONTENT_REJECTED` | 原词泄露等内容规则拒绝；不回显违规原文 |
 | 503 | `MODEL_ACTION_FAILED` | 预留给后续真实模型重试；当前假模型链路的未分类策略异常返回安全 `INTERNAL_ERROR` |
+| 503 | `LOCAL_DATA_BUSY` | 数据库繁忙等待耗尽；不返回文件路径或 SQL |
 | 500 | `INTERNAL_ERROR` | 未分类服务错误；不得泄露堆栈或敏感配置 |
 
 错误详情只能包含安全的字段名、允许值、修订号、错误类别和重试进度。
@@ -65,8 +85,9 @@ status
 phase
 revision
 eventCursor
-config: difficulty, undercoverCount
-human: playerId, displayName, silhouette, ownWordCard
+config: difficulty, gameMode, participationMode, undercoverCount, requestBudget?
+human?: playerId, displayName, silhouette, ownWordCard, guessUsed
+controllerId
 players[]: playerId, seatIndex, kind, displayName, alive, agentRoleDisplay
 round: number, speakingOrder, currentActorId, actionType
 publicTimeline[]
@@ -83,12 +104,14 @@ operationalStatus: 当前安全状态与重试进度
 
 | 方法与路径 | 用途 | 响应 |
 | --- | --- | --- |
-| `GET /api/health` | 本地服务存活检查 | 服务状态，不包含配置值 |
+| `GET /api/health` | 本地服务存活检查 | 正常返回 `ok`；完整性异常返回脱敏 `degraded/DATABASE_INTEGRITY_FAILED`，且此时不注册其他业务路由 |
 | `GET /api/games/active` | 查询唯一未完成对局 | `{ game: HumanGameView | null }` |
 | `GET /api/games/:gameId` | 获取当前人类视图 | `HumanGameView` |
 | `GET /api/games/:gameId/events?after=<streamSeq>` | SSE 失败时补取安全公开帧 | `PublicStreamEntry[]` 与当前游标 |
 
 “未完成”包括 `preparing`、`in_progress` 和 `awaiting_spectator`，不包括三个终局状态。
+
+`GET /api/games/active` 对“中断后等待玩家确认”的进行中对局返回 `operationalStatus.state=interrupted`，且 `allowedCommands` 只包含 `ResolveInterruptedGame`。`POST /api/games/:gameId/recovery` 接收稳定 `commandId` 与 `resolution=continue|start_new`：继续时解除门禁并重新执行当前动作；开始新局时先把旧局原子记为无胜者“中断后未继续”，不能复用主动放弃或模型失败端点。浏览器已经使用 `sessionStorage` 保存待确认命令，并在重载时按同一恢复协议处理。
 
 ### 4.2 创建与开始
 
@@ -96,12 +119,16 @@ operationalStatus: 当前安全状态与重试进度
 
 ```text
 commandId
-human.displayName?      缺省为“玩家”
-human.silhouette        允许值之一
+gameMode               classic | guess
+participationMode      human | observer
+human.displayName      人类参与时使用
+human.silhouette       人类参与时使用
+agentRoleIds[]         3～8 个唯一且可参赛的角色 ID
+requestBudget?         真实 Provider 的纯 Agent 局必填
 difficulty              easy | hard
 ```
 
-模型阵容、玩家数量和卧底人数不由首版浏览器提交。服务端创建固定阵容，随机分配卧底和词组，返回 `preparing` 视图。若存在未完成对局，返回 `ACTIVE_GAME_EXISTS`。
+服务端根据参与模式和角色数量校验 4～8 个座位，按 4～5 人一名、6～8 人两名派生卧底，随机分配词组并返回 `preparing` 视图。若存在未完成对局，返回 `ACTIVE_GAME_EXISTS`。
 
 `POST /api/games/:gameId/start`
 
@@ -111,7 +138,7 @@ actorId
 expectedRevision
 ```
 
-仅当前人类可在 `preparing` 调用。成功后进入第 1 回合；词牌在浏览器中的翻面状态不提交服务端。
+当前 `controllerId` 可在 `preparing` 调用；人类局控制者是人类，纯 Agent 局使用观察控制者。成功后进入第 1 回合；词牌在浏览器中的翻面状态不提交服务端。
 
 ### 4.3 公开发言
 
@@ -130,7 +157,7 @@ text
 
 字段同描述，只允许 `tie_defense` 阶段的当前候选。描述与辩解共用内容校验器，但命令和事件类型保持分离。
 
-### 4.4 投票
+### 4.4 投票与猜词
 
 `POST /api/games/:gameId/votes`
 
@@ -146,7 +173,31 @@ targetPlayerId
 - 成功响应和随后的 SSE 在全部投票完成前均不得包含 `targetPlayerId` 的公开投影。
 - 最后一票提交后，服务端通过独立 `votes_revealed` 帧一次性公开本阶段所有投票关系。
 
-### 4.5 观战与退出
+`POST /api/games/:gameId/guesses`
+
+```text
+commandId
+actorId
+expectedRevision
+targetPlayerId
+guessedWord
+```
+
+- 只允许猜词模式中尚未使用机会的存活行动者，在自己的普通描述或初始投票阶段提交。
+- 描述阶段即时结算；投票阶段与已并行预取的 Agent 决策一起暂存并原子结算。
+- 进行中响应、REST 视图和 SSE 只公开发起者及成败，不包含 `targetPlayerId` 或 `guessedWord`；完整记录只进入正常终局 `factReview.guesses`。
+- 猜错导致人类出局时进入 `awaiting_spectator`；继续观战必须恢复到猜词发生前应继续的实际阶段，不能无条件重启描述轮。
+
+### 4.5 纯 Agent 控制与请求预算
+
+| 方法与路径 | 用途 |
+| --- | --- |
+| `POST /api/games/:gameId/automation` | 设置 `auto | paused | step`；单步执行一个串行动作或一个完整投票调度单元 |
+| `POST /api/games/:gameId/request-budget` | 为真实 Provider 的纯 Agent 对局追加 1～500 次请求预算 |
+
+暂停不取消已经发出的逻辑动作；预算耗尽只暂停对局，不把运行成本控制归责为模型失败。假模型对局不显示请求预算。
+
+### 4.6 观战与退出
 
 `POST /api/games/:gameId/spectate`
 
@@ -169,7 +220,7 @@ confirmed: true
 
 浏览器必须先完成二次确认。服务端仍要求显式 `confirmed: true`，成功后对局进入 `abandoned`，不返回阵营胜者。
 
-### 4.6 模型档案（DEC-085）
+### 4.7 模型档案（DEC-085）
 
 | 端点 | 用途 | 返回体 |
 | --- | --- | --- |
@@ -184,6 +235,26 @@ confirmed: true
 - `editable=false` 表示存在锁定修改的活动局；前端还会结合 `providerConfigured`，在假模型或真实 Provider 未配置时禁用输入。
 - 存在活动局（`in_progress` / `awaiting_spectator`）时 `PUT` 返回 409 拒绝改配置；未知 `roleId` 返回 404。
 - `POST /api/games/:gameId/start` 在通用模式三角色或评测 model 未配齐时返回 409 `MODEL_CONFIGURATION_REQUIRED`；消息不包含 Base URL、Key 或具体环境变量值。
+
+### 4.8 本地角色库（DEC-100）
+
+| 端点 | 用途 |
+| --- | --- |
+| `GET /api/character-profiles` | 读取内置与自建角色及其参赛完整度 |
+| `POST /api/character-profiles` | 创建自建角色或复制内置资料 |
+| `PUT /api/character-profiles/:profileId` | 更新未被活动对局锁定的自建角色 |
+| `DELETE /api/character-profiles/:profileId` | 删除未被活动对局锁定的自建角色 |
+| `GET /api/character-assets/:profileId/:asset.webp` | 读取规范化后的头像或五状态图 |
+
+内置角色不可修改或删除；自建上传经服务端验证并转为 256×256 头像与 512×640 WebP 动作图。历史对局使用创建时快照，不依赖角色库后续变更。
+
+### 4.9 本地 Agent 诊断（已实现）
+
+只有服务端 `AGENT_DEVELOPER_MODE=true` 时才注册专用诊断路由并向前端返回安全的“诊断能力可用”布尔值；默认和普通模式不注册路由、不返回记录，直接构造 URL 也不能读取诊断数据。
+
+脱敏诊断投影供 Agent 面板查询调用链、上下文清单结果、模型尝试、阶段链、最终结果、熔断和复盘队列状态。阶段链只包含阶段名与时间；内容拒绝、过期丢弃、领域拒绝或提交失败不得显示为 `action_committed`。面板内可切换当前服务会话的完整上下文记录；该状态只保存在服务端内存，重启自动关闭。完整 Prompt/响应只能按单条记录、再次确认后读取，并继续过滤 Base URL、Key、请求头和本地文件路径。所有诊断接口均不得推进游戏、修改队列、删除长期审计或重新发起模型调用；清除完整调试文件使用独立确认操作。
+
+当前诊断路由为 `GET /api/developer/overview`、`PUT /api/developer/full-recording`、`GET /api/developer/full-records`、`GET /api/developer/full-records/:attemptId` 与 `DELETE /api/developer/full-records`。只有总门禁开启时才注册；`GET /api/games/active` 也只在此时附带值恒为 `true` 的 `developerModeAvailable` 能力位，关闭时该字段不存在。
 
 
 
@@ -214,7 +285,9 @@ data: <PublicStreamPayload JSON>
 | `domain_event` | 领域事件类型直接作为 SSE `event` 名称持久化和发送；不存在统一字面量 `domain_event` 帧 |
 | `vote_progressed` | 完成投票的角色，不含目标 |
 | `votes_revealed` | 全部完成后的一次性投票关系 |
+| `guess_resolved` | 只含猜测发起者和成功/失败，不含目标或猜测词 |
 | `terminal_reveal_ready` | 终局事实已持久化，可以开始前端揭晓 |
+| `runtime_interrupted` | 后台推进发生未分类程序异常；仅表示应重新获取权威视图，不包含异常、Provider 或私有上下文详情 |
 | `stream_error` | 保留事件类型；当前自动重试期间不发布技术错误，恢复耗尽后以 `game_system_terminated` 通知 |
 | `heartbeat` | 无业务数据的连接保活 |
 
@@ -226,7 +299,9 @@ data: <PublicStreamPayload JSON>
 4. 客户端按 `streamSeq` 去重，收到旧帧不得倒退状态。
 5. 若客户端游标无效，服务端返回完整安全视图并从当前高水位继续；不得返回私有原始事件补洞。
 
-`heartbeat` 可以不持久化；它不得推进业务游标。运行状态在重连后以 `HumanGameView.operationalStatus` 恢复。
+`heartbeat` 可以不持久化；它不得推进业务游标。运行状态在重连后以 `HumanGameView.operationalStatus` 恢复。客户端收到 `runtime_interrupted` 后立即重新获取权威视图；服务端发现待确认中断记录时，SSE 建连不得顺带恢复 Agent 推进。
+
+客户端对一次待确认人类命令必须复用原 `commandId`：网络响应丢失后先读取 `HumanGameView`/命令结果判断是否已经提交，只有确认未提交时才重发相同语义。`REVISION_CONFLICT` 触发权威视图刷新，不得归类为模型失败。
 
 ## 6. 公开投影规则
 
@@ -261,4 +336,4 @@ data: <PublicStreamPayload JSON>
 ## 8. 来源
 
 - 需求：[`../acceptance/REQUIREMENTS.md`](../acceptance/REQUIREMENTS.md) 第 102–125、139–145、163–192 条。
-- 决策：DEC-027 至 DEC-032、DEC-037 至 DEC-040、DEC-045 至 DEC-052、DEC-063、DEC-069 至 DEC-080。
+- 决策：DEC-027 至 DEC-032、DEC-037 至 DEC-040、DEC-045 至 DEC-052、DEC-063、DEC-069 至 DEC-080、DEC-092 至 DEC-096。

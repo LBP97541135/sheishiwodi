@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const wordPairs = sqliteTable('word_pairs', {
   wordPairId: text('word_pair_id').primaryKey(),
@@ -90,9 +90,75 @@ export const agentActions = sqliteTable('agent_actions', {
   roundNumber: integer('round_number').notNull(),
   actionType: text('action_type').notNull(),
   baseRevision: integer('base_revision').notNull(),
+  publicEventCursor: integer('public_event_cursor'),
   beliefJson: text('belief_json').notNull(),
   outputJson: text('output_json').notNull(),
   completedAt: text('completed_at').notNull(),
+});
+
+export const gameControls = sqliteTable('game_controls', {
+  gameId: text('game_id').primaryKey(),
+  mode: text('mode').notNull(),
+  requestBudget: integer('request_budget'),
+  usedRequests: integer('used_requests').notNull(),
+  pauseReason: text('pause_reason'),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const characterProfiles = sqliteTable('character_profiles', {
+  profileId: text('profile_id').primaryKey(),
+  displayName: text('display_name').notNull(),
+  intro: text('intro').notNull(),
+  personalityTagsJson: text('personality_tags_json').notNull(),
+  personalityPrompt: text('personality_prompt').notNull(),
+  modelBindingsJson: text('model_bindings_json').notNull(),
+  assetManifestJson: text('asset_manifest_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const modelAttempts = sqliteTable(
+  'model_attempts',
+  {
+    attemptId: text('attempt_id').primaryKey(),
+    gameId: text('game_id').notNull(),
+    commandId: text('command_id').notNull(),
+    actionId: text('action_id').notNull(),
+    playerId: text('player_id'),
+    roleId: text('role_id').notNull(),
+    modelId: text('model_id').notNull(),
+    actionType: text('action_type').notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    attemptKind: text('attempt_kind').notNull(),
+    resultCode: text('result_code').notNull(),
+    startedAt: text('started_at').notNull(),
+    finishedAt: text('finished_at'),
+    durationMs: integer('duration_ms'),
+  },
+  (table) => [
+    uniqueIndex('model_attempts_action_number').on(table.actionId, table.attemptNumber),
+    index('model_attempts_game_started').on(table.gameId, table.startedAt),
+  ],
+);
+
+export const modelAttemptStages = sqliteTable(
+  'model_attempt_stages',
+  {
+    attemptId: text('attempt_id')
+      .notNull()
+      .references(() => modelAttempts.attemptId, { onDelete: 'cascade' }),
+    stage: text('stage').notNull(),
+    occurredAt: text('occurred_at').notNull(),
+  },
+  (table) => [uniqueIndex('model_attempt_stages_identity').on(table.attemptId, table.stage)],
+);
+
+export const gameRuntimeRecovery = sqliteTable('game_runtime_recovery', {
+  gameId: text('game_id').primaryKey(),
+  actionId: text('action_id').notNull(),
+  status: text('status').notNull(),
+  interruptedAt: text('interrupted_at').notNull(),
+  resolvedAt: text('resolved_at'),
 });
 
 // 角色模型配置：仅存 role_id → model_id，绝不保存 Base URL 或 API Key。
