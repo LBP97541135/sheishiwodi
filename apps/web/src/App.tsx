@@ -41,6 +41,7 @@ export function App() {
   const [topView, setTopView] = useState<TopView>('game');
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [developerAvailable, setDeveloperAvailable] = useState(false);
+  const [profileRevision, setProfileRevision] = useState(0);
   const [developerEnabled, setDeveloperEnabled] = useState(() =>
     typeof sessionStorage !== 'undefined' && sessionStorage.getItem(DEVELOPER_MODE_KEY) === 'true',
   );
@@ -340,6 +341,13 @@ export function App() {
     });
   };
 
+  const showGameView = () => {
+    if (topView === 'model-profiles' && !game) {
+      setProfileRevision((current) => current + 1);
+    }
+    setTopView('game');
+  };
+
   if (loadState === 'loading') {
     return <StatusPage title="正在恢复对局…" description="正在读取本机保存的安全公开状态。" />;
   }
@@ -374,7 +382,7 @@ export function App() {
             type="button"
             className={topView === 'game' ? 'top-nav__link is-active' : 'top-nav__link'}
             aria-current={topView === 'game' ? 'page' : undefined}
-            onClick={() => setTopView('game')}
+            onClick={showGameView}
           >
             对局
           </button>
@@ -422,13 +430,24 @@ export function App() {
       {game?.operationalStatus.state === 'interrupted' && (
         <InterruptedGameDialog busy={busy} onResolve={handleInterruptedGame} />
       )}
+      {!game && (
+        <section className="storyboard" hidden={topView !== 'game'}>
+          <NewGameForm
+            busy={busy}
+            profileRevision={profileRevision}
+            onCreate={handleCreate}
+            onOpenRoleLibrary={() => setTopView('model-profiles')}
+          />
+          {error && <p className="form-error" role="alert">{error}</p>}
+        </section>
+      )}
       {topView === 'model-profiles' ? (
-        <ModelProfiles onBack={() => setTopView('game')} />
+        <ModelProfiles onBack={showGameView} />
       ) : topView === 'developer' && developerAvailable && developerEnabled ? (
         <DeveloperPanel {...(gameId ? { gameId } : {})} onBack={() => setTopView('game')} />
       ) : topView === 'review' && game && isFinished ? (
         <ReviewScreen game={game} onBack={() => setTopView('game')} />
-      ) : (
+      ) : game ? (
         <section className="storyboard">
           {renderStage()}
           {game?.status !== 'in_progress' && game?.status !== 'finished' && error && (
@@ -437,20 +456,12 @@ export function App() {
             </p>
           )}
         </section>
-      )}
+      ) : null}
     </main>
   );
 
   function renderStage() {
-    if (!game) {
-      return (
-        <NewGameForm
-          busy={busy}
-          onCreate={handleCreate}
-          onOpenRoleLibrary={() => setTopView('model-profiles')}
-        />
-      );
-    }
+    if (!game) return null;
     if (game.status === 'preparing') {
       return <PreparingGame game={game} busy={busy} onStart={handleStart} onAbandon={handleAbandon} />;
     }

@@ -482,6 +482,11 @@ describe('App', () => {
     expect(within(dialog).getByText(/不会替你调用模型/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: '保存身份' }));
 
+    fireEvent.click(screen.getByRole('button', { name: '角色库' }));
+    expect(await screen.findByRole('heading', { name: '角色与模型' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '返回对局' }));
+    expect(await screen.findByRole('button', { name: '编辑玩家身份，当前角色为DeepSeek' })).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('button', { name: '经典模式' }));
     const selects = screen.getAllByRole('combobox');
     expect(selects).toHaveLength(3);

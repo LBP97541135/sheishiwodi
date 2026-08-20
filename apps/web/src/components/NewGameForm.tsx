@@ -8,11 +8,12 @@ import { characterAssets, characterAvatars, type CharacterKey } from '../charact
 
 interface NewGameFormProps {
   busy: boolean;
+  profileRevision: number;
   onCreate(input: CreateGameRequest): Promise<void>;
   onOpenRoleLibrary(): void;
 }
 
-export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormProps) {
+export function NewGameForm({ busy, profileRevision, onCreate, onOpenRoleLibrary }: NewGameFormProps) {
   const [displayName, setDisplayName] = useState('');
   const [silhouette, setSilhouette] = useState<'silhouette_a' | 'silhouette_b'>('silhouette_a');
   const [humanRoleId, setHumanRoleId] = useState<string | null>(null);
@@ -34,7 +35,7 @@ export function NewGameForm({ busy, onCreate, onOpenRoleLibrary }: NewGameFormPr
 
   useEffect(() => {
     void getCharacterProfiles().then(setProfiles).catch(() => setValidation('角色库暂时无法读取'));
-  }, []);
+  }, [profileRevision]);
 
   const selectableProfiles = useMemo(
     () => profiles?.profiles.filter((profile) =>
