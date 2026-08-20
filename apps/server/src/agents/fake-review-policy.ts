@@ -4,7 +4,11 @@ import {
   type ReviewPerAgent,
 } from '@sheishiwodi/shared';
 
-import type { ReviewInput, ReviewPolicy } from './review-policy.js';
+import {
+  buildGuessDecisionFrames,
+  type ReviewInput,
+  type ReviewPolicy,
+} from './review-policy.js';
 
 /**
  * 确定性离线复盘策略：不联网、不读密钥，供默认测试与未配置真实 provider 时使用。
@@ -62,7 +66,41 @@ export class FakeReviewPolicy implements ReviewPolicy {
       160,
     );
 
-    return reviewGenerationSchema.parse({ perAgent, overall });
+    const guessFrames = buildGuessDecisionFrames(input).filter(
+      (frame) => frame.decisionType === 'attempt',
+    );
+    const guessAnalysis = input.gameMode === 'guess'
+      ? {
+          summary:
+            guessFrames.length > 0
+              ? `本局 AI 共发起 ${guessFrames.length} 次猜词；离线策略仅按行动时信念验证展示结构，不替代真实复盘模型的策略判断。`
+              : '本局 AI 没有发起猜词；离线策略不臆造错失机会，真实策略判断由配置的复盘模型生成。',
+          keyDecisions: guessFrames.slice(0, 3).map((frame) => {
+            const confidence = Math.max(
+              0,
+              ...frame.beliefAtAction.opposingWordCandidates.map((entry) => entry.confidence),
+            );
+            return {
+              actionId: frame.actionId,
+              actorId: frame.actorId,
+              roundNumber: frame.roundNumber,
+              phase: frame.phase,
+              kind: 'attempt' as const,
+              verdict: confidence >= 0.65 ? 'reasonable' as const : 'insufficient_basis' as const,
+              assessment: `行动时最高词语置信度为 ${Math.round(confidence * 100)}%，离线复盘仅据该结构化信念判断决策依据。`,
+              outcomeImpact: frame.outcome
+                ? `${frame.outcome.success ? '猜词成功' : '猜词失败'}，对应玩家按规则出局。`
+                : '缺少可关联的猜词结算记录。',
+            };
+          }),
+        }
+      : undefined;
+
+    return reviewGenerationSchema.parse({
+      perAgent,
+      overall,
+      ...(guessAnalysis ? { guessAnalysis, guessAnalysisStatus: 'done' as const } : {}),
+    });
   }
 }
 

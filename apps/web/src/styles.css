@@ -2184,6 +2184,40 @@ a.review-export {
   font-weight: 800;
 }
 
+.review-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.review-title-row h1 {
+  margin: 0;
+}
+
+.review-title-row span {
+  border: 1px solid #59534a;
+  padding: 2px 8px;
+  color: #4c473f;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.review-guess-facts {
+  margin: 18px 0;
+  border-block: 1px dashed #8b8378;
+  padding: 10px 0;
+}
+
+.review-guess-facts summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.review-guess-facts .guess-review-list {
+  margin-bottom: 0;
+}
+
 .review-identities h2,
 .review-timeline-section h2 {
   margin: 0 0 12px;
@@ -2255,6 +2289,82 @@ a.review-export {
 .review-ai__overall h3 {
   margin: 0 0 6px;
   font-size: 1rem;
+}
+
+.review-ai__guess {
+  margin-bottom: 16px;
+  border-left: 3px solid #d2a62f;
+  padding-left: 14px;
+}
+
+.review-ai__guess h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.review-ai__guess > p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.review-ai__guess-decisions {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-ai__guess-decisions li {
+  border-top: 1px solid #ddd4c2;
+  padding-top: 9px;
+}
+
+.review-ai__guess-decision-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.review-ai__guess-decision-head span {
+  color: #686157;
+  font-size: 0.82rem;
+}
+
+.review-ai__guess-decision-head b {
+  margin-left: auto;
+  border: 1px solid currentColor;
+  padding: 1px 7px;
+  color: #39704d;
+  font-size: 0.78rem;
+}
+
+.review-ai__guess-decision-head b[data-verdict='rash'],
+.review-ai__guess-decision-head b[data-verdict='insufficient_basis'] {
+  color: #a13f32;
+}
+
+.review-ai__guess-decision-head b[data-verdict='missed_opportunity'] {
+  color: #8a5d10;
+}
+
+.review-ai__guess-decisions p {
+  margin: 5px 0 0;
+  line-height: 1.55;
+}
+
+.review-ai__guess-decisions small {
+  display: block;
+  margin-top: 4px;
+  color: #625c52;
+}
+
+.review-ai__guess-unavailable {
+  margin: 0 0 14px;
+  border-left: 3px solid #b88624;
+  padding-left: 10px;
+  color: #705115;
 }
 
 .review-ai__overall p {

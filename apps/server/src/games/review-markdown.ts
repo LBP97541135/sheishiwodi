@@ -35,7 +35,7 @@ const WIN_CAMP_TEXT: Record<ReviewInput['winnerCamp'], string> = {
 };
 
 const END_REASON_TEXT: Record<string, string> = {
-  undercover_eliminated: '卧底被票出，平民阵营获胜',
+  undercover_eliminated: '卧底已被淘汰，平民阵营获胜',
   undercover_survived_to_two: '卧底存活到只剩两人，卧底阵营获胜',
   player_rule_violation: '有玩家因重复违规退出，系统重新判定胜负',
   abandoned_by_human: '真人放弃对局',
@@ -96,6 +96,7 @@ export function buildReviewMarkdown(params: {
   lines.push('## 对局信息', '');
   lines.push('| 项 | 值 |', '| --- | --- |');
   lines.push(`| 对局 ID | ${cell(input.gameId)} |`);
+  lines.push(`| 游戏模式 | ${input.gameMode === 'guess' ? '猜词模式' : '经典模式'} |`);
   lines.push(`| 胜方 | ${WIN_CAMP_TEXT[input.winnerCamp]} |`);
   lines.push(`| 结束原因 | ${END_REASON_TEXT[input.endReason] ?? input.endReason} |`);
   lines.push(`| 词类别 | ${cell(reveal.wordPair.category)} |`);
@@ -230,6 +231,23 @@ export function buildReviewMarkdown(params: {
     lines.push(`> AI 复盘评价当前状态：${status}。可在复盘页触发生成后重新导出。`, '');
   } else {
     lines.push(`> 由复盘模型 \`${summary.modelId}\` 生成，非对局事实，仅供参考。`, '');
+    if (input.gameMode === 'guess' && summary.guessAnalysisStatus === 'failed') {
+      lines.push('> 猜词专项分析未能生成，以下综合评价仍然有效。', '');
+    }
+    if (input.gameMode === 'guess' && summary.guessAnalysis) {
+      lines.push('### AI 猜词决策', '', summary.guessAnalysis.summary, '');
+      for (const decision of summary.guessAnalysis.keyDecisions) {
+        const phase = decision.phase === 'describe' ? '发言' : '投票';
+        const verdict = guessVerdictText(decision.verdict);
+        lines.push(
+          `- **${cell(nameOf(decision.actorId))} · 第 ${decision.roundNumber} 轮${phase} · ${verdict}**：${cell(decision.assessment)}`,
+        );
+        if (decision.outcomeImpact) {
+          lines.push(`  - 实际影响：${cell(decision.outcomeImpact)}`);
+        }
+      }
+      lines.push('');
+    }
     lines.push('### 总体点评', '', summary.overall, '');
     if (summary.perAgent.length > 0) {
       lines.push('### 各 AI 评价', '');
@@ -251,4 +269,11 @@ export function buildReviewMarkdown(params: {
   const markdown = `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()}\n`;
   assertReviewMarkdownClean(markdown);
   return markdown;
+}
+
+function guessVerdictText(verdict: NonNullable<ReviewSummary['guessAnalysis']>['keyDecisions'][number]['verdict']) {
+  if (verdict === 'reasonable') return '合理';
+  if (verdict === 'rash') return '冒进';
+  if (verdict === 'insufficient_basis') return '依据不足';
+  return '错失机会';
 }

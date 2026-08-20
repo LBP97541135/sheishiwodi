@@ -178,6 +178,12 @@ export class ReviewService {
             generatedAt: this.clock.now(),
             perAgent: generation.perAgent,
             overall: generation.overall,
+            ...(generation.guessAnalysis
+              ? { guessAnalysis: generation.guessAnalysis }
+              : {}),
+            ...(generation.guessAnalysisStatus
+              ? { guessAnalysisStatus: generation.guessAnalysisStatus }
+              : {}),
           },
           this.clock.now(),
         );

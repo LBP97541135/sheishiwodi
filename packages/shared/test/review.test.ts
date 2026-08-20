@@ -22,14 +22,14 @@ describe('复盘玩家标识', () => {
     ).toBe(false);
   });
 
-  it('新生成结果严格执行提示词的长度、数量和必填评分', () => {
+  it('新生成结果严格执行结构规则，但不因轻微文案长度偏差整份失败', () => {
     expect(reviewGenerationSchema.safeParse(validGeneration).success).toBe(true);
     expect(
       reviewGenerationSchema.safeParse({
         ...validGeneration,
         perAgent: [{ ...validGeneration.perAgent[0]!, verdict: '短'.repeat(59) }],
       }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       reviewGenerationSchema.safeParse({
         ...validGeneration,
@@ -39,7 +39,7 @@ describe('复盘玩家标识', () => {
     expect(
       reviewGenerationSchema.safeParse({
         ...validGeneration,
-        perAgent: [{ ...validGeneration.perAgent[0]!, keyMoments: ['长'.repeat(51)] }],
+        perAgent: [{ ...validGeneration.perAgent[0]!, keyMoments: ['长'.repeat(101)] }],
       }).success,
     ).toBe(false);
     const validAgent = validGeneration.perAgent[0]!;
@@ -55,9 +55,42 @@ describe('复盘玩家标识', () => {
       }).success,
     ).toBe(false);
     expect(reviewGenerationSchema.safeParse({ ...validGeneration, overall: '短'.repeat(99) }).success)
+      .toBe(true);
+    expect(reviewGenerationSchema.safeParse({ ...validGeneration, overall: '长'.repeat(401) }).success)
       .toBe(false);
-    expect(reviewGenerationSchema.safeParse({ ...validGeneration, overall: '长'.repeat(161) }).success)
-      .toBe(false);
+  });
+
+  it('猜词专项最多三个关键节点、最多一个错失机会，并区分局部失败状态', () => {
+    const attempt = {
+      actionId: 'action-1',
+      actorId: 'agent-1',
+      roundNumber: 1,
+      phase: 'describe' as const,
+      kind: 'attempt' as const,
+      verdict: 'reasonable' as const,
+      assessment: '当时证据充分',
+      outcomeImpact: '目标出局',
+    };
+    expect(
+      reviewGenerationSchema.safeParse({
+        ...validGeneration,
+        guessAnalysisStatus: 'done',
+        guessAnalysis: { summary: '策略合理', keyDecisions: [attempt] },
+      }).success,
+    ).toBe(true);
+    expect(
+      reviewGenerationSchema.safeParse({
+        ...validGeneration,
+        guessAnalysisStatus: 'done',
+      }).success,
+    ).toBe(false);
+    expect(
+      reviewGenerationSchema.safeParse({
+        ...validGeneration,
+        guessAnalysisStatus: 'failed',
+        guessAnalysis: { summary: '不应保留', keyDecisions: [attempt] },
+      }).success,
+    ).toBe(false);
   });
 
   it('持久化摘要拒绝重复的 perAgent.playerId', () => {
@@ -69,6 +102,24 @@ describe('复盘玩家标识', () => {
         generatedAt: '2026-08-19T09:00:00.000Z',
         perAgent: duplicateReviews,
         overall: '整体评价',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('持久化摘要拒绝与猜词专项状态矛盾的内容', () => {
+    expect(
+      reviewSummarySchema.safeParse({
+        gameId: 'game-1',
+        status: 'done',
+        modelId: 'review-model',
+        generatedAt: '2026-08-19T09:00:00.000Z',
+        perAgent: validGeneration.perAgent,
+        overall: '整体评价',
+        guessAnalysisStatus: 'failed',
+        guessAnalysis: {
+          summary: '不应保留',
+          keyDecisions: [],
+        },
       }).success,
     ).toBe(false);
   });

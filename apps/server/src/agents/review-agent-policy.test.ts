@@ -5,7 +5,7 @@ import type {
   AttemptHandle,
   ModelAttemptKind,
 } from './agent-observability.js';
-import type { ReviewInput } from './review-policy.js';
+import { buildGuessDecisionFrames, type ReviewInput } from './review-policy.js';
 import { TokendanceReviewPolicy } from './review-agent-policy.js';
 import type { ChatMessage, TokendanceClient } from './tokendance-client.js';
 
@@ -82,6 +82,7 @@ class CapturingObservability implements AgentObservability {
 
 const input: ReviewInput = {
   gameId: 'game-review-prompt',
+  gameMode: 'classic',
   winnerCamp: 'civilian',
   endReason: 'undercover_eliminated',
   reveal: {
@@ -101,6 +102,77 @@ const input: ReviewInput = {
   ],
   publicTimeline: [],
   factReview: { agentActions: [] },
+};
+
+const validCore = () => ({
+  perAgent: ['agent-1', 'agent-2', 'agent-3'].map((playerId) => ({
+    playerId,
+    verdict: '判断能跟随公开证据更新，投票方向与怀疑保持一致；应进一步压缩描述范围。',
+    keyMoments: ['第1轮｜依据发言调整怀疑 → 投票命中'],
+    rating: 4,
+  })),
+  overall: '平民通过公开描述差异形成交叉验证，统一行动成为胜负手。',
+});
+
+const guessInput: ReviewInput = {
+  ...input,
+  gameMode: 'guess',
+  publicTimeline: [
+    {
+      eventSeq: 1,
+      type: 'speech_published',
+      occurredAt: '2026-08-20T12:00:00.000Z',
+      payload: { actorId: 'human-1', actionType: 'describe', text: '早餐常见' },
+    },
+    {
+      eventSeq: 2,
+      type: 'speech_published',
+      occurredAt: '2026-08-20T12:00:01.000Z',
+      payload: { actorId: 'agent-2', actionType: 'describe', text: '这是未来信息' },
+    },
+  ],
+  factReview: {
+    agentActions: [
+      {
+        actionId: 'guess-action-1',
+        playerId: 'agent-1',
+        roundNumber: 1,
+        actionType: 'describe',
+        baseRevision: 3,
+        publicEventCursor: 1,
+        belief: {
+          opposingWordCandidates: [
+            { word: '牛奶', confidence: 0.82, evidence: '公开描述提到早餐' },
+          ],
+          playerUndercoverProbabilities: [
+            { playerId: 'human-1', probability: 0.1 },
+            { playerId: 'agent-1', probability: 0.8 },
+            { playerId: 'agent-2', probability: 0.05 },
+            { playerId: 'agent-3', probability: 0.05 },
+          ],
+          reasoningSummary: '自己的词不同，优先猜测平民词和低卧底概率目标',
+        },
+        output: {
+          action: 'guess',
+          targetPlayerId: 'agent-2',
+          guessedWord: '牛奶',
+          reason: '词语候选和目标身份均有较高把握',
+        },
+        completedAt: '2026-08-20T12:00:02.000Z',
+      },
+    ],
+    guesses: [
+      {
+        actorId: 'agent-1',
+        targetPlayerId: 'agent-2',
+        guessedWord: '牛奶',
+        roundNumber: 1,
+        phase: 'describe',
+        success: true,
+        eliminatedPlayerId: 'agent-2',
+      },
+    ],
+  },
 };
 
 describe('TokendanceReviewPolicy prompt', () => {
@@ -123,6 +195,9 @@ describe('TokendanceReviewPolicy prompt', () => {
     expect(system).toContain('不得因最终胜负倒推表现');
     expect(system).toContain('不得只按所属阵营输赢评分');
     expect(system).toContain('5=持续准确且行动决定胜负');
+    expect(system).toContain('当前是经典模式');
+    expect(system).toContain('禁止出现 guessAnalysis');
+    expect(result.guessAnalysis).toBeUndefined();
     expect(system).not.toContain('600字内');
     expect(system).not.toContain('2000字内');
   });
@@ -196,5 +271,76 @@ describe('TokendanceReviewPolicy prompt', () => {
     ]);
     expect(observability.results).toEqual(['schema_validated']);
     expect(observability.stages).toEqual(['provider_returned', 'schema_validated']);
+  });
+
+  it('猜词决策帧只包含行动游标之前的公开信息，并由服务端回填事实字段', async () => {
+    const frames = buildGuessDecisionFrames(guessInput);
+    expect(frames).toHaveLength(1);
+    expect(frames[0]?.publicEventsBeforeAction.map((event) => event.eventSeq)).toEqual([1]);
+
+    const client = new ScriptedReviewClient([
+      JSON.stringify({
+        ...validCore(),
+        guessAnalysis: {
+          summary: '本局 AI 在词语与目标判断都有较高把握时使用猜词，整体时机合理。',
+          keyDecisions: [
+            {
+              actionId: 'guess-action-1',
+              verdict: 'reasonable',
+              assessment: '行动时词语候选置信度较高，且目标被判断为对方阵营，风险收益匹配。',
+              outcomeImpact: '猜词成功使目标立即出局，改变了本轮人数结构。',
+            },
+          ],
+        },
+      }),
+    ]);
+    const policy = new TokendanceReviewPolicy({
+      client: client as unknown as TokendanceClient,
+      modelId: 'review-model',
+    });
+
+    const result = await policy.generate(guessInput);
+    expect(result.guessAnalysisStatus).toBe('done');
+    expect(result.guessAnalysis?.keyDecisions[0]).toMatchObject({
+      actionId: 'guess-action-1',
+      actorId: 'agent-1',
+      roundNumber: 1,
+      phase: 'describe',
+      kind: 'attempt',
+    });
+    const system = client.calls[0]?.find((message) => message.role === 'system')?.content ?? '';
+    expect(system).toContain('冻结快照');
+    expect(system).toContain('不得反推 assessment');
+  });
+
+  it('猜词专项连续不合规时局部降级并保留基础评价', async () => {
+    const invalidGuess = JSON.stringify({
+      ...validCore(),
+      guessAnalysis: {
+        summary: '专项内容存在，但引用了不存在的行动。',
+        keyDecisions: [
+          {
+            actionId: 'invented-action',
+            verdict: 'reasonable',
+            assessment: '无效引用',
+            outcomeImpact: '无效影响',
+          },
+        ],
+      },
+    });
+    const client = new ScriptedReviewClient([invalidGuess, invalidGuess]);
+    const observability = new CapturingObservability();
+    const policy = new TokendanceReviewPolicy({
+      client: client as unknown as TokendanceClient,
+      modelId: 'review-model',
+      observability,
+    });
+
+    const result = await policy.generate(guessInput);
+    expect(client.calls).toHaveLength(2);
+    expect(result.perAgent).toHaveLength(3);
+    expect(result.guessAnalysisStatus).toBe('failed');
+    expect(result.guessAnalysis).toBeUndefined();
+    expect(observability.results).toEqual(['invalid_format', 'schema_validated']);
   });
 });

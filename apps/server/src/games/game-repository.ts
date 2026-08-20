@@ -35,6 +35,7 @@ export interface PrivateAgentAction {
   roundNumber: number;
   actionType: string;
   baseRevision: number;
+  publicEventCursor: number;
   belief: BeliefSnapshot;
   output: Record<string, unknown>;
   completedAt: string;
@@ -224,8 +225,8 @@ export class GameRepository {
           .prepare(
             `INSERT INTO agent_actions (
               action_id, game_id, player_id, round_number, action_type, base_revision,
-              belief_json, output_json, completed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              public_event_cursor, belief_json, output_json, completed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             input.privateAction.actionId,
@@ -234,6 +235,7 @@ export class GameRepository {
             input.privateAction.roundNumber,
             input.privateAction.actionType,
             input.privateAction.baseRevision,
+            input.privateAction.publicEventCursor,
             JSON.stringify(input.privateAction.belief),
             JSON.stringify(input.privateAction.output),
             input.privateAction.completedAt,
@@ -295,7 +297,7 @@ export class GameRepository {
   getFactReview(gameId: string): FactReview {
     const rows = this.database.sqlite
       .prepare(
-        `SELECT action_id, player_id, round_number, action_type, base_revision,
+        `SELECT action_id, player_id, round_number, action_type, base_revision, public_event_cursor,
                 belief_json, output_json, completed_at
          FROM agent_actions WHERE game_id = ? ORDER BY round_number, base_revision, action_id`,
       )
@@ -305,6 +307,7 @@ export class GameRepository {
       round_number: number;
       action_type: string;
       base_revision: number;
+      public_event_cursor: number | null;
       belief_json: string;
       output_json: string;
       completed_at: string;
@@ -317,6 +320,7 @@ export class GameRepository {
         roundNumber: row.round_number,
         actionType: row.action_type as ActionType,
         baseRevision: row.base_revision,
+        ...(row.public_event_cursor === null ? {} : { publicEventCursor: row.public_event_cursor }),
         belief: JSON.parse(row.belief_json) as BeliefSnapshot,
         output: JSON.parse(row.output_json) as Record<string, unknown>,
         completedAt: row.completed_at,

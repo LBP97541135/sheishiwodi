@@ -638,7 +638,7 @@ function actionLabel(actionType: string) {
 }
 
 function finaleReason(endReason: HumanGameView['endReason']) {
-  if (endReason === 'undercover_eliminated') return '卧底被票出，平民阵营获胜。';
+  if (endReason === 'undercover_eliminated') return '卧底已被淘汰，平民阵营获胜。';
   if (endReason === 'undercover_survived_to_two') return '卧底存活到只剩两人，卧底阵营获胜。';
   if (endReason === 'player_rule_violation') return '有玩家因重复违反发言规则退出，系统已重新判定胜负。';
   if (endReason === 'all_players_eliminated') return '批次猜词同时结算后无人存活，本局平局。';

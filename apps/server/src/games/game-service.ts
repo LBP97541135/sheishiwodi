@@ -798,6 +798,7 @@ export class GameService {
         roundNumber: round.number,
         actionType: round.actionType,
         baseRevision: snapshot.revision,
+        publicEventCursor: publicEvents.at(-1)?.eventSeq ?? 0,
         belief: output.belief,
         output: outputRecord,
         completedAt: transition.snapshot.updatedAt,

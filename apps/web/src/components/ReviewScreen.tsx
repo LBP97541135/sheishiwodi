@@ -37,6 +37,7 @@ export function ReviewScreen({ game, onBack }: ReviewScreenProps) {
   const players = game.players;
   const reveal = game.reveal;
   const factReview = game.factReview;
+  const gameMode = game.config.gameMode ?? 'classic';
 
   const nameOf = useMemo(() => {
     const map = new Map(players.map((player) => [player.playerId, player.displayName]));
@@ -62,7 +63,7 @@ export function ReviewScreen({ game, onBack }: ReviewScreenProps) {
   if (!reveal || !factReview) {
     return (
       <section className="storyboard review-screen" aria-labelledby="review-title">
-        <ReviewHeader onBack={onBack} />
+        <ReviewHeader onBack={onBack} gameMode={gameMode} />
         <p className="lede">本局没有可复盘的终局事实（可能已放弃或非正常结束）。</p>
       </section>
     );
@@ -74,7 +75,11 @@ export function ReviewScreen({ game, onBack }: ReviewScreenProps) {
 
   return (
     <section className="storyboard review-screen" aria-labelledby="review-title">
-      <ReviewHeader onBack={onBack} exportHref={reviewExportPath(game.gameId)} />
+      <ReviewHeader
+        onBack={onBack}
+        exportHref={reviewExportPath(game.gameId)}
+        gameMode={gameMode}
+      />
 
       <div className="review-reveal">
         <span
@@ -114,9 +119,9 @@ export function ReviewScreen({ game, onBack }: ReviewScreenProps) {
         </ol>
       </section>
 
-      {(factReview.guesses?.length ?? 0) > 0 && (
-        <section className="review-identities" aria-label="猜词记录">
-          <h2>猜词记录</h2>
+      {gameMode === 'guess' && (factReview.guesses?.length ?? 0) > 0 && (
+        <details className="review-guess-facts">
+          <summary>猜词记录（{factReview.guesses?.length ?? 0}）</summary>
           <ol className="guess-review-list">
             {factReview.guesses?.map((guess, index) => (
               <li key={`${guess.actorId}-${guess.roundNumber}-${index}`}>
@@ -124,10 +129,10 @@ export function ReviewScreen({ game, onBack }: ReviewScreenProps) {
               </li>
             ))}
           </ol>
-        </section>
+        </details>
       )}
 
-      <AiReviewSection gameId={game.gameId} nameOf={nameOf} />
+      <AiReviewSection gameId={game.gameId} gameMode={gameMode} nameOf={nameOf} />
 
       <section className="review-timeline-section" aria-label="信念时间线">
         <h2>信念时间线</h2>
@@ -222,9 +227,11 @@ const REVIEW_ERROR_TEXT: Record<ReviewErrorCode, string> = {
 // AI 复盘评价区：与上方「事实」区明确分区（DEC-029），只呈现脱敏产物 + model ID。
 function AiReviewSection({
   gameId,
+  gameMode,
   nameOf,
 }: {
   gameId: string;
+  gameMode: 'classic' | 'guess';
   nameOf: (playerId: string | null | undefined) => string;
 }) {
   const { summary, error, busy, regenerate } = useReview(gameId);
@@ -237,7 +244,7 @@ function AiReviewSection({
       </div>
       <p className="review-ai__disclaimer">以下为复盘模型对本局的分析评价，非对局事实，仅供参考。</p>
 
-      {renderAiBody({ summary, error, busy, regenerate, nameOf })}
+      {renderAiBody({ summary, error, busy, regenerate, gameMode, nameOf })}
     </section>
   );
 }
@@ -247,12 +254,14 @@ function renderAiBody({
   error,
   busy,
   regenerate,
+  gameMode,
   nameOf,
 }: {
   summary: ReviewSummary | null;
   error: string | null;
   busy: boolean;
   regenerate: () => void;
+  gameMode: 'classic' | 'guess';
   nameOf: (playerId: string | null | undefined) => string;
 }) {
   if (!summary) {
@@ -291,6 +300,32 @@ function renderAiBody({
 
   return (
     <div className="review-ai__result">
+      {gameMode === 'guess' && summary.guessAnalysisStatus === 'failed' && (
+        <p className="review-ai__guess-unavailable">
+          猜词专项分析暂未生成，以下综合评价仍然可用。
+        </p>
+      )}
+      {gameMode === 'guess' && summary.guessAnalysis && (
+        <div className="review-ai__guess">
+          <h3>AI 猜词决策</h3>
+          <p>{summary.guessAnalysis.summary}</p>
+          {summary.guessAnalysis.keyDecisions.length > 0 && (
+            <ol className="review-ai__guess-decisions">
+              {summary.guessAnalysis.keyDecisions.map((decision) => (
+                <li key={decision.actionId}>
+                  <div className="review-ai__guess-decision-head">
+                    <strong>{nameOf(decision.actorId)}</strong>
+                    <span>第 {decision.roundNumber} 轮 · {decision.phase === 'describe' ? '发言' : '投票'}</span>
+                    <b data-verdict={decision.verdict}>{guessVerdictText(decision.verdict)}</b>
+                  </div>
+                  <p>{decision.assessment}</p>
+                  {decision.outcomeImpact && <small>实际影响：{decision.outcomeImpact}</small>}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
       <div className="review-ai__overall">
         <h3>总体点评</h3>
         <p>{summary.overall}</p>
@@ -329,12 +364,23 @@ function renderAiBody({
   );
 }
 
-function ReviewHeader({ onBack, exportHref }: { onBack: () => void; exportHref?: string }) {
+function ReviewHeader({
+  onBack,
+  exportHref,
+  gameMode,
+}: {
+  onBack: () => void;
+  exportHref?: string;
+  gameMode: 'classic' | 'guess';
+}) {
   return (
     <header className="review-header">
       <div>
         <p className="eyebrow">赛后复盘</p>
-        <h1 id="review-title">对局复盘</h1>
+        <div className="review-title-row">
+          <h1 id="review-title">对局复盘</h1>
+          <span>{gameMode === 'guess' ? '猜词模式' : '经典模式'}</span>
+        </div>
       </div>
       <div className="review-header__actions">
         {exportHref && (
@@ -641,9 +687,16 @@ function buildReviewNodes(
 }
 
 function finaleReason(endReason: HumanGameView['endReason']) {
-  if (endReason === 'undercover_eliminated') return '卧底被票出，平民阵营获胜。';
+  if (endReason === 'undercover_eliminated') return '卧底已被淘汰，平民阵营获胜。';
   if (endReason === 'undercover_survived_to_two') return '卧底存活到只剩两人，卧底阵营获胜。';
   if (endReason === 'player_rule_violation') return '有玩家因重复违反发言规则退出，系统已重新判定胜负。';
   if (endReason === 'all_players_eliminated') return '批次猜词同时结算后无人存活，本局平局。';
   return '对局已结束。';
+}
+
+function guessVerdictText(verdict: NonNullable<ReviewSummary['guessAnalysis']>['keyDecisions'][number]['verdict']) {
+  if (verdict === 'reasonable') return '合理';
+  if (verdict === 'rash') return '冒进';
+  if (verdict === 'insufficient_basis') return '依据不足';
+  return '错失机会';
 }

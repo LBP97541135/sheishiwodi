@@ -90,6 +90,7 @@ export const agentActions = sqliteTable('agent_actions', {
   roundNumber: integer('round_number').notNull(),
   actionType: text('action_type').notNull(),
   baseRevision: integer('base_revision').notNull(),
+  publicEventCursor: integer('public_event_cursor'),
   beliefJson: text('belief_json').notNull(),
   outputJson: text('output_json').notNull(),
   completedAt: text('completed_at').notNull(),

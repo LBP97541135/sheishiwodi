@@ -361,7 +361,7 @@ describe('GameScreen 终局与观战', () => {
     });
     render(<GameScreen game={view} {...screenProps} />);
     expect(screen.getByText('平民胜利')).toBeInTheDocument();
-    expect(screen.getByText(/卧底被票出/)).toBeInTheDocument();
+    expect(screen.getByText(/卧底已被淘汰/)).toBeInTheDocument();
     expect(timeoutSpy).toHaveBeenCalledTimes(4);
     expect(screen.getByText('豆浆')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看事实复盘' }));

@@ -108,6 +108,8 @@ export const finaleAgentActionSchema = z
     roundNumber: z.number().int().positive(),
     actionType: actionTypeSchema,
     baseRevision: z.number().int().nonnegative(),
+    /** 该行动调用时最后一条可见公开事件；旧版本记录可能缺失。 */
+    publicEventCursor: z.number().int().nonnegative().optional(),
     belief: beliefSnapshotSchema,
     output: z.record(z.unknown()),
     completedAt: z.string().datetime(),
