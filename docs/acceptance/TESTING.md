@@ -316,6 +316,8 @@ Tokendance 沿用项目角色默认 ID；通用 Provider 必须显式配置 `OPE
 
 2026-08-18 的执行在准备后阻塞，未形成验收结论。2026-08-19 重新完成全部验证：默认测试 186/186、E2E 10/10、typecheck/lint/build 通过；唯一一局在 440 秒到达 `finished/ended`，总计 37 次真实生成请求。真实复盘为 `done`，刷新与 Server 重启恢复、Markdown 导出和浏览器控制台检查均通过。脱敏证据见 [FULLSTACK_LIVE_2026-08-19.md](FULLSTACK_LIVE_2026-08-19.md)。
 
+2026-08-20 扩展版本再次执行一次明确授权的付费全栈回归：玩家占用 DeepSeek，与豆包、千问及千问自建副本完成首轮正常终局；8 次模型尝试中 1 次信念不变量失败被 strict 校验拦截，唯一一次格式修复后成功提交。真实复盘、刷新恢复、开发者观测、上下文清单和 Markdown 导出通过；最新零付费门禁 260/260、typecheck/lint/build 通过。脱敏报告见 [FULLSTACK_LIVE_2026-08-20.md](FULLSTACK_LIVE_2026-08-20.md)。
+
 ### 7.6 发布素材回归
 
 2026-08-19：`scripts/optimize-assets.py --check` 解码并核验 25 张 512×640 动作 WebP、5 张 256×256 头像和场景 WebP，ffmpeg 完整解码 60 秒 MP3；Web 源码测试 65/65、Node 22 typecheck 与生产构建通过。应用内浏览器因插件可信路径配置无法初始化，按规范回退仓库 Playwright；1280×720 打开身份弹层后两张人类素材均为 512×640 且完成解码，Performance 资源只出现 WebP/MP3、无 PNG/WAV，控制台与页面错误均为 0。素材来源授权和现有水印处理仍待负责人确认。

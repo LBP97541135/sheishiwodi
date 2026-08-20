@@ -89,6 +89,8 @@
 
 完整脱敏结果与两张人工复核截图见 [FULLSTACK_LIVE_2026-08-19.md](FULLSTACK_LIVE_2026-08-19.md)。报告明确使用真实凭据，但不保存 Key、Base URL、请求头、完整响应、词牌或私有信念。
 
+2026-08-20 对动态角色、玩家夺舍和最新 Agent Harness 再执行一次唯一付费全栈回归：人类占用 DeepSeek，豆包、千问和千问自建副本完成 3 次描述与 3 次秘密投票，首轮正常终局；真实复盘、刷新恢复、开发者观测和 Markdown 导出通过。8 次模型尝试包含 1 次 `invalid_format:belief_invalid`，非法结果未提交，唯一一次格式修复后成功。付费前发现并修复角色库往返丢失新局草稿的问题。最新零付费门禁为 260/260、三 workspace typecheck、全仓 lint/build 通过。完整脱敏证据见 [FULLSTACK_LIVE_2026-08-20.md](FULLSTACK_LIVE_2026-08-20.md)。
+
 ## 6. 复盘 Agent
 
 - 服务端具备独立 `modelId`、独立提示词、异步持久化任务、失败重试和重新生成 API。
