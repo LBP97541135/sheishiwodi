@@ -6,6 +6,7 @@ import {
   startGameRequestSchema,
   submitDefenseRequestSchema,
   submitDescriptionRequestSchema,
+  submitGuessRequestSchema,
   submitVoteRequestSchema,
   type AbandonGameRequest,
   type ContinueSpectatingRequest,
@@ -15,6 +16,7 @@ import {
   type StartGameRequest,
   type SubmitDefenseRequest,
   type SubmitDescriptionRequest,
+  type SubmitGuessRequest,
   type SubmitVoteRequest,
 } from '@sheishiwodi/shared';
 
@@ -29,6 +31,7 @@ import {
   startGame,
   submitDefense,
   submitDescription,
+  submitGuess,
   submitVote,
 } from './api';
 
@@ -48,6 +51,7 @@ export type PendingGameCommand =
   | GameScopedPending<'description', SubmitDescriptionRequest>
   | GameScopedPending<'defense', SubmitDefenseRequest>
   | GameScopedPending<'vote', SubmitVoteRequest>
+  | GameScopedPending<'guess', SubmitGuessRequest>
   | GameScopedPending<'spectate', ContinueSpectatingRequest>
   | GameScopedPending<'abandon', AbandonGameRequest>
   | GameScopedPending<'recovery', ResolveInterruptedGameRequest>;
@@ -156,6 +160,8 @@ function execute(command: PendingGameCommand): Promise<HumanGameView> {
       return submitDefense(command.gameId, command.request);
     case 'vote':
       return submitVote(command.gameId, command.request);
+    case 'guess':
+      return submitGuess(command.gameId, command.request);
     case 'spectate':
       return continueSpectating(command.gameId, command.request);
     case 'abandon':
@@ -211,6 +217,12 @@ function parsePendingCommand(value: unknown): PendingGameCommand {
         base,
         'vote',
         submitVoteRequestSchema.parse(candidate['request']),
+      );
+    case 'guess':
+      return scopedWithMatchingRevision(
+        base,
+        'guess',
+        submitGuessRequestSchema.parse(candidate['request']),
       );
     case 'spectate':
       return scopedWithMatchingRevision(

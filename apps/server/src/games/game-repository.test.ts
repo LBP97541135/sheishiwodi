@@ -85,6 +85,7 @@ describe('GameRepository 原子提交', () => {
           roundNumber: previous.round!.number,
           actionType: 'describe',
           baseRevision: previous.revision,
+          publicEventCursor: timeline.at(-1)?.eventSeq ?? 0,
           belief,
           output: { text: '事务失败后仍可重试' },
           completedAt: transition.snapshot.updatedAt,
@@ -107,6 +108,8 @@ describe('GameRepository 原子提交', () => {
       expect(after.revision).toBe(previous.revision + 1);
       expect(after.events).toBe(before.events + transition.events.length);
       expect(after.actions).toBe(before.actions + 1);
+      expect(repository.getFactReview(previous.gameId).agentActions.at(-1)?.publicEventCursor)
+        .toBe(timeline.at(-1)?.eventSeq ?? 0);
       expect(after.frames).toBe(
         before.frames + transition.events.filter((event) => event.visibility === 'public').length,
       );

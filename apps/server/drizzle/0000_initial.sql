@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS agent_actions (
   round_number INTEGER NOT NULL,
   action_type TEXT NOT NULL,
   base_revision INTEGER NOT NULL,
+  public_event_cursor INTEGER,
   belief_json TEXT NOT NULL,
   output_json TEXT NOT NULL,
   completed_at TEXT NOT NULL

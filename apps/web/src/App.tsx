@@ -9,6 +9,8 @@ import {
   ApiClientError,
   getActiveGameState,
   getGame,
+  setAutomationMode,
+  addRequestBudget,
 } from './api';
 import { DeveloperPanel } from './components/DeveloperPanel';
 import { GameScreen } from './components/GameScreen';
@@ -37,9 +39,9 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [topView, setTopView] = useState<TopView>('game');
-  const [guessModeNoticeOpen, setGuessModeNoticeOpen] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [developerAvailable, setDeveloperAvailable] = useState(false);
+  const [profileRevision, setProfileRevision] = useState(0);
   const [developerEnabled, setDeveloperEnabled] = useState(() =>
     typeof sessionStorage !== 'undefined' && sessionStorage.getItem(DEVELOPER_MODE_KEY) === 'true',
   );
@@ -50,7 +52,6 @@ export function App() {
   );
   const gameRef = useRef<HumanGameView | null>(null);
   const eventCursorRef = useRef(0);
-  const guessModeTriggerRef = useRef<HTMLButtonElement | null>(null);
   // 背景音乐在整个应用（含主页、模型档案）持续播放，由顶部开关与浏览器自动播放解锁控制。
   const shouldPlayBgm = true;
   const experience = useExperienceSettings(shouldPlayBgm);
@@ -147,8 +148,10 @@ export function App() {
     setError(null);
     try {
       setGame(await executeTrackedGameCommand(command));
+      return true;
     } catch (commandError) {
       setError(messageForCommand(commandError));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -167,7 +170,7 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
       },
     });
@@ -182,7 +185,7 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
         text,
       },
@@ -198,7 +201,7 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
         text,
       },
@@ -214,9 +217,26 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
         targetPlayerId,
+      },
+    });
+  };
+
+  const handleGuess = async (targetPlayerId: string, guessedWord: string) => {
+    if (!game) return;
+    await runCommand({
+      version: 1,
+      kind: 'guess',
+      gameId: game.gameId,
+      expectedRevision: game.revision,
+      request: {
+        commandId: crypto.randomUUID(),
+        actorId: controllerIdFor(game),
+        expectedRevision: game.revision,
+        targetPlayerId,
+        guessedWord,
       },
     });
   };
@@ -230,7 +250,7 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
       },
     });
@@ -245,22 +265,52 @@ export function App() {
       expectedRevision: game.revision,
       request: {
         commandId: crypto.randomUUID(),
-        actorId: game.human.playerId,
+        actorId: controllerIdFor(game),
         expectedRevision: game.revision,
         confirmed: true,
       },
     });
   };
 
+  const handleAutomation = async (mode: 'auto' | 'paused' | 'step') => {
+    if (!game) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setGame(await setAutomationMode(game.gameId, mode));
+    } catch (caught) {
+      setError(messageFor(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddBudget = async (amount: number) => {
+    if (!game) return;
+    setBusy(true);
+    try {
+      setGame(await addRequestBudget(game.gameId, amount));
+    } catch (caught) {
+      setError(messageFor(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleInterruptedGame = async (resolution: 'continue' | 'start_new') => {
     if (!game) return;
-    await runCommand({
+    const succeeded = await runCommand({
       version: 1,
       kind: 'recovery',
       gameId: game.gameId,
       expectedRevision: game.revision,
       request: { commandId: crypto.randomUUID(), resolution },
     });
+    if (succeeded && resolution === 'start_new') {
+      localStorage.removeItem(LAST_GAME_KEY);
+      setGame(null);
+      setTopView('game');
+    }
   };
 
   const handleNewGame = () => {
@@ -269,11 +319,6 @@ export function App() {
     setGame(null);
     setTopView('game');
   };
-
-  const closeGuessModeNotice = useCallback(() => {
-    setGuessModeNoticeOpen(false);
-    guessModeTriggerRef.current?.focus();
-  }, []);
 
   const isFinished = game?.status === 'finished';
   // 复盘页依赖终局事实；一旦离开终局（新局/放弃）自动退回对局页，避免空态残留。
@@ -294,6 +339,13 @@ export function App() {
       setTopView(next ? 'developer' : 'game');
       return next;
     });
+  };
+
+  const showGameView = () => {
+    if (topView === 'model-profiles' && !game) {
+      setProfileRevision((current) => current + 1);
+    }
+    setTopView('game');
   };
 
   if (loadState === 'loading') {
@@ -330,7 +382,7 @@ export function App() {
             type="button"
             className={topView === 'game' ? 'top-nav__link is-active' : 'top-nav__link'}
             aria-current={topView === 'game' ? 'page' : undefined}
-            onClick={() => setTopView('game')}
+            onClick={showGameView}
           >
             对局
           </button>
@@ -340,7 +392,7 @@ export function App() {
             aria-current={topView === 'model-profiles' ? 'page' : undefined}
             onClick={() => setTopView('model-profiles')}
           >
-            模型档案
+            角色库
           </button>
           {isFinished && (
             <button
@@ -375,17 +427,27 @@ export function App() {
         />
       </div>
       {stream.showRecovery && <ConnectionNotice onRetry={stream.retryNow} />}
-      <GuessModeNotice open={guessModeNoticeOpen} onClose={closeGuessModeNotice} />
       {game?.operationalStatus.state === 'interrupted' && (
         <InterruptedGameDialog busy={busy} onResolve={handleInterruptedGame} />
       )}
+      {!game && (
+        <section className="storyboard" hidden={topView !== 'game'}>
+          <NewGameForm
+            busy={busy}
+            profileRevision={profileRevision}
+            onCreate={handleCreate}
+            onOpenRoleLibrary={() => setTopView('model-profiles')}
+          />
+          {error && <p className="form-error" role="alert">{error}</p>}
+        </section>
+      )}
       {topView === 'model-profiles' ? (
-        <ModelProfiles onBack={() => setTopView('game')} />
+        <ModelProfiles onBack={showGameView} />
       ) : topView === 'developer' && developerAvailable && developerEnabled ? (
         <DeveloperPanel {...(gameId ? { gameId } : {})} onBack={() => setTopView('game')} />
       ) : topView === 'review' && game && isFinished ? (
         <ReviewScreen game={game} onBack={() => setTopView('game')} />
-      ) : (
+      ) : game ? (
         <section className="storyboard">
           {renderStage()}
           {game?.status !== 'in_progress' && game?.status !== 'finished' && error && (
@@ -394,23 +456,12 @@ export function App() {
             </p>
           )}
         </section>
-      )}
+      ) : null}
     </main>
   );
 
   function renderStage() {
-    if (!game) {
-      return (
-        <NewGameForm
-          busy={busy}
-          onCreate={handleCreate}
-          onOpenGuessMode={(trigger) => {
-            guessModeTriggerRef.current = trigger;
-            setGuessModeNoticeOpen(true);
-          }}
-        />
-      );
-    }
+    if (!game) return null;
     if (game.status === 'preparing') {
       return <PreparingGame game={game} busy={busy} onStart={handleStart} onAbandon={handleAbandon} />;
     }
@@ -422,58 +473,16 @@ export function App() {
         onDescribe={handleDescribe}
         onDefense={handleDefense}
         onVote={handleVote}
+        onGuess={handleGuess}
         onSpectate={handleSpectate}
         onAbandon={handleAbandon}
+        onAutomation={handleAutomation}
+        onAddBudget={handleAddBudget}
         onNewGame={handleNewGame}
         onReview={() => setTopView('review')}
       />
     );
   }
-}
-
-function GuessModeNotice({ open, onClose }: { open: boolean; onClose(): void }) {
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    closeButtonRef.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        closeButtonRef.current?.focus();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      className="coming-soon-backdrop"
-      data-testid="coming-soon-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        className="coming-soon-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="coming-soon-title"
-        aria-describedby="coming-soon-description"
-      >
-        <p className="eyebrow">二期功能</p>
-        <h2 id="coming-soon-title">猜词模式暂未开放</h2>
-        <p id="coming-soon-description">当前为deta版本，正式上线后即可畅玩</p>
-        <button ref={closeButtonRef} type="button" className="primary-action" onClick={onClose}>
-          知道了
-        </button>
-      </section>
-    </div>
-  );
 }
 
 function StatusPage({
@@ -506,6 +515,12 @@ function StatusPage({
 function messageFor(error: unknown) {
   if (error instanceof ApiClientError) return error.message;
   return '无法连接本地服务，请确认 pnpm dev 正在运行';
+}
+
+function controllerIdFor(game: HumanGameView) {
+  const controllerId = game.controllerId ?? game.human?.playerId;
+  if (!controllerId) throw new Error('MISSING_GAME_CONTROLLER');
+  return controllerId;
 }
 
 function messageForCommand(error: unknown) {

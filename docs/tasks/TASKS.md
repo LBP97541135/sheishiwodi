@@ -12,7 +12,7 @@
 - `TASK-061`：已完成；当前代码、规格、任务、素材与验收报告的状态差异已完成文档收口。
 - `TASK-062`：已完成；投票阶段所有有资格且尚未完成的玩家同步进入思考视觉状态，已投票者和重投候选保持正确状态。
 - `TASK-063`：已完成（历史实现，后由 TASK-065 移除）；曾配置二期历史复盘占位入口。
-- `TASK-064`：已完成；新对局配置页并排提供经典模式与猜词模式，猜词模式复用未开放提示弹层。
+- `TASK-064`：已完成（历史实现，后由 TASK-087 替代）；曾为猜词模式提供未开放提示弹层。
 - `TASK-065`：已完成；顶层历史复盘入口及专属状态已移除，正常终局后的单局复盘入口保留。
 - `TASK-066`：已完成；新对局首页收口为“身份配置在标题、玩法入口居中、难度独立下置”的信息层级。
 - `TASK-067`：已完成；AI 复盘评价提示词已精炼为证据优先的短评价，并建立统一评分口径。
@@ -26,6 +26,10 @@
 - `TASK-075`：已完成；SQLite 启动门禁、迁移备份、繁忙处理、浏览器 SSE 重连和稳定命令恢复均已实现并验收。
 - `TASK-076`：已完成；调用台账、统一链路、上下文门禁、完整调试记录与清理、单 Provider 轻量熔断及可选观测出口均已落地。
 - `TASK-077`：已完成；双层门禁的四视图开发者面板、敏感记录确认和普通模式负向门禁已实现。
+- `TASK-078`～`TASK-084`：已完成；系统审计后的 Agent 工程补强与格式失败诊断已经逐项验证并提交。
+- `TASK-085`：已完成；发布素材规范化、压缩、可复现检查与来源缺口记录已收口。
+- `TASK-086`：已完成；角色库、4～8 人动态阵容、多卧底与纯 Agent 对局已实现并通过桌面验收。
+- `TASK-087`：已完成；全阵营猜词模式、冻结快照并行决策与原子批次结算已实现并完成桌面整局验收。
 - 首个里程碑 7 个切片全部通过默认测试、E2E、构建、类型、静态检查和文档门禁。
 
 ## 验收依据缩写
@@ -130,7 +134,7 @@
 | 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
 | --- | --- | --- | --- | --- |
 | TASK-044 扩充首版完整词库 | 已完成 | 将版本化词库从里程碑 4 组子集扩充为 30 组；简单/困难各 15 组；人工审核固定阵营、公平性、描述空间与泄词风险 | REQUIREMENTS 词库、DEC-075/076、SPEC persistence | `data/word-pairs.json` 30 组；`word-pairs.test.ts` 增加事实源数量/难度/启用/唯一性断言；文件级结构核对通过，完整命令门禁待本机执行环境恢复后补跑 |
-| TASK-045 视觉与媒体收口 | 已完成 | 接入 BGM 与开关；整理五角色五状态素材；完善视觉/无障碍；支持默认纸面与审讯室背景切换 | frontend UX、ASSETS、负责人 2026-08-16 指令 | `experience-settings.tsx` 设置控件（背景音乐开关默认关、纸面/审讯室背景单选）与 `useExperienceSettings` 媒体生命周期；`App` 根 shell 应用 `shell--<theme>` 与 `--scene-background`；`bgm.wav` 规范化为 `assets/audio/game-bgm.wav`（去掉仓库根中文路径导入）；新增 `experience-settings.test.tsx` 8 项组件/hook 测试（默认关、持久化、背景切换、底图、音源非中文路径）；typecheck/lint、默认测试 128 项、build 全绿；桌面与 375×812 实测背景切换与控件布局正常；待发布前压缩 10.5MB WAV（本机无 ffmpeg） |
+| TASK-045 视觉与媒体收口 | 已完成 | 接入 BGM 与开关；整理五角色五状态素材；完善视觉/无障碍；支持默认纸面与审讯室背景切换 | frontend UX、ASSETS、负责人 2026-08-16 指令 | `experience-settings.tsx` 设置控件（背景音乐开关默认关、纸面/审讯室背景单选）与 `useExperienceSettings` 媒体生命周期；`App` 根 shell 应用 `shell--<theme>` 与 `--scene-background`；新增 `experience-settings.test.tsx` 8 项组件/hook 测试；最初接入的 PNG/WAV 已由 TASK-085 完成发布压缩 |
 
 ## 真实模型接入（DEC-085）
 
@@ -212,8 +216,20 @@
 | --- | --- | --- | --- | --- |
 | TASK-078 强化 Agent 上下文来源证明 | 已完成 | 由唯一组装器从权威仓库读取自有信念和公开事件；来源证明绑定 game/actor/owner/visibility/cursor 与具体输入；伪造或篡改输入在出网前阻断 | DEC-097、SPEC agent-runtime §12.5、TEST §2.8 | `AgentContextAssembler` 成为 GameService 唯一组装入口；来源证明使用进程内签发身份与输入 SHA-256 双重绑定；缺失证明、伪造证明、篡改公开事件均在出网前记录 `context_boundary_violation`。Node 22 Server 定向 28/28、typecheck 通过 |
 | TASK-079 拒绝重复玩家标识 | 已完成 | 信念概率与复盘逐 Agent 评价拒绝重复 `playerId`，同时保持完整覆盖校验 | DEC-097、TEST §2.8 | 信念、复盘生成和复盘摘要 Schema 均显式校验唯一 ID；策略级重复复盘输出进入格式修复。Node 22 Shared 5/5、Server 策略 14/14、Shared typecheck 通过 |
-| TASK-080 对齐复盘 Prompt 与 Schema | 已完成 | 统一结论、关键片段、总体评价和评分字段的字数、数量与必填约束 | DEC-097、SPEC agent-runtime、TEST §2.8 | 新生成契约固定 verdict 60～100、keyMoments 1～2 且单条最多 50、rating 必填、overall 100～160；历史摘要保持宽松读取兼容。Node 22 Shared 6/6、Server 12/12、Shared/Server typecheck 通过 |
+| TASK-080 对齐复盘 Prompt 与 Schema | 已完成，字数硬边界后由 DEC-102 修订 | 统一结论、关键片段、总体评价和评分字段的数量与必填约束；字数保持明确编辑目标 | DEC-097/102、SPEC agent-runtime、TEST §2.8 | 初版将 verdict 60～100、单条 50、overall 100～160 作为硬边界；真实模型证据表明该策略过脆后，DEC-102 保留 keyMoments 1～2、rating 与玩家覆盖等结构硬约束，将字数调整为提示目标并补局部降级。历史摘要继续宽松读取 |
 | TASK-081 恢复后台未分类异常 | 已完成 | 后台推进未分类异常立即持久化运行中断状态并由玩家确认恢复；不记模型失败、不消耗模型重试 | DEC-092/097、TEST §2.8 | `GameService` 将后台普通异常写入既有恢复门禁，`GameRepository` 原子追加脱敏 `runtime_interrupted` 流帧；SSE 重连在待确认期间不自动推进，Web 收帧后权威同步。Node 22 Server 故障注入 6/6、Web 定向 1/1、两端 typecheck 通过 |
 | TASK-082 细化 Agent 尝试阶段口径 | 已完成 | 区分 Provider 返回、结构校验、内容校验和动作提交；内容拒绝或过期结果不得显示最终成功 | DEC-095/097、TEST §2.8 | 新增 v3 `model_attempt_stages` 增量迁移与面板阶段列；成功终态统一为 `action_committed`，并覆盖 `content_rejected`、`domain_rejected`、`stale_discarded`、`commit_failed`；启动时对账已提交动作以关闭观测落账崩溃窗口。Node 22 默认测试 234/234、三 workspace typecheck、全仓 lint 与差异检查通过 |
 | TASK-083 固定 Node 22 与零付费 CI | 已完成 | 增加运行时版本文件和 GitHub Actions；默认 CI 只跑零出网门禁；修正文档中过期验收状态 | DEC-097、SPEC architecture §8、TEST §2.8 | `.node-version` 与 package engines 固定 Node 22.14.0，pnpm 固定 9.15.9；CI 强制 fake provider、清空真实凭据，只运行 typecheck/lint/test/build/E2E。Node 22 默认测试 234/234、三 workspace typecheck、lint/build、隔离端口 E2E 10/10 与 CI 契约静态检查通过；远端 Actions 待推送后由 GitHub 执行 |
 | TASK-084 细化模型格式失败诊断与修复 | 已完成 | 保持 strict Schema；为非法 JSON、非对象、Schema 字段、非法目标和信念不变量生成脱敏原因码；格式修复提示携带实际失败位置与完整输出约束；Provider 计时日志不再用 `ok` 冒充行动成功 | DEC-098、SPEC agent-runtime §8/12、TEST §2.9 | `AgentFormatError` 形成稳定原因码并只持久化脱敏字段路径/issue code；格式修复收到完整字段、长度、唯一 ID、概率与目标契约；概率上限进入共享 Schema。Node 22 下 Shared 55/55、Server 112/112、Web 67/67、三端 typecheck、全仓 lint 与差异检查通过；真实 API 复测待再次显式授权 |
+
+## 二期可扩展玩法
+
+| 任务 | 状态 | 目标与检查点 | 验收依据 | 完成证据 / 待产出 |
+| --- | --- | --- | --- | --- |
+| TASK-085 发布素材规范化 | 已完成 | 25 张角色动作图统一为 512×640 WebP，并从待机图生成 256×256 WebP 头像；审讯室背景转 WebP；10.5 MB WAV 转 128 kbps MP3；运行时只引用压缩资产；保留可复现脚本、尺寸/解码/构建/视觉证据；不擅自移除水印或补写授权 | DEC-099、ASSETS、SPEC frontend | 图片由 67.90 MiB 降至 1.11 MiB（-98.37%），音频由 10.09 MiB 降至 0.92 MiB（-90.92%）；资产检查、Web 65/65、typecheck/build、1280×720 浏览器解码与零旧格式请求通过 |
+| TASK-086 动态阵容与本地角色库 | 已完成 | 统一管理内置与自建角色；支持 0/1 名人类、4～8 名总玩家、4～5 人 1 卧底、6～8 人 2 卧底；支持纯 Agent 普通观战、自动/暂停/单步、并发与真实请求预算；人类剪影禁止分配给 Agent | DEC-100、REQUIREMENTS、SPEC | 数据库 v4、动态状态机/投影、角色库 API 与六态图片规范化、持久化控制/预算、桌面阵容配置和紧凑舞台已闭环。Node 22 下 Shared 57、Server 115、Web 65，共 237 项测试以及 typecheck/lint/build 全绿；1280×720 浏览器实际创建 5 个自建角色并运行 8 Agent/2 卧底局，观察者无词牌泄露，暂停/单步、8 席位、单聚焦舞台、图片解码和零控制台错误通过 |
+| TASK-087 猜词模式 | 已完成 | 自己的描述或首轮投票行动可用一次猜词替代原动作；提交目标和精确词语；成功淘汰目标、失败淘汰自己；投票阶段从冻结快照并行收集、原子结算，公开信息不泄露目标与猜词 | DEC-101、REQUIREMENTS、SPEC | 共享状态机、Agent strict union Schema/Prompt、服务端并行暂存与原子结算、人类双确认 UI、终局复盘均已闭环。Node 22 下 Shared 63、Server 117、Web 66，共 246 项测试以及 typecheck/lint/build 通过；1440px 浏览器完成猜错出局、继续观战、Agent 终局与事实复盘，公开事件仅含 actorId/success，控制台零错误 |
+| TASK-088 模式化复盘与行动时证据帧 | 已完成 | `ReviewInput` 显式区分经典/猜词；猜词专项只评价 AI，最多 3 个关键节点与 1 个错失机会；持久化行动公开游标并按游标构造证据帧；专项格式失败局部降级；事实记录折叠展示并同步 Markdown | DEC-102、SPEC agent-runtime/persistence/frontend、TEST | 数据库 v5 新增 `agent_actions.public_event_cursor`；模型只返回证据帧 actionId，服务端回填事实并校验；经典模式无猜词区块，猜词模式支持专项完成/失败状态。Node 22 干净镜像下 typecheck、lint、三端 build 通过；Shared 65、Server 120、Web 68，共 253 项测试全绿；隔离 fake 浏览器对局验证模式标签、无 AI 猜测专项、玩家猜测事实折叠交互和中性终局文案 |
+| TASK-089 玩家角色夺舍与角色复制 | 已完成 | 允许人类占用完整 AI 角色的名称与素材，严格排除该角色的 Agent 模型行为和重复入座；角色库只管理 AI 角色，并拆分复制与编辑 | DEC-103、SPEC game-domain/API/frontend | 人类身份联合契约、服务端权威解析/唯一性校验、公开投影、内置与自建角色服务端深复制、AI 专属角色库及前端夺舍配置已闭环；Node 22 下 259/259 测试、typecheck、lint 与三端 build 通过 |
+| TASK-090 八人局紧凑席位优化 | 已完成 | 在不改变聚焦舞台和桌面单行阵容的前提下，使用纵向头像、两行名称和稳定状态角标提高 6～8 人局可读性 | DEC-104、SPEC frontend | 6～8 人使用独立头像、两行名称与状态角标，聚焦舞台继续显示完整动作；Node 22 下 260/260 测试、typecheck、lint 与三端 build 通过，1280px 隔离浏览器 8 Agent 整局无横向溢出、破图或控制台错误 |
+| TASK-091 保留角色库往返前的新局草稿 | 已完成 | 打开角色库时不得清空玩家夺舍身份、玩法、人数或阵容草稿；返回时刷新角色候选，使新复制角色立即可选 | TASK-089、SPEC frontend | 新局表单在角色库期间保持挂载，返回时按 revision 重新读取角色；真实浏览器复现后补充 DeepSeek 夺舍往返回归，Web 定向 13/13、typecheck 与相关 lint 通过 |

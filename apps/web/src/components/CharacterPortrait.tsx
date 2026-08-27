@@ -8,12 +8,13 @@ import {
 } from '../character-assets';
 
 interface CharacterPortraitProps {
-  characterKey: CharacterKey;
+  characterKey?: CharacterKey;
+  src?: string;
   label: string;
   state?: CharacterState;
 }
 
-export function CharacterPortrait({ characterKey, label, state = 'idle' }: CharacterPortraitProps) {
+export function CharacterPortrait({ characterKey = 'deepseek', src, label, state = 'idle' }: CharacterPortraitProps) {
   const [failed, setFailed] = useState(false);
   const stateText = characterStateLabel[state];
 
@@ -25,7 +26,7 @@ export function CharacterPortrait({ characterKey, label, state = 'idle' }: Chara
         </span>
       ) : (
         <img
-          src={characterAssets[characterKey][state]}
+          src={src ?? characterAssets[characterKey][state]}
           alt={`${label} ${stateText}`}
           onError={() => setFailed(true)}
         />

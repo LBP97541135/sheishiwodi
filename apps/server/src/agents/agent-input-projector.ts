@@ -17,8 +17,12 @@ export function projectAgentTurnInput(
     (player) => player.playerId === actorId && player.kind === 'agent' && player.alive,
   );
   if (!actor?.agentRoleId || !snapshot.round) throw new Error('AGENT_NOT_AVAILABLE');
+  const guessAvailable =
+    snapshot.config.gameMode === 'guess' &&
+    !actor.guessUsed &&
+    (snapshot.round.actionType === 'describe' || snapshot.round.actionType === 'vote');
   const legalTargets =
-    snapshot.round.actionType === 'vote'
+    snapshot.round.actionType === 'vote' || guessAvailable
       ? snapshot.players
           .filter((player) => player.alive && player.playerId !== actor.playerId)
           .map((player) => player.playerId)
@@ -33,6 +37,7 @@ export function projectAgentTurnInput(
       playerId: actor.playerId,
       displayName: actor.displayName,
       ownWordCard: actor.wordCard,
+      ownCamp: actor.camp,
     },
     publicConfig: snapshot.config,
     players: snapshot.players.map((player) => ({
@@ -44,9 +49,10 @@ export function projectAgentTurnInput(
     roundNumber: snapshot.round.number,
     actionType: snapshot.round.actionType,
     legalTargets,
+    guessAvailable,
     tieCandidates: snapshot.round.tieCandidateIds,
     publicEvents,
     priorOwnBeliefs,
-    personalityPrompt: personalityPromptFor(actor.agentRoleId),
+    personalityPrompt: actor.agentPersonalityPrompt ?? personalityPromptFor(actor.agentRoleId),
   });
 }

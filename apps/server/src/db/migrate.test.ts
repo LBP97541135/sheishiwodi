@@ -33,6 +33,10 @@ describe('database startup reliability', () => {
           .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
           .get('model_attempt_stages'),
       ).toEqual({ name: 'model_attempt_stages' });
+      expect(
+        (reopened.sqlite.pragma('table_info(agent_actions)') as Array<{ name: string }>)
+          .some((column) => column.name === 'public_event_cursor'),
+      ).toBe(true);
       reopened.close();
     } finally {
       rmSync(directory, { recursive: true, force: true });

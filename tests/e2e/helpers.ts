@@ -7,6 +7,10 @@ export async function createAndStartGame(page: Page, name: string) {
   await identityDialog.getByLabel('玩家名称').fill(name);
   await identityDialog.getByRole('button', { name: '保存身份' }).click();
   await page.getByRole('button', { name: '经典模式' }).click();
+  await expect(page.getByRole('heading', { name: '配置本局阵容' })).toBeVisible();
+  const createButton = page.getByRole('button', { name: '创建对局' });
+  await expect(createButton).toBeEnabled();
+  await createButton.click();
   await expect(page.getByRole('heading', { name: '记住你的词牌' })).toBeVisible();
   const startButton = page.getByRole('button', { name: '我已记住，开始游戏' });
   const startedHeading = page.getByRole('heading', { name: /第 1 轮|对局结束/ });

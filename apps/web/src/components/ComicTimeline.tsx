@@ -119,6 +119,7 @@ export const renderableTypes = new Set([
   'round_started',
   'speech_published',
   'vote_progressed',
+  'guess_resolved',
   'votes_revealed',
   'tie_declared',
   'revote_started',
@@ -154,6 +155,13 @@ export function TimelinePanel({
         <li className="comic-panel comic-panel--progress">
           <span className="comic-speaker">{nameOf(payload.playerId as string)}</span>
           <p className="comic-secret">已秘密投票</p>
+        </li>
+      );
+    case 'guess_resolved':
+      return (
+        <li className="comic-panel comic-panel--guess">
+          <span className="comic-speaker">{nameOf(payload.actorId as string)}</span>
+          <p className="comic-secret">发起猜测，结果：{payload.success === true ? '成功' : '失败'}</p>
         </li>
       );
     case 'votes_revealed': {
@@ -195,7 +203,7 @@ export function TimelinePanel({
       return (
         <li className="comic-panel comic-panel--tie">
           <span className="comic-stamp comic-stamp--no-out">无人出局</span>
-          <p>{payload.reason === 'all_max' ? '全员最高票，本轮直接结束' : '重投仍然平票'}</p>
+          <p>{payload.reason === 'all_max' ? '全员最高票，本轮直接结束' : payload.reason === 'guess_batch_no_valid_votes' ? '猜词结算后没有有效选票' : '重投仍然平票'}</p>
         </li>
       );
     case 'player_eliminated':

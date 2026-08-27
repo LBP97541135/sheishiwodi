@@ -1,4 +1,4 @@
-import { agentRoles } from './agent-roles.js';
+import { agentRoles, findAgentRole, type AgentRoleDefinition } from './agent-roles.js';
 import type { CreateGameCommand, StartGameCommand } from './commands.js';
 import type { GameEvent } from './events.js';
 import { gameSnapshotSchema, type GamePlayerState, type GameSnapshot } from './state.js';
@@ -20,6 +20,7 @@ export interface GameSetupDependencies {
   random: RandomSource;
   ids: IdSource;
   clock: Clock;
+  resolveAgentRole?: (roleId: string) => AgentRoleDefinition | undefined;
 }
 
 export interface GameTransition {
@@ -58,21 +59,44 @@ export function createPreparingGame(
 
   const selectedPair = candidates[nextIndex(dependencies.random, candidates.length)]!;
   const gameId = dependencies.ids.nextId('game');
+  const participationMode = command.participationMode ?? 'human';
+  const selectedRoleIds = command.agentRoleIds ?? agentRoles.map((role) => role.roleId);
+  const resolveRole = dependencies.resolveAgentRole ?? findAgentRole;
+  if (new Set(selectedRoleIds).size !== selectedRoleIds.length) throw new Error('DUPLICATE_AGENT_ROLE');
+  const selectedRoles = selectedRoleIds.map((roleId) => {
+    const role = resolveRole(roleId);
+    if (!role) throw new Error('UNKNOWN_AGENT_ROLE');
+    return role;
+  });
+  const humanInput = participationMode === 'human' ? command.human : undefined;
+  const humanRole = humanInput && 'roleId' in humanInput ? resolveRole(humanInput.roleId) : undefined;
+  if (humanInput && 'roleId' in humanInput && !humanRole) throw new Error('UNKNOWN_AGENT_ROLE');
+  if (humanRole && selectedRoleIds.includes(humanRole.roleId)) throw new Error('DUPLICATE_AGENT_ROLE');
+  const totalPlayers = selectedRoles.length + (participationMode === 'human' ? 1 : 0);
+  if (totalPlayers < 4 || totalPlayers > 8) throw new Error('INVALID_PLAYER_COUNT');
   const humanPlayerId = dependencies.ids.nextId('player');
+  const controllerId = humanPlayerId;
+  const human = humanInput;
   const players: GamePlayerState[] = [
-    {
-      playerId: humanPlayerId,
-      seatIndex: 0,
-      kind: 'human',
-      displayName: command.human.displayName,
-      alive: true,
-      camp: 'civilian',
-      wordCard: selectedPair.civilianWord,
-      silhouette: command.human.silhouette,
-    },
-    ...agentRoles.map((role, roleIndex) => ({
+    ...(human
+      ? [{
+          playerId: humanPlayerId,
+          seatIndex: 0,
+          kind: 'human' as const,
+          displayName: 'roleId' in human ? humanRole!.displayName : human.displayName,
+          alive: true,
+          camp: 'civilian' as const,
+          wordCard: selectedPair.civilianWord,
+          ...('silhouette' in human ? { silhouette: human.silhouette } : {}),
+          characterAssetKey: 'roleId' in human
+            ? humanRole!.roleId
+            : human.silhouette === 'silhouette_b' ? 'human-female' : 'human-male',
+          guessUsed: false,
+        }]
+      : []),
+    ...selectedRoles.map((role, roleIndex) => ({
       playerId: dependencies.ids.nextId('player'),
-      seatIndex: roleIndex + 1,
+      seatIndex: roleIndex + (human ? 1 : 0),
       kind: 'agent' as const,
       displayName: role.displayName,
       alive: true,
@@ -80,12 +104,22 @@ export function createPreparingGame(
       wordCard: selectedPair.civilianWord,
       agentRoleId: role.roleId,
       agentRoleDisplay: role.displayName,
+      agentPersonalityPrompt: role.personalityPrompt,
+      agentModelId: role.defaultModelId,
+      characterAssetKey: role.roleId,
+      guessUsed: false,
     })),
   ];
 
-  const undercoverIndex = nextIndex(dependencies.random, players.length);
-  players.forEach((player, index) => {
-    if (index === undercoverIndex) {
+  const undercoverCount = players.length >= 6 ? 2 : 1;
+  const undercoverIndexes = new Set<number>();
+  while (undercoverIndexes.size < undercoverCount) {
+    let index = nextIndex(dependencies.random, players.length);
+    while (undercoverIndexes.has(index)) index = (index + 1) % players.length;
+    undercoverIndexes.add(index);
+  }
+  players.forEach((player) => {
+    if (undercoverIndexes.has(player.seatIndex)) {
       player.camp = 'undercover';
       player.wordCard = selectedPair.undercoverWord;
     }
@@ -106,9 +140,13 @@ export function createPreparingGame(
     streamSeq: 1,
     config: {
       difficulty: command.difficulty,
-      undercoverCount: 1,
+      gameMode: command.gameMode ?? 'classic',
+      undercoverCount,
+      participationMode,
+      ...(command.requestBudget ? { requestBudget: command.requestBudget } : {}),
     },
     humanPlayerId,
+    controllerId,
     wordPair: {
       wordPairId: selectedPair.id,
       civilianWord: selectedPair.civilianWord,
@@ -117,6 +155,7 @@ export function createPreparingGame(
       difficulty: selectedPair.difficulty,
     },
     players,
+    guessHistory: [],
     firstSpeakingOrder,
     round: null,
     createdAt: now,
@@ -128,13 +167,14 @@ export function createPreparingGame(
     gameId,
     eventSeq: 1,
     type: 'game_created',
-    visibility: 'human_private',
+    visibility: participationMode === 'human' ? 'human_private' : 'internal',
     occurredAt: now,
     commandId: command.commandId,
     payload: {
       difficulty: command.difficulty,
-      undercoverCount: 1,
+      undercoverCount,
       humanPlayerId,
+      controllerId,
     },
   };
 
@@ -149,7 +189,7 @@ export function startPreparingGame(
   if (snapshot.status !== 'preparing' || snapshot.phase !== 'preparing') {
     throw new Error('INVALID_TRANSITION');
   }
-  if (command.actorId !== snapshot.humanPlayerId) {
+  if (command.actorId !== (snapshot.controllerId ?? snapshot.humanPlayerId)) {
     throw new Error('ACTOR_NOT_ALLOWED');
   }
   if (command.expectedRevision !== snapshot.revision) {
@@ -173,6 +213,7 @@ export function startPreparingGame(
       completedSpeakerIds: [],
       completedVoterIds: [],
       votes: [],
+      guesses: [],
       tieCandidateIds: [],
     },
     updatedAt: now,

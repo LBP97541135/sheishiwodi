@@ -18,6 +18,7 @@ describe('HumanGameView', () => {
       phase: 'preparing',
       revision: 0,
       eventCursor: 1,
+      controllerId: 'player-human',
       config: {
         difficulty: 'easy',
         undercoverCount: 1,
@@ -41,7 +42,7 @@ describe('HumanGameView', () => {
       },
     });
 
-    expect(view.human.ownWordCard).toBe('牛奶');
+    expect(view.human?.ownWordCard).toBe('牛奶');
     expect('camp' in view.players[0]!).toBe(false);
     expect('wordCard' in view.players[0]!).toBe(false);
   });

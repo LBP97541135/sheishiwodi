@@ -12,6 +12,7 @@ import {
 function makeInput(): ReviewInput {
   return {
     gameId: 'game-md-1',
+    gameMode: 'classic',
     winnerCamp: 'civilian',
     endReason: 'undercover_eliminated',
     reveal: {
@@ -129,7 +130,8 @@ describe('buildReviewMarkdown', () => {
     // 对局信息
     expect(md).toContain('# 对局复盘 · 饮品');
     expect(md).toContain('| 胜方 | 平民阵营 |');
-    expect(md).toContain('| 卧底被票出，平民阵营获胜 |');
+    expect(md).toContain('| 游戏模式 | 经典模式 |');
+    expect(md).toContain('| 卧底已被淘汰，平民阵营获胜 |');
     expect(md).toContain('| 平民词 | 牛奶 |');
     expect(md).toContain('| 卧底词 | 豆浆 |');
 
@@ -173,6 +175,36 @@ describe('buildReviewMarkdown', () => {
     };
     const md = buildReviewMarkdown({ input: makeInput(), summary });
     expect(md).toContain('当前状态：生成中');
+  });
+
+  it('猜词模式导出精简的 AI 猜词决策区块', () => {
+    const summary: ReviewSummary = {
+      ...doneSummary(),
+      guessAnalysisStatus: 'done',
+      guessAnalysis: {
+        summary: 'AI 在具体词语置信度较高时使用猜词，整体时机合理。',
+        keyDecisions: [
+          {
+            actionId: 'guess-action-1',
+            actorId: 'agent-1',
+            roundNumber: 1,
+            phase: 'describe',
+            kind: 'attempt',
+            verdict: 'reasonable',
+            assessment: '行动时的公开信息和词语候选能够相互支持。',
+            outcomeImpact: '猜词成功后目标立即出局。',
+          },
+        ],
+      },
+    };
+    const md = buildReviewMarkdown({
+      input: { ...makeInput(), gameMode: 'guess' },
+      summary,
+    });
+    expect(md).toContain('| 游戏模式 | 猜词模式 |');
+    expect(md).toContain('### AI 猜词决策');
+    expect(md).toContain('DeepSeek · 第 1 轮发言 · 合理');
+    expect(md).toContain('实际影响：猜词成功后目标立即出局');
   });
 
   it('输出末尾以单个换行结尾且不含连续空行', () => {
