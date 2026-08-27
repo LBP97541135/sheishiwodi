@@ -16,7 +16,7 @@ export const opposingWordCandidateSchema = z
 export const playerProbabilitySchema = z
   .object({
     playerId: identifierSchema,
-    probability: z.number().min(0),
+    probability: z.number().min(0).max(1),
   })
   .strict();
 

@@ -220,6 +220,8 @@ VoteActionOutput
 | HTTP 401/403 | 否 | `AUTH_FAILED` |
 | HTTP 404 / model missing | 否 | `MODEL_NOT_FOUND` |
 | JSON/Schema/belief/target | 一次格式修复，随后进入系统重试 | `FORMAT_INVALID` |
+
+格式修复不得只返回笼统的“格式不合法”。Harness 应从本地解析或 strict Schema 中提取稳定、脱敏的失败原因：非法 JSON/根对象、首个失败字段路径与 issue code、非法目标、信念总和或信念玩家集合。原因不得包含失败字段值或模型原文，并应与完整输出字段、长度、玩家唯一性、概率和合法目标约束一起提供给同一次格式修复请求。调用台账以 `invalid_format:<reason>` 记录该原因；该细分不改变对外的最终 `FORMAT_INVALID` 分类和既有重试预算。
 | content length/sentence | 一次内容重生成 | `CONTENT_INVALID` |
 | word leak | 首次重生成，第二次规则强退 | 不属于系统错误 |
 | stale revision | 丢弃，不计模型错误 | 无公开错误 |

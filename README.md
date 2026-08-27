@@ -108,16 +108,57 @@ flowchart LR
 
 每个 AI 是独立策略实例，共享规则但不共享私有上下文。描述必须按公开顺序生成，因为前一人的描述会成为后一人的公开信息；同一投票阶段的 AI 选票互不可见、互不依赖，因此可以并行预取，再按状态机顺序校验和提交。
 
+### Agent 整体架构
+
+本项目采用“中心化编排器 + 多个受约束 Agent”，而不是让多个模型自由互聊。`GameService` 是唯一编排器，负责决定何时调用哪名 Agent；`AgentContextAssembler` 从服务端权威数据读取该 Agent 自己的私有信息和已经公开的信息，并签发与输入哈希绑定的来源证明；`AgentPolicy` 只负责把这份最小上下文转换为结构化行动提案。模型无权直接改变阶段、淘汰玩家或判断胜负，所有结果最终都必须交给共享纯状态机裁决并通过 SQLite 事务提交。
+
+三个参赛 Agent 使用相同的输入、输出和恢复契约，只更换角色人格与 model ID。赛后复盘 Agent 是独立的低优先级任务，只读取已经持久化的终局事实；它不能修改对局结果，也不会阻塞玩家开始新局。默认 `FakeAgentPolicy` 与真实 OpenAI 兼容策略实现同一接口，因此测试 harness 与生产 harness 走的是同一条编排、校验和持久化路径。
+
+### 单次真实 Agent 行动流程
+
+```mermaid
+flowchart TD
+  Trigger["人类命令或后台调度"] --> Orchestrator["GameService 编排器"]
+  Orchestrator --> Snapshot["读取权威快照、当前行动者与 revision"]
+  Snapshot --> Context["AgentContextAssembler<br/>组装最小上下文并签发来源证明"]
+  Context --> Policy["真实 AgentPolicy<br/>按角色解析 model ID 与请求参数"]
+  Policy --> Circuit{"Provider 熔断检查"}
+  Circuit -- "已开路" --> ProviderError["脱敏错误与恢复流程"]
+  Circuit -- "允许" --> Started["边界检查、上下文审计并记录 request_started<br/>gameId → commandId → actionId → attemptId"]
+  Started --> Boundary{"来源证明、输入哈希<br/>与信息边界校验通过"}
+  Boundary -- "失败" --> Blocked["context_boundary_violation<br/>保留失败台账，但不请求模型"]
+  Boundary -- "通过" --> Model["独立角色模型生成结构化行动与信念"]
+  Model --> Returned["记录 provider_returned"]
+  Returned --> Schema{"strict Zod Schema<br/>结构、信念覆盖与合法目标校验"}
+
+  Schema -- "不合法" --> Repair["一次格式修复或有限系统重试"]
+  Repair --> Model
+  Schema -- "通过" --> SchemaOk["记录 schema_validated"]
+  SchemaOk --> Content{"发言长度、句数与<br/>原词泄露校验"}
+  Content -- "可重新生成" --> Regenerate["内容重生成，不公开失败原文"]
+  Regenerate --> Policy
+  Content -- "通过" --> ContentOk["记录 content_validated"]
+  ContentOk --> Fresh{"revision、行动者与<br/>动作类型仍然有效"}
+  Fresh -- "已过期" --> Stale["stale_discarded<br/>旧结果不写入对局"]
+  Fresh -- "有效" --> Machine["共享纯状态机裁决<br/>阶段、投票、淘汰与胜负"]
+  Machine --> Transaction["SQLite 原子事务<br/>快照、事件、私有行动、公开帧、幂等结果"]
+  Transaction --> Committed["记录 action_committed"]
+  Committed --> Public["HumanGameView + SSE<br/>只发布允许公开的信息"]
+  Transaction --> Private["私有信念与投票理由<br/>仅终局复盘可见"]
+```
+
+调度上有三种明确边界：描述和辩解按公开顺序串行生成；秘密投票在同一公开信息上并行生成，但仍按状态机顺序逐个校验和提交；赛后复盘全局并发为 1，活动对局期间不启动新的复盘任务，已经发出的复盘允许正常完成。`FakeAgentPolicy` 不访问 Provider，也不产生真实请求阶段，但它返回行动后仍经过相同的服务层内容校验、共享状态机与持久化事务，因此默认测试验证的是正式编排路径，而不是另一套简化游戏逻辑。
+
 | Harness 层 | 解决的问题 | 实现方式 |
 | --- | --- | --- |
-| 输入投影 | 防止模型看到不该知道的信息 | `AgentInputProjector` 从权威快照构造不可变白名单，只含自己的词牌、公开事件、合法目标和自己的历史信念 |
+| 输入投影 | 防止模型看到不该知道的信息 | `AgentContextAssembler` 从权威仓库读取数据，`AgentInputProjector` 构造最小白名单；来源证明绑定 game、actor、私有信念所有者、公开游标与输入 SHA-256 |
 | 结构合同 | 防止自然语言直接控制系统 | 描述、投票、信念和复盘都使用 strict Zod Schema；未知字段、漏字段、非法概率和非法目标会被拒绝 |
 | 状态裁决 | 防止模型决定规则或胜负 | 模型只返回行动提案；共享纯状态机决定行动者、平票分支、淘汰和终局 |
-| 自动恢复 | 降低真实模型的不稳定性 | 一次格式修复；内容错误重新生成；超时、网络、429、5xx 有限重试；永久配置错误不盲目重试 |
+| 自动恢复 | 降低真实模型和运行环境的不稳定性 | 一次格式修复；内容错误重新生成；超时、网络、429、5xx 有限重试；永久错误熔断；进程中断后由玩家确认继续或开始新局 |
 | 并发防护 | 防止慢请求覆盖新状态 | 每次调用绑定 `baseRevision`；返回后重新核对状态、行动者和动作类型，过期结果直接丢弃 |
 | 幂等与恢复 | 防止刷新/重启产生重复行动 | 稳定 `commandId`、事务写入、活动局恢复、SSE 游标补发与客户端去重 |
 | 可替换策略 | 兼顾可测性和真实体验 | 默认 `FakeAgentPolicy` 提供确定性测试；显式 provider 开关才实例化真实兼容协议策略 |
-| 可观测性 | 证明调用链和信息边界 | 持久化脱敏 `model_attempts`，独立上下文清单记录来源、可见级别、游标、模板版本和 Prompt 哈希；出网前确定性拦截越权输入 |
+| 可观测性 | 证明调用链、信息边界与最终落地结果 | 持久化脱敏 `model_attempts` 与阶段链，区分请求开始、Provider 返回、结构通过、内容通过和动作提交；独立上下文清单记录来源、可见级别、游标、模板版本和 Prompt 哈希 |
 
 真实 Provider 解析集中在 `provider-runtime.ts`：Tokendance 保持旧默认兼容，`openai-compatible` 只复用协议客户端和 harness，不注入厂商专用推理参数，也不继承任何模型 ID。
 
